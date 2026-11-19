@@ -151,6 +151,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->rife_hwc8_ = (init.trials & kTrialRifeHwc8) != 0;
   backend->warp_l2_ = (init.trials & kTrialWarpL2) != 0;
   backend->span_native_ = (init.trials & kTrialSpanNative) != 0;
+  backend->rife_native_ = (init.trials & kTrialRifeNative) != 0;
   backend->trtexec_ = std::move(trtexec);
   if (!backend->trtexec_.empty()) {
     // Son empreinte d'ouverture, revérifiée avant chaque construction (A05-05).

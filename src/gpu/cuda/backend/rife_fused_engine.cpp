@@ -239,6 +239,10 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
       std::size_t{4} * static_cast<std::size_t>(h) * static_cast<std::size_t>(w) * 2U;
   const auto encode_image = [&](std::uint64_t image_offset,
                                 std::size_t encode_offset) -> std::expected<void, Refusal> {
+    if (native_on_)
+      return cuda_check(native_->encode(stream, static_cast<const std::byte*>(in) + image_offset,
+                                        at_ptr(encode_offset), arena->data()),
+                        "RIFE natif : encodeur");
     const Tensor image = fused_tensor(input.handle, input.offset + image_offset, 3, h, w);
     const Tensor encoded = fused_tensor(at(encode_offset), 0, 4, h, w);
     return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
@@ -280,9 +284,17 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
     const kernels::FusedDims y = kernels::rife_fused_y(plan_, b, h, w);
     const Tensor block_in = fused_tensor(at(layout_.x[i]), 0, x.channels, x.height, x.width);
     const Tensor block_out = fused_tensor(at(layout_.y[i]), 0, y.channels, y.height, y.width);
-    if (auto ok = blocks_[i]->enqueue_plain(stream, arena, std::span(&block_in, 1), std::span(&block_out, 1));
-        !ok)
+    if (native_on_) {
+      if (auto ok =
+              cuda_check(native_->block(stream, b, at_ptr(layout_.x[i]), at_ptr(layout_.y[i]), arena->data()),
+                         "RIFE natif : bloc");
+          !ok)
+        return ok;
+    } else if (auto ok = blocks_[i]->enqueue_plain(stream, arena, std::span(&block_in, 1),
+                                                   std::span(&block_out, 1));
+               !ok) {
       return ok;
+    }
     if (b + 1 < plan_.blocks) {
       if (auto ok = launch_glue(stream, in, b + 1, base, encode_a, encode_b); !ok) return ok;
     }
@@ -356,6 +368,8 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
   warm_ready_ = false;  // repris si la chaîne est enfilée jusqu'au bout
   kept_.reset();
   ++encodes_[static_cast<std::size_t>(pass.encode)];
+  // Les activations des noyaux natifs, sous les tampons de la chaîne : comme celles d'un moteur entier.
+  if (native_on_) arena->used(this, native_->workspace_bytes());
   auto queued = enqueue_chain(stream, arena, inputs, outputs, pass);
   // Ses tampons, au-dessus des activations de ses morceaux (qui se sont déclarés) : le gardien d'avant, s'il
   // était un autre moteur fusionné, les refera.

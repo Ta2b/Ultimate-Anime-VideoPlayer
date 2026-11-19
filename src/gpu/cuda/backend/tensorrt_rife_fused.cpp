@@ -12,10 +12,64 @@
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
+#include "prepare/model_source.h"
+#include "prepare/rife_native.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
 namespace kirari::gpu::cuda {
+namespace {
+
+// Le seuil de l'essai du RIFE natif contre TensorRT FP16 (docs/rife-natif.md) ; la séance finale vise 50 dB.
+constexpr double kNativeMinDb = 45.0;
+
+// Les couches de l'encodeur et des blocs, lues dans les morceaux ONNX que nomme le manifeste (le même
+// découpage que les moteurs TensorRT, poids de 4.25 lite déjà permutés), vérifiées par leur empreinte.
+std::expected<std::vector<RifeNativePiece>, Refusal> native_pieces(
+    const std::filesystem::path& manifest_path) {
+  std::ifstream file(manifest_path, std::ios::binary);
+  const std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+  if (!file && !file.eof())
+    return refuse(RefusalCode::FileUnreadable,
+                  std::format("RIFE natif : {} illisible", core::to_utf8(manifest_path)));
+  auto manifest = prepare::parse_manifest(text);
+  if (!manifest) return std::unexpected(std::move(manifest.error()));
+  std::vector<RifeNativePiece> pieces;
+  for (std::size_t i = 0; i < manifest->pieces.size(); ++i) {
+    const std::filesystem::path onnx =
+        manifest_path.parent_path() / core::path_from_utf8(manifest->pieces[i]);
+    if (i < manifest->digests.size()) {
+      auto sha = prepare::sha256_file_known(onnx);
+      if (!sha) return std::unexpected(std::move(sha.error()));
+      if (*sha != manifest->digests[i])
+        return refuse(RefusalCode::ModelUnreadable,
+                      std::format("RIFE natif : {} a changé", manifest->pieces[i]));
+    }
+    auto bytes = prepare::read_onnx_bytes(onnx);
+    if (!bytes) return std::unexpected(std::move(bytes.error()));
+    auto layers = prepare::rife_native_layers(*bytes);
+    if (!layers) return std::unexpected(std::move(layers.error()));
+    const int in = i == 0 ? 3 : kernels::rife_fused_block_channels(static_cast<int>(i) - 1);
+    const int out = i == 0 ? kernels::kFusedEncodePlanes / 2 : kernels::kFusedOutChannels;
+    if (auto ok = prepare::rife_native_check(*layers, in, out); !ok)
+      return std::unexpected(std::move(ok.error()));
+    RifeNativePiece& piece = pieces.emplace_back();
+    for (prepare::RifeNativeLayer& layer : *layers) {
+      piece.push_back(RifeNativeConv{.transposed = layer.transposed,
+                                     .cin = layer.cin,
+                                     .cout = layer.cout,
+                                     .stride = layer.stride,
+                                     .weights = std::move(layer.weights),
+                                     .bias = std::move(layer.bias),
+                                     .slope = std::move(layer.slope),
+                                     .scale = std::move(layer.scale)});
+    }
+  }
+  return pieces;
+}
+
+}  // namespace
+
 std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSpec& model,
                                                                    const ShapeSet& shapes,
                                                                    Progress& progress) {
@@ -47,7 +101,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
   // Les blocs, sous --rife-hwc8, en E/S HWC8 (kTrialRifeHwc8) ; l'encodeur reste en plans : sa sortie est
   // relue par plans par les noyaux de colle, et ses copies ne pèsent que 2 % de la passe.
   prepare::TrtexecConfig block_config = trtexec_config();
-  block_config.hwc8_io = rife_hwc8_;
+  block_config.hwc8_io = rife_hwc8_ || rife_native_;  // le natif lit et écrit X et Y en HWC8
   const prepare::TrtexecBuilder block_builder(std::move(block_config), check);
   const std::filesystem::path folder = model.onnx_path.parent_path();
   const std::size_t count = manifest->pieces.size();
@@ -93,6 +147,16 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_rife_fused
   if (!engine) return std::unexpected(std::move(engine.error()));
   if (l2_keep_)
     (*engine)->keep_in_l2(persisting_l2(), static_cast<std::size_t>(properties_.accessPolicyMaxWindowSize));
+  if (rife_native_) {
+    // --rife-native : tout refus laisse la chaîne à TensorRT, chargée et intacte.
+    auto pieces = native_pieces(artifact.path);
+    auto kept = pieces ? (*engine)->try_native(*pieces, arena(), kNativeMinDb)
+                       : std::expected<std::string, Refusal>(std::unexpected(std::move(pieces.error())));
+    if (kept)
+      log((*engine)->native() ? BackendLogLevel::Info : BackendLogLevel::Warn, *kept);
+    else
+      log(BackendLogLevel::Warn, "RIFE natif refusé, TensorRT garde la chaîne : " + kept.error().detail);
+  }
   log(BackendLogLevel::Info,
       std::format(
           "RIFE fusionné chargé : {}×{}, {} blocs, sortie {}", key->width, key->height, key->plan.blocks,
