@@ -69,7 +69,7 @@ std::expected<void, Refusal> gmfss_pair_current(const std::filesystem::path& pai
   if (!graph) return std::unexpected(std::move(graph.error()));
   for (const std::string_view name : kGmfssPairLevel1) {
     if (std::ranges::find(graph->outputs, name) == graph->outputs.end())
-      return refuse(RefusalCode::GraphInvalid,
+      return refuse(RefusalCode::GraphInvalid,  // i18n-ok : refus interne, écrit au journal
                     std::format("{} : export d'avant le format 2, sans la sortie « {} » (le réexporter par "
                                 "tools/gmfss/export_gmfss.py)",
                                 core::to_utf8(pair.filename()), name));
