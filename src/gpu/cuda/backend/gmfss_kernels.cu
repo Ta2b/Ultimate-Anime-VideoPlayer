@@ -1,11 +1,14 @@
 // Noyaux du softmax splatting de GMFSS (voir gmfss_kernels.h) ; référence kernels/ref/gmfss.cpp. Un lot :
 // gridDim.z est le travail, chaque bloc une tuile 16 × 16 de sa source ; les tuiles hors d'un travail plus
-// petit que le plus grand sortent aussitôt.
+// petit que le plus grand sortent aussitôt. Les lectures (mouvement sur une autre grille, splat tiré,
+// composition) passent par la bibliothèque de warp (warp_lib.cuh) : une prise bornée par point, partagée par
+// tous les plans qu'il lit.
 #include <cstdint>
 #include <cuda_fp16.h>
 
 #include "gpu/cuda/backend/gmfss_kernels.h"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
+#include "gpu/cuda/backend/warp_lib.cuh"
 #include "kernels/spec/gmfss.h"
 
 namespace kirari::gpu::cuda {
@@ -61,21 +64,9 @@ struct SplatTarget {
   bool active = false;
 };
 
-// Échantillon bilinéaire borné au plan w × h (spec/warp.h : bornes en clamp, NaN donne 0).
-__device__ float bilinear(const __half* plane, int w, int h, float x, float y) {
-  x = fminf(fmaxf(x, 0.0F), static_cast<float>(w - 1));
-  y = fminf(fmaxf(y, 0.0F), static_cast<float>(h - 1));
-  const int x0 = static_cast<int>(x);
-  const int y0 = static_cast<int>(y);
-  const int x1 = min(x0 + 1, w - 1);
-  const int y1 = min(y0 + 1, h - 1);
-  const float fx = x - static_cast<float>(x0);
-  const float fy = y - static_cast<float>(y0);
-  const float top =
-      __half2float(plane[at(x0, y0, w)]) * (1.0F - fx) + __half2float(plane[at(x1, y0, w)]) * fx;
-  const float bottom =
-      __half2float(plane[at(x0, y1, w)]) * (1.0F - fx) + __half2float(plane[at(x1, y1, w)]) * fx;
-  return top * (1.0F - fy) + bottom * fy;
+// La prise bilinéaire bornée au plan w × h en (x, y) (spec/warp.h : bornes en clamp, NaN donne le bord bas).
+__device__ __forceinline__ warp::Tap plane_tap(float x, float y, int w, int h) {
+  return warp::tap_at(0, 0, x, y, warp::Bounds{0, 0, w, h});
 }
 
 __device__ __forceinline__ SplatTarget splat_target(const SoftSplatParams& p, int x, int y,
@@ -226,9 +217,10 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) motion_on_gr
   const float v = (static_cast<float>(y) + 0.5F) / p.scale - 0.5F + p.y;
   auto* out = static_cast<__half*>(p.out);
   const std::size_t i = at(x, y, p.width);
-  out[i] = __float2half_rn(bilinear(motion, p.motion_width, p.motion_height, u, v) * p.scale);
-  out[plane + i] = __float2half_rn(bilinear(motion + grid, p.motion_width, p.motion_height, u, v) * p.scale);
-  out[2 * plane + i] = __float2half_rn(bilinear(motion + 2 * grid, p.motion_width, p.motion_height, u, v));
+  const warp::Tap tap = plane_tap(u, v, p.motion_width, p.motion_height);  // une prise pour les trois plans
+  out[i] = __float2half_rn(warp::bilinear(motion, tap, p.motion_width) * p.scale);
+  out[plane + i] = __float2half_rn(warp::bilinear(motion + grid, tap, p.motion_width) * p.scale);
+  out[2 * plane + i] = __float2half_rn(warp::bilinear(motion + 2 * grid, tap, p.motion_width));
 }
 
 // Deux pixels voisins par fil : sommes lues en float2 et sorties écrites en half2 quand le travail
@@ -300,68 +292,30 @@ __global__ void __launch_bounds__(kPixelThreads) compose(ComposeParams p) {
   const auto* lb = static_cast<const __half*>(p.low_b);
   const auto* fusion = static_cast<const __half*>(p.fusion);
   const std::size_t i = at(x, y, p.out_width);
+  // Une prise pour les huit lectures de RIFE, une pour les trois de la fusion (bornée à sa fenêtre).
+  const warp::Tap rife_tap = plane_tap(xw, yw, p.width, p.height);
   const float w0h = (1.0F - p.t) * __half2float(ha[3 * out_plane + i]);
   const float w1h = p.t * __half2float(hb[3 * out_plane + i]);
-  const float w0l = (1.0F - p.t) * bilinear(la + 3 * low_plane, p.width, p.height, xw, yw);
-  const float w1l = p.t * bilinear(lb + 3 * low_plane, p.width, p.height, xw, yw);
+  const float w0l = (1.0F - p.t) * warp::bilinear(la + 3 * low_plane, rife_tap, p.width);
+  const float w1l = p.t * warp::bilinear(lb + 3 * low_plane, rife_tap, p.width);
   const float high_total = w0h + w1h + kernels::kGmfssNormalizeEpsilon;
   const float low_total = w0l + w1l + kernels::kGmfssNormalizeEpsilon;
-  // La fusion dans sa fenêtre : coordonnées bornées à l'image de RIFE, puis décalées du coin.
-  const float fx = fminf(fmaxf(xw, 0.0F), static_cast<float>(p.width - 1)) + static_cast<float>(p.left);
-  const float fy = fminf(fmaxf(yw, 0.0F), static_cast<float>(p.height - 1)) + static_cast<float>(p.top);
+  // La fusion dans sa fenêtre : coordonnées bornées à l'image de RIFE, décalées du coin.
+  const warp::Tap fused_tap =
+      warp::tap_at(p.left, p.top, xw, yw, warp::Bounds{p.left, p.top, p.left + p.width, p.top + p.height});
   auto* out = static_cast<__half*>(p.out);
 #pragma unroll
   for (int c = 0; c < 3; ++c) {
     const std::size_t oc = static_cast<std::size_t>(c) * out_plane;
     const std::size_t lc = static_cast<std::size_t>(c) * low_plane;
     const float high = (w0h * __half2float(ha[oc + i]) + w1h * __half2float(hb[oc + i])) / high_total;
-    const float low = (w0l * bilinear(la + lc, p.width, p.height, xw, yw) +
-                       w1l * bilinear(lb + lc, p.width, p.height, xw, yw)) /
+    const float low = (w0l * warp::bilinear(la + lc, rife_tap, p.width) +
+                       w1l * warp::bilinear(lb + lc, rife_tap, p.width)) /
                       low_total;
-    const float fused = bilinear(fusion + static_cast<std::size_t>(c) * fusion_plane, p.fusion_width,
-                                 p.fusion_height, fx, fy);
+    const float fused =
+        warp::bilinear(fusion + static_cast<std::size_t>(c) * fusion_plane, fused_tap, p.fusion_width);
     out[oc + i] = __float2half_rn(fminf(fmaxf(high + fused - low, 0.0F), 1.0F));
   }
-}
-
-// Catmull-Rom d'un plan FP16 (spec/warp.h, RifeWarp::CatmullRom) : position bornée au plan, points répétés
-// au bord, sortie bornée aux quatre points centraux.
-__device__ float catmull_rom_at(const __half* plane, int w, int h, float x, float y) {
-  x = fminf(fmaxf(x, 0.0F), static_cast<float>(w - 1));
-  y = fminf(fmaxf(y, 0.0F), static_cast<float>(h - 1));
-  const int x0 = static_cast<int>(x);
-  const int y0 = static_cast<int>(y);
-  const auto weights = [](float t, float (&w4)[4]) {
-    const float t2 = t * t;
-    const float t3 = t2 * t;
-    w4[0] = -0.5F * t3 + t2 - 0.5F * t;
-    w4[1] = 1.5F * t3 - 2.5F * t2 + 1.0F;
-    w4[2] = -1.5F * t3 + 2.0F * t2 + 0.5F * t;
-    w4[3] = 0.5F * t3 - 0.5F * t2;
-  };
-  float wx[4];
-  float wy[4];
-  weights(x - static_cast<float>(x0), wx);
-  weights(y - static_cast<float>(y0), wy);
-  float sum = 0.0F;
-  float lo = 3.0e38F;
-  float hi = -3.0e38F;
-#pragma unroll
-  for (int j = 0; j < 4; ++j) {
-    const int yy = min(max(y0 - 1 + j, 0), h - 1);
-    float row = 0.0F;
-#pragma unroll
-    for (int i = 0; i < 4; ++i) {
-      const float v = __half2float(plane[at(min(max(x0 - 1 + i, 0), w - 1), yy, w)]);
-      row += v * wx[i];
-      if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
-        lo = fminf(lo, v);
-        hi = fmaxf(hi, v);
-      }
-    }
-    sum += row * wy[j];
-  }
-  return fminf(fmaxf(sum, lo), hi);
 }
 
 // Un fil par pixel de sortie : la source lue là d'où vient le pixel, d'après le flot poussé.
@@ -372,13 +326,15 @@ __global__ void __launch_bounds__(kPixelThreads) pull(PullParams p) {
   const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
   const std::size_t i = at(x, y, p.width);
   const auto* flow = static_cast<const __half*>(p.flow);
-  const float sx = static_cast<float>(x) - p.s * __half2float(flow[i]);
-  const float sy = static_cast<float>(y) - p.s * __half2float(flow[plane + i]);
+  // Catmull-Rom de warp_lib (spec/warp.h, RifeWarp::CatmullRom) : une prise pour tous les plans.
+  const warp::Bounds bounds{0, 0, p.width, p.height};
+  const warp::Tap tap =
+      warp::tap_at(x, y, -p.s * __half2float(flow[i]), -p.s * __half2float(flow[plane + i]), bounds);
   const auto* source = static_cast<const __half*>(p.source);
   auto* out = static_cast<__half*>(p.out);
   for (int c = 0; c < p.channels; ++c) {
     const std::size_t pc = static_cast<std::size_t>(c) * plane;
-    out[pc + i] = __float2half_rn(catmull_rom_at(source + pc, p.width, p.height, sx, sy));
+    out[pc + i] = __float2half_rn(warp::catmull_rom(source + pc, tap, p.width, bounds));
   }
   if (p.coverage != 0) out[static_cast<std::size_t>(p.channels) * plane + i] = flow[2 * plane + i];
 }
