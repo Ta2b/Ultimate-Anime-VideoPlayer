@@ -34,3 +34,6 @@ dépôt des sources est public. Ses données étaient rangées sur deux niveaux 
 - Le lecteur par défaut se choisit de nouveau après la mise à jour (le ProgId devient `Kirari.Video`).
 - `Ta2b/ajp-releases` reste en ligne tant que des lecteurs 0.11 tournent ; vider `KIRARI_LEGACY_RELEASE_REPO`
   arrête le relais.
+- Le logo (piste « Étincelle » : le bouton lecture et l'éclat kirari sur sa pointe) a sa source dans
+  `tools/release/logo/kirari.svg` ; `node tools/release/logo/render.mjs` en refait `kirari.ico` et `kirari.png`.
+  Choisi en novembre 2026, il peut encore changer.

@@ -1,3 +1,5 @@
+<img src="tools/release/linux/kirari.png" alt="" width="96" align="right">
+
 # Kirari Player
 
 [![Licence : MPL 2.0](https://img.shields.io/badge/licence-MPL%202.0-blue.svg)](LICENSE)
