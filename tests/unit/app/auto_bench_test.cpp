@@ -93,7 +93,11 @@ TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
   // B07-06 : un bench.toml d'une version plus ancienne (d'autres chaînes) ne décide plus.
   CHECK_FALSE(parse_bench("version = 1\nlevel = 3\ngpu = \"x\""));
   CHECK_FALSE(parse_bench("level = 3\ngpu = \"x\""));
-  CHECK(parse_bench("version = 3\nlevel = 3\ngpu = \"x\""));
+  CHECK(parse_bench("version = 4\nlevel = 3\ngpu = \"x\""));
+  // Une mesure de version 3 : celle de Vulkan (d'avant ses noyaux rapides) ne décide plus, celle de TensorRT
+  // si.
+  CHECK_FALSE(parse_bench("version = 3\nlevel = 3\ngpu = \"x\"\nengine = \"vulkan\""));
+  CHECK(parse_bench("version = 3\nlevel = 3\ngpu = \"x\"\nengine = \"tensorrt\""));
   CHECK_FALSE(parse_bench("level = 1"));
   CHECK_FALSE(parse_bench("gpu = ["));
   CHECK_FALSE(load_bench(std::filesystem::temp_directory_path() / "kirari-no-such-bench.toml"));
@@ -296,13 +300,13 @@ TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto
   CHECK(back->rife_model == "rife_v4.25.onnx");
   // Un bench.toml sans exploration : rien d'exploré.
   const auto bare =
-      parse_bench("version = 3\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\ndate = \"2026-10-28\"\n");
+      parse_bench("version = 4\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\ndate = \"2026-10-28\"\n");
   REQUIRE(bare);
   CHECK(bare->work_height == 0);
   CHECK(bare->rife_model.empty());
   // B07-06 : celui d'une version d'avant (d'autres chaînes) se lit sans planter, mais ne décide plus.
   CHECK_FALSE(parse_bench("version = 1\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\n").has_value());
-  CHECK_FALSE(parse_bench("version = 3\ngpu = \"x\"\nlevel = 2\nwork_height = 99999\n").has_value());
+  CHECK_FALSE(parse_bench("version = 4\ngpu = \"x\"\nlevel = 2\nwork_height = 99999\n").has_value());
 }
 
 TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_bench][exploration]") {
