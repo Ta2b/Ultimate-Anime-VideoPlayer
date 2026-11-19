@@ -21,6 +21,7 @@ import travail  # noqa: E402
 import rife_instants  # noqa: E402
 import rife_taille  # noqa: E402
 import scintillement  # noqa: E402
+import tuiles_panoramique  # noqa: E402
 
 F16 = TensorProto.FLOAT16
 
@@ -349,6 +350,41 @@ class Scintillement(unittest.TestCase):
             self.assertGreater(float(al.inside.mean()), 0.9)
         f = np.array([[[0.0, 10.0, 20.0]]], np.float32)  # trois blocs de 4 sur 10 pixels : centres en 1,5 et 5,5
         self.assertTrue(np.allclose(scintillement.scale(f, 10, 1, 4)[0, 0, [1, 2, 5, 6]], [0, 1.25, 8.75, 11.25]))
+
+
+class TuilesPanoramique(unittest.TestCase):
+    def test_camera_reelle_ou_fantome(self):
+        """Une texture lisse qui glisse de 0,6 px par image : 0,6 lu à 0,03 près, direction cohérente, translation
+        directe égale à la somme. La même texture tenue sous du bruit : rien ne bouge, direction incohérente."""
+        rng = np.random.default_rng(2)
+        tex = scintillement.box(rng.uniform(0, 255, (96, 128)), 3).astype(np.float64)
+        rgb = np.repeat(tex[..., None], 3, 2)
+        pan = [tuiles_panoramique.shift(rgb, 0.6 * k, 0.0, "lanczos3") for k in range(8)]
+        cam = tuiles_panoramique.camera(pan)
+        self.assertAlmostEqual(cam["mediane"][0], 0.6, delta=0.03)
+        self.assertAlmostEqual(cam["mediane"][1], 0.0, delta=0.03)
+        self.assertGreater(cam["coherence"], 0.95)
+        self.assertAlmostEqual(cam["directe"][0], 4.2, delta=0.15)
+        still = [rgb + rng.normal(0, 2.0, rgb.shape) for _ in range(8)]
+        cam = tuiles_panoramique.camera(still)
+        self.assertLess(cam["norme_mediane"], 0.05)
+
+    def test_decalage_entier_exact_et_porte(self):
+        """Un réseau qui double chaque pixel commute avec un décalage entier : les reprises décalées de 2δ y sont
+        exactes, la reprise sans décalage non."""
+        class Double:
+            def upscale(self, img):
+                return np.repeat(np.repeat(img, 2, axis=1), 2, axis=2)
+
+        rng = np.random.default_rng(3)
+        frame = np.repeat(scintillement.box(rng.uniform(0, 255, (160, 160)), 2)[..., None], 3, 2).astype(np.float64)
+        rows = tuiles_panoramique.subpixel(Double(), frame, 128, (0.25, 1.0, 2.0))
+        by = {(d, what.split(" (")[0]): worst for d, what, worst, _, _ in rows}
+        for d in (1.0, 2.0):
+            self.assertLess(by[(d, "sortie décalée de 2δ")], 1e-6)
+            self.assertGreater(by[(d, "sortie reprise sans décalage")], 1.0)
+        self.assertGreater(by[(0.25, "sortie reprise sans décalage")], 1.0)
+        self.assertEqual(tuiles_panoramique.gate(frame, frame, 8), (0.0, 0.0, 0.0))
 
 
 if __name__ == "__main__":

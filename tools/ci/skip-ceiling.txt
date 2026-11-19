@@ -16,8 +16,9 @@ asan-fuzz 0
 # catalogue (3), veilleur d'écriture de l'anneau (1). Novembre 2026 : look en table (3, #803) et grade avant le warp
 # (1, #804), rendus GPU joués sous lavapipe ; plafond au compte du passage sur b5ac0da0 (50), plus la découpe de
 # TemporalFix fusionné (#862) sans les modèles du lecteur (51), plus GMFSS et GMFlow natifs sans les graphes exportés
-# de GMFSS union (3, comme sous lavapipe : 54).
-windows 54
+# de GMFSS union (3, comme sous lavapipe : 54), plus les éclats sur les seuls effets (grade_gpu_effects_test, 2
+# cas de #914 et 2 de #943, rendus GPU joués sous lavapipe : 58).
+windows 58
 # Tâches sans GPU ni Vulkan logiciel (cœur seul) : aucun test sauté (B28-12).
 core-gcc-13 0
 core-clang-20 0

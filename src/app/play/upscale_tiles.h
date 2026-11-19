@@ -22,14 +22,18 @@
 // champ réceptif ; la sortie du cœur est celle d'un calcul complet. Le cœur lui-même est ce qui a changé
 // dilaté de la même portée (une sortie voit l'entrée jusqu'à la portée), plus le rayon du débandage quand
 // l'entrée est débandée. Ce qui peut dériver, c'est la sortie reprise : une tuile dite « inchangée » qui
-// bouge ou s'éclaire un peu à chaque paire (nuage lent, fumée, lueur, fondu local, caméra lente). Cinq
-// gardes :
+// bouge ou s'éclaire un peu à chaque paire (nuage lent, fumée, lueur, fondu local, caméra lente). Une sortie
+// reprise d'une entrée qui a glissé de δ pixels n'est pas celle d'un calcul complet : sur de vraies images
+// de Spy×Family (ArtCNN 2× à la place de SPAN, tools/bench/qualite/tuiles_panoramique.py), le pire bloc
+// 16 × 16 s'écarte de 0,6 à 0,7 niveau à δ = 0,02, de 1,4 à 1,7 à 0,05 et de 7 à 8,5 à 0,25, environ 34
+// niveaux par pixel ; la porte en tolère 1. Les budgets de glissement sont donc de kStillDrift (0,025 pixel
+// de travail, 0,85 niveau). Cinq gardes :
 //   - par tuile, le mouvement reçu depuis son dernier calcul s'additionne (dx, dy de la carte, moins le
 //     décalage appliqué) ; au-delà de kDriftMax pixels de travail, la tuile se recalcule ;
 //   - par tuile, le déplacement de la caméra reçu s'additionne (l'affine de la carte au coin de la tuile qui
-//     bouge le plus, moins le décalage appliqué) ; au-delà de kCameraMax, le quart de pixel sous lequel la
-//     carte dit la caméra tenue, la tuile se recalcule. Signé : le bruit de l'ajustement s'y annule, une
-//     caméra lente s'y additionne ; un zoom ou une rotation ne gardent que les tuiles près de leur centre ;
+//     bouge le plus, moins le décalage appliqué) ; au-delà de kCameraMax, la tuile se recalcule. Signé : le
+//     bruit de l'ajustement s'y annule, une caméra lente s'y additionne ; un zoom ou une rotation ne gardent
+//     que les tuiles près de leur centre ;
 //   - par tuile, le glissement de luminosité reçu s'additionne (SceneTile::shift, où le grain s'annule) ;
 //     au-delà de kBiasMax codes, la tuile se recalcule ;
 //   - par tuile, au plus kMaxAge images reprises de suite (comme la limite du lot A) ;
@@ -38,12 +42,15 @@
 //     de réduction).
 //
 // Décalage : caméra ajustée, partie linéaire à l'identité (kernels::scene::kHeldLinear), résidu faible, et
-// translation à moins de kShiftSnap d'un multiple du pas du moteur. La sortie d'avant se décale alors de ce
-// multiple ; une tuile ne se reprend que si elle est du décor sûr qui suit ce décalage. La part fractionnaire
-// s'accumule dans la dérive de chaque tuile. Sans décalage, l'image n'est entière que si la caméra bouge
-// d'au moins kCameraMax aux quatre coins et au centre (toute tuile serait à refaire). Les deux bords de l'axe
-// décalé se recalculent : la bande qui entre n'a pas de source, et près du bord d'où le contenu sort, la
-// sortie voit maintenant le bourrage de zéros de l'image.
+// translation à moins de kShiftSnap d'un multiple du pas du moteur (un panoramique sous-pixel ne se reprend
+// pas : décaler la sortie d'une fraction de pixel s'écarte du calcul complet de 1 à 3,7 niveaux au pire bloc
+// pour δ de 0,05 à 0,5, quel que soit le filtre, parce que le réseau ne commute pas avec le
+// rééchantillonnage). La sortie
+// d'avant se décale alors de ce multiple ; une tuile ne se reprend que si elle est du décor sûr qui suit ce
+// décalage. La part fractionnaire s'accumule dans la dérive de chaque tuile. Sans décalage, l'image n'est
+// entière que si la caméra bouge d'au moins kCameraMax aux quatre coins et au centre (toute tuile serait à
+// refaire). Les deux bords de l'axe décalé se recalculent : la bande qui entre n'a pas de source, et près du
+// bord d'où le contenu sort, la sortie voit maintenant le bourrage de zéros de l'image.
 #pragma once
 
 #include <array>
@@ -100,17 +107,17 @@ struct TilePlan {
 
 class SpanTiles {
  public:
-  static constexpr int kMaxAge = 24;        // images reprises de suite au plus, par tuile
-  static constexpr int kFullEvery = 120;    // une image entière au moins toutes les 120 (5 s à 24 i/s)
-  static constexpr float kDriftMax = 0.5F;  // pixels de travail reçus depuis le dernier calcul d'une tuile
-  // Déplacement de la caméra reçu depuis le dernier calcul d'une tuile, pixels de travail : la caméra tenue
-  // de la carte.
-  static constexpr auto kCameraMax = static_cast<float>(kernels::scene::kHeldCamera);
+  static constexpr int kMaxAge = 24;      // images reprises de suite au plus, par tuile
+  static constexpr int kFullEvery = 120;  // une image entière au moins toutes les 120 (5 s à 24 i/s)
+  // Glissement que la sortie reprise d'une tuile tolère, pixels de travail (en tête du fichier).
+  static constexpr float kStillDrift = 0.025F;
+  static constexpr float kDriftMax = kStillDrift;   // mouvement de la carte reçu depuis le dernier calcul
+  static constexpr float kCameraMax = kStillDrift;  // déplacement de la caméra reçu depuis le dernier calcul
   static constexpr float kBiasMax = 1.0F;  // glissement de luminosité reçu, codes 8 bits (porte : 1 niveau)
-  static constexpr double kShiftSnap = 0.125;    // écart au multiple du pas, pixels de travail
-  static constexpr double kShiftResidual = 0.5;  // résidu de la caméra au plus, pixels de travail
-  static constexpr float kFollow = 0.5F;         // écart d'une tuile décor au décalage, pixels de travail
-  static constexpr float kSure = 0.5F;           // confiance d'une tuile décor reprise sous un décalage
+  static constexpr double kShiftSnap = kStillDrift;  // écart au multiple du pas, pixels de travail
+  static constexpr double kShiftResidual = 0.5;      // résidu de la caméra au plus, pixels de travail
+  static constexpr float kFollow = 0.5F;             // écart d'une tuile décor au décalage, pixels de travail
+  static constexpr float kSure = 0.5F;               // confiance d'une tuile décor reprise sous un décalage
   static constexpr double kMaxShare = 0.7;  // au-delà, la région dilatée coûte autant que l'image entière
   static constexpr std::uint32_t kBlockChange = 200;  // écart d'un bloc qui change, centièmes de niveau
 
@@ -152,14 +159,21 @@ class SpanTiles {
   enum class Cause : std::uint8_t { None, Border, Map, Net, Age, Drift, Camera, Bias };
   static constexpr std::size_t kCauseCount = 8;
   // La caméra de la carte sur les images planifiées où elle est ajustée : tenue (sous kCameraMax aux quatre
-  // coins et au centre), en partie (zoom, rotation, caméra entre les deux), ou qui bouge partout ; de
-  // celles-ci, le déplacement au centre, par cases de kCameraBin pixel.
-  static constexpr double kCameraBin = 0.05;
+  // coins et au centre), en partie (zoom, rotation, caméra entre les deux), ou qui bouge partout ; leur
+  // déplacement au centre, par cases de kCameraBin pixel ; et la cohérence de sa direction, |Σ d| / Σ |d|
+  // sur chaque suite d'images ajustées (une coupe la ferme) : près de 1 sous un panoramique, près de 0 pour
+  // du bruit de l'ajustement (une caméra fantôme), qu'une médiane des normes ne distingue pas.
+  static constexpr double kCameraBin = 1.0 / 64.0;
   struct CameraSeen {
     std::uint64_t held = 0;
     std::uint64_t partly = 0;
     std::uint64_t moving = 0;
-    std::array<std::uint32_t, 81> center{};  // 80 cases jusqu'à 4 pixels, puis au-delà
+    std::array<std::uint32_t, 257> center{};  // 256 cases jusqu'à 4 pixels, puis au-delà
+    double run_x = 0.0;  // la suite en cours : somme des déplacements, et de leurs normes
+    double run_y = 0.0;
+    double run_norm = 0.0;
+    double coherent = 0.0;  // les suites fermées : Σ |Σ d|, et Σ Σ |d|
+    double travelled = 0.0;
   };
   // Ce qu'une image par tuiles a ajouté au bilan, rendu si le moteur la refuse.
   struct Counted {
