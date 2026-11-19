@@ -1,9 +1,10 @@
 // L'affinage de la caméra de la carte (kernels/spec/scene_camera.h) : sur une image lisse déplacée par une
 // affine connue, la caméra ajustée sur des vecteurs biaisés (comme NVOF sur un panoramique lent) est
 // ramenée à la vraie par Lucas-Kanade, et l'écart mesuré sur l'image le dit ; un dessin qui bouge hors de la
-// caméra sans que NVOF le voie (une bouche, des yeux) est dessin par l'écart après la caméra ; une lueur qui
-// s'allume sur place est un effet, une tache nette qui apparaît ne l'est pas ; un aplat ne s'affine pas ;
-// trop peu de décor, pas de demande. Un seul cas, comme le veut la consigne des tests groupés.
+// caméra sans que NVOF le voie (une bouche, des yeux) est dessin par l'écart après la caméra, même là où NVOF
+// apparie mal ; une lueur qui s'allume sur place est un effet, une tache nette qui apparaît ne l'est pas ; un
+// aplat ne s'affine pas ; trop peu de décor, pas de demande. Un seul cas, comme le veut la consigne des tests
+// groupés.
 #include "kernels/ref/scene_camera.h"
 
 #include <algorithm>
@@ -108,14 +109,16 @@ Pair moved(const std::array<double, 6>& p, bool flat = false, Patch patch = Patc
   return out;
 }
 
-// Les tuiles de la paire, avec les vecteurs du modèle seen (celui que NVOF verrait) au centre de chaque bloc.
-SceneFlowTiles tiles_of(const Pair& pair, const std::array<double, 6>& seen) {
+// Les tuiles de la paire, avec les vecteurs du modèle seen (celui que NVOF verrait) au centre de chaque bloc,
+// de coût 10, patch_cost dans le carré du dessin.
+SceneFlowTiles tiles_of(const Pair& pair, const std::array<double, 6>& seen, std::uint8_t patch_cost = 10) {
   const int cw = scene_flow_cells(kWidth);
   const int ch = scene_flow_cells(kHeight);
   Plane<ref::FlowVector> flow(cw, ch);
   Plane<std::uint8_t> cost(cw, ch, 10);
   for (int j = 0; j < ch; ++j) {
     for (int i = 0; i < cw; ++i) {
+      if (in_patch(i * kSceneFlowGrid, j * kSceneFlowGrid)) cost.at(i, j) = patch_cost;
       const auto d = shift(seen, i * kSceneFlowGrid + 2.0, j * kSceneFlowGrid + 2.0);
       flow.at(i, j) = {.x = static_cast<std::int16_t>(std::lround(d[0] * 32.0)),
                        .y = static_cast<std::int16_t>(std::lround(d[1] * 32.0))};
@@ -138,9 +141,9 @@ struct Mapped {
     return camera.checks[static_cast<std::size_t>(row * tiles.cols + col)];
   }
 };
-Mapped mapped(const Pair& pair) {
+Mapped mapped(const Pair& pair, std::uint8_t patch_cost = 10) {
   Mapped out;
-  out.tiles = tiles_of(pair, kTruth);
+  out.tiles = tiles_of(pair, kTruth, patch_cost);
   out.camera = ref::scene_camera_of(out.tiles);
   REQUIRE(out.camera.fit);
   const auto request = ref::scene_camera_request(out.camera);
@@ -271,6 +274,33 @@ TEST_CASE("affinage de la caméra de la carte", "[scene_flow][scene_camera]") {
     // Ailleurs, rien ne change : décor.
     CHECK(glow.motion.at(1, 1).kind == SceneClass::Background);
     CHECK(spot.motion.at(1, 1).kind == SceneClass::Background);
+  }
+
+  SECTION("un trait qui bouge où NVOF apparie mal : dessin, jamais effet ; une lueur reste un effet") {
+    const int col0 = kPatchX0 / kSceneTileFlowPixels;
+    const int row0 = kPatchY0 / kSceneTileFlowPixels;
+    // Coût de 16 : NVOF y apparie (sous kSceneCostHigh), mais cher (au-dessus de kEffectCost) ; de 250 : sans
+    // correspondance.
+    const Pair pair = moved(kTruth, false, Patch::Moved);
+    const Mapped costly = mapped(pair, 16);
+    const Mapped lost = mapped(pair, 250);
+    const Mapped glow = mapped(moved(kTruth, false, Patch::Glow), 16);
+    int sharp = 0;  // le trait se voit sur une tuile au moins : ses voisines en héritent (near_sharp)
+    for (int row = row0; row < row0 + 2; ++row) {
+      for (int col = col0; col < col0 + 2; ++col) {
+        CAPTURE(col, row);
+        const SceneTileCheck& t = costly.check(col, row);
+        CHECK(t.moving >= scene::kEffectShare);
+        sharp += t.sharp > scene::kLightSharp * t.moving ? 1 : 0;
+        const SceneTileSums& sums =
+            costly.tiles.tiles[static_cast<std::size_t>(row * costly.tiles.cols + col)];
+        CHECK(sums.cost >= scene::kEffectCost * sums.cells);
+        CHECK(costly.motion.at(col, row).kind == SceneClass::Drawing);
+        CHECK(lost.motion.at(col, row).kind == SceneClass::Drawing);
+        CHECK(glow.motion.at(col, row).kind == SceneClass::Effect);
+      }
+    }
+    CHECK(sharp >= 1);
   }
 
   SECTION("un aplat ne s'affine pas : rien à suivre") {

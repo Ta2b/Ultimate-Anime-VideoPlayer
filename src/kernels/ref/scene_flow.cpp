@@ -128,8 +128,7 @@ std::vector<std::uint8_t> near_sharp(const std::vector<Seen>& seen, int cols, in
 }
 
 // Une lumière qui change sur place (spec/scene_flow.h, kLightAgree) : rend l'accord des pixels qui changent,
-// 0 si la tuile n'en est pas une (ou sans mesure après la caméra). Ses voisines se voient à part
-// (near_sharp).
+// 0 sinon (ou sans mesure après la caméra) ; ses voisines se voient à part (near_sharp).
 float light_of(const TileView& v, const SceneCamera& camera, const Seen& seen, const Frame& f) {
   if (!v.valid || !seen.measured || seen.share < scene::kMovingShare || seen.agree < scene::kLightAgree ||
       seen.kept < scene::kLightKept)
@@ -139,27 +138,31 @@ float light_of(const TileView& v, const SceneCamera& camera, const Seen& seen, c
 
 // La classe que l'image donne à une tuile qui correspond (la séparation par l'image, spec/scene_flow.h). Sa
 // confiance : sa part de vecteurs sûrs, et pour le décor, d'autant moins que des pixels bougent ; pour le
-// dessin, d'autant plus (la moitié au seuil, pleine au double).
-Classified by_image(const TileView& v, const Seen& seen) {
+// dessin, d'autant plus (la moitié au seuil, pleine au double). Près d'un bord net (edge) : jamais d'effet.
+Classified by_image(const TileView& v, const Seen& seen, bool edge) {
   if (!seen.moving) {
     return {.kind = SceneClass::Background,
             .confidence = v.matched * (1.0F - 0.5F * std::min(1.0F, seen.share / scene::kMovingShare))};
   }
-  if (seen.share >= scene::kEffectShare && v.cost >= scene::kEffectCost)
+  if (!edge && seen.share >= scene::kEffectShare && v.cost >= scene::kEffectCost)
     return {.kind = SceneClass::Effect,
             .confidence = std::min(1.0F, seen.share / (2.0F * scene::kEffectShare))};
   return {.kind = SceneClass::Drawing,
           .confidence = v.matched * std::clamp(seen.share / (2.0F * scene::kMovingShare), 0.5F, 1.0F)};
 }
 
-Classified classify(const TileView& v, const SceneCamera& camera, const Seen& seen, const Frame& f) {
+// Une tuile sans correspondance qui change : un effet, un dessin si un bord net y bouge (edge).
+Classified unmatched(const TileView& v, bool edge) {
+  if (v.change < scene::kEffectDiff) return {};
+  return {.kind = edge ? SceneClass::Drawing : SceneClass::Effect,
+          .confidence = std::clamp(1.0F - v.matched, 0.0F, 1.0F)};
+}
+
+Classified classify(const TileView& v, const SceneCamera& camera, const Seen& seen, const Frame& f,
+                    bool edge) {
   if (!v.valid) return {};
-  if (v.matched < scene::kMatchedFloor) {
-    if (v.change >= scene::kEffectDiff)
-      return {.kind = SceneClass::Effect, .confidence = std::clamp(1.0F - v.matched, 0.0F, 1.0F)};
-    return {};
-  }
-  if (seen.measured) return by_image(v, seen);
+  if (v.matched < scene::kMatchedFloor) return unmatched(v, edge);
+  if (seen.measured) return by_image(v, seen, edge);
   const float weight = v.matched * scene_fit::texture_weight(v);
   const Classified unsure{.kind = SceneClass::Uncertain, .confidence = weight};
   // Un aplat : NVOF n'y voit rien (son vecteur vient des bords voisins), mais rien n'y bouge de visible tant
@@ -178,21 +181,28 @@ Classified classify(const TileView& v, const SceneCamera& camera, const Seen& se
   return flat || !camera.fit ? unsure : Classified{.kind = SceneClass::Drawing, .confidence = weight};
 }
 
-// La classe brute d'une tuile : une lumière (light_of) est un effet ; sinon classify. no_light : un fondu (le
-// glissement y est partout), ou la tuile ou une voisine change d'un bord net (near_sharp).
+// La classe brute d'une tuile : une lumière (light_of) est un effet, sauf sur un fondu (le glissement y est
+// partout) ou près d'un bord net (edge, near_sharp) ; sinon classify.
 Classified raw_class(const TileView& v, const SceneCamera& camera, const Seen& seen, const Frame& f,
-                     bool no_light) {
-  const float light = no_light ? 0.0F : light_of(v, camera, seen, f);
+                     bool fade, bool edge) {
+  const float light = fade || edge ? 0.0F : light_of(v, camera, seen, f);
   if (light > 0.0F) return {.kind = SceneClass::Effect, .confidence = light};
-  return classify(v, camera, seen, f);
+  return classify(v, camera, seen, f, edge);
 }
 
 // Le lissage d'une tuile (SceneHistory). La première paire part de sa classe brute. Une paire sans preuve
 // (idle : la tuile ne change pas sous une caméra tenue, où un dessin tenu se confond avec le décor, comme les
-// images doublées d'une animation en deux ou en trois) garde la classe tenue et ne compte pas. Sinon, une
-// classe nouvelle ne tient que vue deux paires de suite ; d'ici là, la classe tenue n'est plus sûre.
+// images doublées d'une animation en deux ou en trois) garde la classe tenue et ne compte pas ; un effet, au
+// plus scene::kEffectIdlePairs paires. Sinon, une classe nouvelle ne tient que vue deux paires de suite ;
+// d'ici là, la classe tenue n'est plus sûre.
 Classified smoothed(SceneHistory& history, std::size_t i, const Classified& raw, bool fresh, bool idle) {
-  if (!fresh && idle) return {.kind = history.held[i], .confidence = raw.confidence};
+  if (!fresh && idle) {
+    if (history.idle[i] < UINT8_MAX) ++history.idle[i];
+    if (history.held[i] == SceneClass::Effect && history.idle[i] > scene::kEffectIdlePairs)
+      history.held[i] = raw.kind;
+    return {.kind = history.held[i], .confidence = raw.confidence};
+  }
+  history.idle[i] = 0;
   Classified kept = raw;
   if (!fresh && raw.kind != history.held[i] && raw.kind != history.seen[i])
     kept = {.kind = history.held[i], .confidence = scene::kContradicted * raw.confidence};
@@ -450,6 +460,7 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, 
     history.rows = tiles.rows;
     history.held.assign(count, SceneClass::Uncertain);
     history.seen.assign(count, SceneClass::Uncertain);
+    history.idle.assign(count, 0U);
   }
   out.tiles.resize(count);
   std::size_t moving = 0;  // tuiles qui bougent hors de la caméra (moves_off_camera)
@@ -461,7 +472,7 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, 
   for (std::size_t i = 0; i < count; ++i) {
     const TileView& v = views[i];
     const Seen& seen = seens[i];
-    const Classified raw = raw_class(v, used, seen, f, out.fade || sharp[i] != 0U);
+    const Classified raw = raw_class(v, used, seen, f, out.fade, sharp[i] != 0U);
     const bool changed = tile_changed(v) || seen.moving;  // une lumière bouge (kMovingShare)
     if (moves_off_camera(raw.kind, changed, used.fit)) ++moving;
     const Classified kept = smoothed(history, i, raw, !same_grid, !changed && !camera_moves);

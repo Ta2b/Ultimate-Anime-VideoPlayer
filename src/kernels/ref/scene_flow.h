@@ -33,17 +33,20 @@ Result<SceneFlowTiles> scene_tile_sums(const Plane<std::uint8_t>& a, const Plane
 // de classe que vue deux paires de suite (sinon tous les clients clignotent) ; entre les deux, la classe
 // tenue reste, sous la confiance sûre des clients (scene::kContradicted). Une paire où la tuile ne change pas
 // sous une caméra tenue ne compte pas : un dessin tenu (image doublée d'une animation en deux ou en trois)
-// garde sa classe. Vide, ou d'une autre grille : la paire part de ses propres classes.
+// garde sa classe, un effet au plus scene::kEffectIdlePairs paires (idle les compte). Vide, ou d'une autre
+// grille : la paire part de ses propres classes.
 struct SceneHistory {
   int cols = 0;
   int rows = 0;
   std::vector<SceneClass> held;
   std::vector<SceneClass> seen;
+  std::vector<std::uint8_t> idle;  // paires de suite où la tuile n'a pas compté
   void clear() {
     cols = 0;
     rows = 0;
     held.clear();
     seen.clear();
+    idle.clear();
   }
 };
 

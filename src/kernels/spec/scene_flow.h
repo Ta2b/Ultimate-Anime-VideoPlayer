@@ -172,6 +172,10 @@ inline constexpr float kDrawingHeldShare = 0.01F;  // part de tuiles qui bougent
 inline constexpr double kHeldCamera = 0.25;        // translation nulle, pixels de travail
 inline constexpr double kHeldLinear = 0.002;       // partie linéaire égale à l'identité
 inline constexpr float kContradicted = 0.4F;  // facteur de confiance d'une classe contredite (jamais sûre)
+// Un effet ne se voit qu'en changeant : sur une tuile qui ne change pas (ref::SceneHistory), il tient au plus
+// kEffectIdlePairs paires, les images doublées d'une animation en trois, puis la tuile reprend sa classe
+// brute. Tenu sans limite, le gros plan du 2:28 gardait ses faux effets 70 paires sur une image fixe.
+inline constexpr int kEffectIdlePairs = 2;
 // La séparation par l'image. Deuxième passage de la porte 2.3 (19 novembre) : caméra ajustée sur 95 à 100 %
 // des paires, mais dessin rare (0 à 2 % des tuiles sur 5 extraits sur 8) et effet quasi absent ; sur les
 // dialogues, les personnages finissaient en décor. Une bouche ou des yeux qui changent ne déplacent pas le
@@ -179,9 +183,13 @@ inline constexpr float kContradicted = 0.4F;  // facteur de confiance d'une clas
 // au-dessus de kSceneCostHigh sur 0,5 % des vecteurs). D'où l'image : quand la caméra est affinée, chaque
 // tuile a son écart après la caméra (spec/scene_camera.h). Elle bouge hors de la caméra si au moins
 // kMovingShare de ses pixels bougent, ou si Lucas-Kanade la recale d'au moins kShiftMoving pixels à 720p dans
-// un sens résolu : effet si ses vecteurs coûtent (coût moyen d'au moins kEffectCost) et qu'au moins
-// kEffectShare de ses pixels bougent, dessin sinon. Elle ne bouge pas : décor, aplat compris (rien n'y bouge
-// de visible), quoi que disent ses vecteurs. Réglés sans mesure, à revoir sur la ligne « image » du banc 2.3.
+// un sens résolu : effet si ses vecteurs coûtent (coût moyen d'au moins kEffectCost), qu'au moins
+// kEffectShare de ses pixels bougent et qu'aucun bord net n'y bouge (ni elle ni ses voisines, kLightSharp),
+// dessin sinon. Elle ne bouge pas : décor, aplat compris (rien n'y bouge de visible), quoi que disent ses
+// vecteurs. Sans le bord net, un gros plan animé en trois (Re:Zero 18, 2:28, cheveux et visage d'Emilia)
+// virait à l'effet sur 230 à 430 tuiles par dessin : un trait qui bouge coûte autant à NVOF qu'une lueur.
+// Une tuile sans correspondance qui change (kEffectDiff) est un effet au même titre, un dessin si un bord
+// net y bouge (il découvre ou recouvre le décor).
 inline constexpr float kMovingShare = 0.1F;
 inline constexpr float kShiftMoving = 1.0F;  // pixels à 720p
 inline constexpr float kEffectShare = 0.3F;
@@ -195,14 +203,12 @@ inline constexpr float kEffectCost =
 //   ce qu'il éclaircit de l'autre ;
 // - d'un dégradé qui glisse (d'un seul sens aussi sur une tuile) : aucun recalage ne l'explique, il reste au
 //   moins kLightKept de l'écart après celui de Lucas-Kanade (SceneTileCheck::settled) ;
-// - d'une bouche qui s'ouvre, d'un œil qui cligne, d'un objet qui apparaît (sur place et d'un seul sens) :
-// elle
-//   change en douceur ; ni sa tuile ni ses huit voisines n'ont plus de kLightSharp de leurs pixels qui
-//   bougent sur un bord net (scene::kSharpEdge, spec/scene_camera.h ; le cœur d'une grande bouche change sans
-//   bord, les tuiles de son bord le trahissent) ;
-// - d'un objet clair qui entre dans une tuile sombre : il entraîne ses vecteurs, ceux d'une lumière suivent
-// la
-//   caméra.
+// - d'une bouche qui s'ouvre, d'un œil qui cligne, d'un objet qui apparaît (sur place et d'un seul
+//   sens) : elle change en douceur ; ni sa tuile ni ses huit voisines n'ont plus de kLightSharp de leurs
+//   pixels qui bougent sur un bord net (scene::kSharpEdge, spec/scene_camera.h ; le cœur d'une grande
+//   bouche change sans bord, les tuiles de son bord le trahissent) ;
+// - d'un objet clair qui entre dans une tuile sombre : il entraîne ses vecteurs, ceux d'une lumière
+//   suivent la caméra.
 // Une tuile est donc une lumière (effet, de confiance l'accord) si au moins kMovingShare de ses pixels
 // bougent après la caméra et que tout cela tient. Il y faut l'écart après la caméra (une demande d'affinage :
 // presque toutes les paires où la caméra est ajustée) ; sans lui, rien ne sépare une lueur d'une bouche.

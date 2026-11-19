@@ -1,6 +1,6 @@
 // La carte de la scène (kernels/spec/scene_flow.h) sur des flux synthétiques : caméra seule, dessin qui
 // bouge sur un décor qui défile, aplat, coupe, fondu, image tenue, et le lissage des classes d'une paire à
-// l'autre (animation en deux comprise).
+// l'autre (animation en deux comprise, effet tenu sur une image fixe).
 // Un seul cas, comme le veut la consigne des tests groupés.
 #include "kernels/ref/scene_flow.h"
 
@@ -215,6 +215,21 @@ TEST_CASE("carte de la scène sur des flux synthétiques", "[scene_flow]") {
     CHECK(again.at(5, 3).kind == SceneClass::Drawing);
     CHECK_FALSE(again.at(5, 3).changed);
     CHECK(again.drawing_held);  // brut : rien ne bouge à cette paire
+  }
+
+  SECTION("un effet ne tient que deux images fixes, puis la tuile reprend sa classe brute") {
+    Pair lit;
+    lit.unmatch(16, 8, 32, 20);
+    const Pair held;
+    CHECK(lit.map(history).at(5, 3).kind == SceneClass::Effect);
+    for (int k = 0; k < scene::kEffectIdlePairs; ++k) {
+      CAPTURE(k);
+      const SceneMotion still = held.map(history);
+      CHECK_FALSE(still.at(5, 3).changed);
+      CHECK(still.at(5, 3).kind == SceneClass::Effect);  // une animation en trois : l'effet tient
+    }
+    CHECK(held.map(history).at(5, 3).kind == SceneClass::Background);
+    CHECK(lit.map(history).at(5, 3).kind == SceneClass::Effect);  // vu deux paires de suite
   }
 
   SECTION("aplat : décor s'il suit la caméra et ne change pas, sinon incertain") {
