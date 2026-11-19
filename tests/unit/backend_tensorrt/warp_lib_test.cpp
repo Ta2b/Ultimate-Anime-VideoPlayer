@@ -193,7 +193,8 @@ TEST_CASE("Bibliothèque de warp : flot grossier avec confiance, puis caméra en
   // Flot en grille 4 rangé par point (pas 4, dx et dy aux canaux 1 et 2), en pixels de la grille : gain 4.
   constexpr int kS = 4;
   std::vector<double> flow = field(static_cast<std::size_t>((kH / kS) * (kW / kS) * 4), 3.0, rng);
-  for (double& f : flow) f -= 1.5;
+  for (double& f : flow)  // centré, puis arrondi en FP16 comme le GPU le lira
+    f = kernels::ref::half_to_float(kernels::ref::float_to_half(static_cast<float>(f - 1.5)));
   const std::vector<double> confidence = field(static_cast<std::size_t>((kH / kS) * (kW / kS)), 1.2, rng);
   Buffer flow_gpu(flow);
   Buffer confidence_gpu(confidence);

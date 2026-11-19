@@ -38,7 +38,7 @@ La nouvelle colle : chaque bloc de 256 fils relève une fois la région des Y pr
 fois), puis agrandit les flots depuis la mémoire partagée. Réduite, un fil par point d'échantillonnage (quatre fois
 plus de fils), réduction par échange de registres, et chacun des quatre fils écrit un quart du pixel de sortie
 (16 octets). Spécialisée par forme : pleine résolution (tuile 32 × 8) ou réduite (tuile de 16 × 4 sorties), et
-nombre de flots (1 à 4). 64 à 78 registres, sans débordement. La fin lit le flot de `x_last` en 8 octets et chaque
+nombre de flots (1 à 4). 108 à 124 registres sous `__maxnreg__(128)`, sans débordement avec nvcc 13.5 de sm_75 à sm_120 (`__launch_bounds__` laissait nvcc 13 déborder de quelques octets). La fin lit le flot de `x_last` en 8 octets et chaque
 canal de Z (ses quatre parités) en 8 octets.
 
 Les calculs et leurs arrondis FP16 sont ceux de l'ancienne colle, au même endroit ; seul l'ordre de la somme des
