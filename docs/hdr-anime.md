@@ -265,7 +265,13 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   nettement sa zone (0,20 PQ au-dessus du niveau de la zone, plein à 0,35) monte donc comme un effet sûr :
   porte plus basse, montée une fois et demie plus haute. Une lumière à peine plus claire que sa zone, le
   fond et la peau ne changent pas (`grade_gpu_effects_test.cpp`). L'export fait de même ;
-  `--no-effect-highlights` l'éteint à l'écran.
+  `--no-effect-highlights` l'éteint à l'écran. Mesure du PC le 19 novembre 2026 (captures PQ à 16:23 et
+  16:45, avec et sans `--no-effect-highlights`) : aucun écart, car la corne et le halo étaient déjà au
+  plafond de sortie sans la lueur (626 à 630 nits de contenu, écrêtés à plat), et les cheveux et le visage
+  qu'ils éclairent à 450-520 nits. Le halo, grand, domine à peine sa zone (0,02 PQ en médiane) et la lueur
+  ne s'y déclenche pas. Le remède est le « Blanc des surfaces » à 60 % par défaut (plus haut) : les éclats
+  gardent le plafond, les surfaces descendent. La vue `--effect-mask-view` ne peint que le masque de la
+  carte, pas la lueur.
 - **Sans carte** (AMD, Intel, NVOF refusé, `--no-effect-highlights`), le masque revient lentement au neutre
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format
