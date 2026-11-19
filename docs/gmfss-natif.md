@@ -50,8 +50,10 @@ plans à la fin : deux copies, qu'un splat écrivant par pixel supprimera.
   au plus 4,9e-4), sommes en f32.
 - Essai au chargement (`gmfss_fused_trial.cpp`) : des entrées de test (deux dessins décalés de 4 pixels, des
   caractéristiques en ondes) passent par la fusion TensorRT entière, puis par l'IFNet et le GridNet natif en
-  sommes f16, puis f32 ; trois passes, la dernière comparée. Gardé à **45 dB** ou plus, sinon TensorRT garde la
-  fusion ; le journal dit lequel, avec les dB. La séance finale vise 50 dB.
+  sommes f16, mixtes et f32, comme le RIFE natif ([`rife-natif.md`](rife-natif.md)) ; trois passes, la dernière
+  comparée. Les variantes à **45 dB** ou plus sont chronométrées contre TensorRT (`gmfss_trial.h` : onze tours
+  intercalés, la médiane) ; la plus rapide n'est gardée que si elle bat TensorRT d'au moins 2 %, sinon TensorRT
+  garde la fusion. Le journal dit les dB et les temps. La séance finale vise 50 dB.
 - Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`), jamais lancé sur une carte.
 
 ## Séance finale (sur le PC, binaire `linux-release`)
