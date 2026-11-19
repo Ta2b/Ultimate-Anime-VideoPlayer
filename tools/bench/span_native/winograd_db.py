@@ -10,7 +10,7 @@ par ONNX Runtime (tools/bench/qualite/fp32.py) : PSNR (crête 1), plus grand éc
 doit rendre la référence à plus de 100 dB : c'est le contrôle de l'interprète.
 
     python3 -I tools/bench/span_native/winograd_db.py MODELE.onnx [--entree DOSSIER_EXPORT | --taille H W]
-        [--modes f32,direct,wino23,wino43] [--sommes f16|f32] [--coin H W]
+        [--image IMAGE] [--modes f32,direct,wino23,wino43] [--sommes f16|f32] [--coin H W [--decalage Y X]]
 
 --entree : un dossier de banc.sh EXPORT (entree.f16, dims.txt) ; --coin découpe un coin H × W de l'entrée (le
 calcul numpy est lent : 270 × 480 prend quelques minutes par mode). Sans --entree, une mire.
@@ -163,7 +163,36 @@ class Interp:
         return i[0] * i[1]
 
     def op_Div(self, n, i, at):
+        if i[0].dtype.kind in "iu" and i[1].dtype.kind in "iu":
+            return np.trunc(i[0] / i[1]).astype(i[0].dtype)
         return i[0] / i[1]
+
+    def op_Mod(self, n, i, at):
+        return np.fmod(i[0], i[1]) if at.get("fmod", 0) else np.mod(i[0], i[1])
+
+    def op_Slice(self, n, i, at):
+        x = i[0]
+        axes = i[3] if len(i) > 3 and i[3] is not None else range(len(i[1]))
+        steps = i[4] if len(i) > 4 and i[4] is not None else [1] * len(i[1])
+        sl = [slice(None)] * x.ndim
+        for s0, e0, ax, st in zip(i[1], i[2], axes, steps):
+            sl[int(ax)] = slice(int(s0), int(max(min(e0, 2**62), -(2**62))), int(st))
+        return x[tuple(sl)]
+
+    def op_Pad(self, n, i, at):
+        pads = [int(v) for v in i[1]]
+        mode = at.get("mode", b"constant")
+        mode = mode.decode() if isinstance(mode, bytes) else mode
+        r = len(pads) // 2
+        width = [(pads[k], pads[k + r]) for k in range(r)]
+        if mode == "constant":
+            value = float(i[2]) if len(i) > 2 and i[2] is not None and i[2].size else 0.0
+            return np.pad(i[0], width, constant_values=value)
+        return np.pad(i[0], width, mode={"reflect": "reflect", "edge": "edge"}[mode])
+
+    def op_ConstantOfShape(self, n, i, at):
+        v = at.get("value", np.zeros(1, np.float32))
+        return np.full([int(d) for d in i[0]], v.reshape(-1)[0], v.dtype)
 
     def op_Clip(self, n, i, at):
         lo = i[1] if len(i) > 1 and i[1] is not None else at.get("min", -np.inf)
@@ -225,7 +254,10 @@ def psnr(a, ref):
 
 
 def entree(args):
-    if args.entree:
+    if args.image:
+        from PIL import Image
+        x = np.asarray(Image.open(args.image).convert("RGB"), np.float32).transpose(2, 0, 1)[None] / 255
+    elif args.entree:
         d = Path(args.entree)
         hh, ww = (int(v) for v in (d / "dims.txt").read_text().split())
         x = np.fromfile(d / "entree.f16", dtype="<f2").astype(np.float32).reshape(1, 3, hh, ww)
@@ -235,7 +267,8 @@ def entree(args):
         x = np.stack([0.5 + 0.45 * np.sin(0.05 * xx * (c + 1) + 0.03 * yy) * np.where((xx // 24 + yy // 24) % 2, 1, 0.5)
                       for c in range(3)])[None]
     if args.coin:
-        x = x[:, :, :args.coin[0], :args.coin[1]]
+        y0, x0 = args.decalage
+        x = x[:, :, y0:y0 + args.coin[0], x0:x0 + args.coin[1]]
     return np.ascontiguousarray(x, dtype=np.float32)
 
 
@@ -244,7 +277,9 @@ def main(argv):
     p.add_argument("modele")
     p.add_argument("--entree")
     p.add_argument("--taille", type=int, nargs=2, default=[96, 160])
+    p.add_argument("--image", help="une image (PNG, JPEG) au lieu d'un dossier d'EXPORT")
     p.add_argument("--coin", type=int, nargs=2)
+    p.add_argument("--decalage", type=int, nargs=2, default=[0, 0], help="origine du coin (ligne, colonne)")
     p.add_argument("--modes", default="f32,direct,wino23,wino43")
     p.add_argument("--sommes", choices=["f16", "f32"], default="f16")
     args = p.parse_args(argv)
