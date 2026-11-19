@@ -93,7 +93,7 @@ Différences :
 ## La colle et la tête (novembre 2026, après le premier profil)
 
 Le profil par noyau (nsys `--cuda-graph-trace=node`) et les plafonds couche par couche
-(`/mnt/project-files/chantier-natif/tfix-plafonds.md` : fenêtre à 1,08 ms en demi-taille, 0,22 ms tout fondu)
+([`reports/tfix-natif/plafonds.md`](reports/tfix-natif/plafonds.md) : fenêtre à 1,08 ms en demi-taille, 0,22 ms tout fondu)
 ont montré que les convolutions natives étaient déjà près de leur plafond, deux fois plus rapides que TensorRT,
 et que l'écart venait d'ailleurs :
 
