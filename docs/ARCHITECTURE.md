@@ -298,7 +298,7 @@ TensorRT pour l'instant. Un moteur n'est retiré que s'il n'a plus d'intérêt n
 ## Moteur de réseaux Vulkan : copies
 
 `vk_backend` abaisse chaque graphe ONNX en dispatchs GLSL (`--profile-dispatches` donne le temps
-GPU par shader). Les copies se réduisent en trois temps :
+GPU par shader, puis par nœud). Les copies se réduisent en trois temps :
 - tenseurs sans copie (`net_alias.h`) : entrées d'un Concat écrites en place par leur producteur,
   même quand une Conv ou un noyau élément par élément les lit aussi (au pas de pixel du Concat : le
   Concat final du SPAN n'a plus de copie, comme sous TensorRT), sorties de Split et de Slice lues dans

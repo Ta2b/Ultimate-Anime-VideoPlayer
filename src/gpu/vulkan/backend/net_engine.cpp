@@ -54,7 +54,10 @@ NetEngine::~NetEngine() {
         options_.log(std::format("profil des dispatchs : lecture refusée ({})", ok.error().detail));
     }
   }
-  if (options_.log && !profile_runs_.empty()) options_.log(format_profile(profile_report()));
+  if (options_.log && !profile_runs_.empty()) {
+    options_.log(format_profile(profile_report()));
+    options_.log(format_node_profile(node_profile()));
+  }
 }
 
 std::uint64_t NetEngine::input_bytes(std::size_t k) const {

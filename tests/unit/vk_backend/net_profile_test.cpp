@@ -100,8 +100,23 @@ TEST_CASE("Profil des dispatchs : un graphe mesuré par shader", "[vk_backend][n
   CHECK(report.span_ms >= report.total_ms * 0.99);
   CHECK(share == Catch::Approx(1.0).margin(0.05));
   CHECK(std::ranges::is_sorted(report.shaders, std::greater<>{}, &net::ShaderTime::ms));
-  engine.reset();  // journalise le tableau
+  // Par nœud : chaque dispatch compté une fois, dans l'ordre du programme, la même somme que par shader.
+  const std::vector<net::NodeTime> nodes = engine->node_profile();
+  std::uint32_t by_node = 0;
+  double node_share = 0.0;
+  for (const net::NodeTime& row : nodes) {
+    by_node += row.dispatches;
+    node_share += row.share;
+    CHECK_FALSE(row.op.empty());
+    CHECK_FALSE(row.shaders.empty());
+  }
+  CHECK(by_node == dispatches);
+  CHECK(node_share == Catch::Approx(1.0).margin(0.05));
+  REQUIRE_FALSE(nodes.empty());
+  CHECK(nodes.front().node == engine->program().dispatches.front().node);
+  engine.reset();  // journalise les tableaux
   CHECK(logged.find("profil des dispatchs") != std::string::npos);
+  CHECK(logged.find("profil par nœud") != std::string::npos);
 }
 
 TEST_CASE("Profil des dispatchs : désactivé, rien n'est mesuré", "[vk_backend][net_profile]") {

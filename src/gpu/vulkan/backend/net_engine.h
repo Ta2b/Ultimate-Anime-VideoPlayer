@@ -88,6 +88,9 @@ class NetEngine {
   void clear_profile() { profile_runs_.clear(); }
   // Les médianes des exécutions lues jusqu'ici.
   ProfileReport profile_report() const { return summarize_profile(program_.dispatches, profile_runs_); }
+  std::vector<NodeTime> node_profile() const {
+    return summarize_nodes(graph_, program_.dispatches, profile_runs_);
+  }
 
  private:
   struct Cached {

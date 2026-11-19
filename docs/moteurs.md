@@ -101,6 +101,17 @@ la carte avec le rendu de libplacebo (file de calcul à côté) : ses noyaux s'a
 42 ms d'une image. Reste l'écart de RIFE et DistilDRBA fusionnés (6,5 et 3,8 ms par passe contre 1,45 et
 0,47 ms), surtout dans les convolutions de leurs réseaux.
 
+Pour le réduire, deux outils et un premier correctif (novembre 2026) :
+
+- `--profile-dispatches` journalise aussi un tableau **par nœud** de l'IR, dans l'ordre du programme (opérateur,
+  forme, shaders, ms, part) : il dit quelle couche de l'encodeur ou d'un bloc prend le temps ;
+- `kirari_onnx_info morceau.onnx --vulkan --matrices --nodes` décrit le graphe qu'un appareil à matrices
+  coopératives abaisse, sans GPU ;
+- la ConvTranspose de l'encodeur de RIFE (16 → 4 canaux, noyau 4 × 4 de pas 2) n'est plus coupée en quatre
+  phases de 4 canaux, chacune dans une tuile de 16 presque vide, plus un Concat et un DepthToSpace : le coût
+  des phases se compte en tuiles de 16 canaux (`pass_transpose.cpp`), et une Conv 3 × 3 unique, DepthToSpace
+  fondu, la remplace. L'encodeur passe de 9 nœuds à 4 ; les blocs (52 canaux par phase) gardent leurs phases.
+
 ## Vulkan : les matrices coopératives d'Intel (tuiles 8×16×16)
 
 Le noyau à matrices coopératives float16 (`net_conv_coopmat.glsl`) tuile en 16 × 16 × 16, ce qu'annoncent les

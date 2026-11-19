@@ -2,10 +2,11 @@
 //
 // Option de débogage (--profile-dispatches du lecteur par BackendInit::profile_dispatches,
 // BackendOptions::profile_dispatches) : le moteur écrit une estampille avant et après chaque dispatch de
-// l'enregistrement, lit les résultats une fois l'exécution finie, et journalise un tableau par shader à sa
-// destruction. Désactivée, aucun pool n'est créé et l'enregistrement est celui de toujours. Chaque dispatch
-// est encadré de deux commandes d'horodatage, donc de deux barrières : la somme des intervalles mesure les
-// noyaux, pas les trous entre eux (voir ProfileReport::span_ms pour la durée d'ensemble).
+// l'enregistrement, lit les résultats une fois l'exécution finie, et journalise à sa destruction un tableau
+// par shader, puis un par nœud de l'IR dans l'ordre du programme (où le temps va, couche par couche).
+// Désactivée, aucun pool n'est créé et l'enregistrement est celui de toujours. Chaque dispatch est encadré de
+// deux commandes d'horodatage, donc de deux barrières : la somme des intervalles mesure les noyaux, pas les
+// trous entre eux (voir ProfileReport::span_ms pour la durée d'ensemble).
 #pragma once
 
 #include <cstddef>
@@ -45,6 +46,26 @@ ProfileReport summarize_profile(std::span<const Dispatch> dispatches, std::span<
 
 // Le tableau pour le journal : une ligne par shader, puis le total.
 std::string format_profile(const ProfileReport& report);
+
+// Le temps d'un nœud de l'IR : ses dispatchs (shaders distincts, dans l'ordre), sa sortie et la médiane, sur
+// les exécutions, de la somme de ses dispatchs.
+struct NodeTime {
+  std::uint32_t node = 0;
+  std::string op;       // « Conv », « Concat »…
+  std::string output;   // nom de la première sortie
+  ir::Dims dims;        // sa forme
+  std::string shaders;  // « net_conv_coopmat_f16 », plusieurs séparés par « + »
+  std::uint32_t dispatches = 0;
+  double ms = 0.0;
+  double share = 0.0;  // part du total des dispatchs, entre 0 et 1
+};
+
+// Par nœud, dans l'ordre du programme. Vide sans exécution.
+std::vector<NodeTime> summarize_nodes(const ir::Graph& graph, std::span<const Dispatch> dispatches,
+                                      std::span<const ProfileRun> runs);
+
+// Le tableau pour le journal : une ligne par nœud (rang, opérateur, forme, shaders, ms, part).
+std::string format_node_profile(std::span<const NodeTime> nodes);
 
 // Ce que le programme lance, avant toute exécution : par shader, le nombre de dispatchs et les
 // octets lus et écrits estimés par les formes (un tenseur lié compte en entier ; sortie du nœud :
