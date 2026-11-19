@@ -13,12 +13,18 @@ entraînement.
   exactement comme sans la carte.
 - Interrupteur : `--scene-map` (essai). Éteint par défaut tant que la porte 2.2 n'est pas passée.
 - Journal de fin : `carte de la scène : N paires lancées, N relues, N posées sur leur paire ; N sautées (NVOF
-  occupé), N relues trop tard, N perdues ; caméra ajustée sur N, N coupes probables, N fondus`. « Posées » est
-  ce qui compte : avec RIFE, presque toutes les paires lancées. « Trop tard » : la carte n'était pas relue
-  quand l'étage a décidé de sa paire. Le profil GPU de fin montre deux étapes, « carte de la scène : lumas »
-  (sur la voie, le seul coût ajouté au temps par image) et « carte de la scène : NVOF et tuiles » (sur la
-  file de NVOF : surtout le bloc NVOFA, qui tourne à côté des SM ; c'est la latence de la carte, pas un coût
-  qui s'ajoute). La porte se juge au temps par image avec et sans `--scene-map`.
+  occupé), N relues trop tard, N perdues ; caméra ajustée sur N, N coupes probables, N fondus ; hôte : N µs
+  pour lancer une paire, N µs pour tirer une carte, en moyenne`. « Posées » est ce qui compte : avec RIFE,
+  presque toutes les paires lancées. « Trop tard » : la carte n'était pas relue quand l'étage a décidé de sa
+  paire. Les temps de l'hôte sont ceux du thread du lecteur.
+- Profil GPU de fin, trois étapes. « carte de la scène : lumas », sur la voie, et « carte de la scène :
+  tuiles », la réduction sur les SM : avec les temps de l'hôte, c'est tout ce que la carte ajoute à chaque
+  image. « carte de la scène : flux (NVOFA) » : le bloc matériel du flux optique, qui tourne à côté des SM ;
+  c'est la latence de la carte (le temps avant qu'elle soit relue), pas un coût par image. Les deux mesures
+  de la file de NVOF comptent aussi l'attente de SM libres : sa priorité est la plus haute, mais un bloc de
+  SPAN ou de RIFE déjà lancé finit d'abord. Passage 10 (19 novembre, une seule étape « NVOF et tuiles » à
+  l'époque) : 0,62 ms en médiane, 1,15 au 95e centile, lumas 0,01 ms. La porte se juge au temps par image
+  avec et sans `--scene-map` (banc A/B, `tools/bench/banc.sh`).
 
 ## Le chemin d'une paire
 

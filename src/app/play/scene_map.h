@@ -88,6 +88,10 @@ class SceneMap {
   std::uint64_t cuts_ = 0;
   std::uint64_t fades_ = 0;
   std::uint64_t camera_fits_ = 0;
+  // Temps de l'hôte (le thread du lecteur), µs : lancer une paire (scene_flow_start) et tirer une carte
+  // (scene_motion_of). Avec les lumas et les tuiles sur les SM, c'est ce que la carte ajoute à chaque image.
+  double start_us_ = 0.0;
+  double map_us_ = 0.0;
 };
 
 }  // namespace kirari::app::play
