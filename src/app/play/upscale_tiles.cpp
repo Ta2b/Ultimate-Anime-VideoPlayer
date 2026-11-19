@@ -315,8 +315,9 @@ std::string SpanTiles::summary() const {
         ", {:.1f} % des tuiles recalculées ({:.1f} % avec le halo), {} décalées sur un panoramique",
         share(tiles_done_, tiles_seen_), share(tiles_wide_, tiles_seen_), shifted_);
   if (net_frames_ > 0)
-    line += std::format(", le filet des blocs a vu {} tuiles que la carte ne disait pas changées, sur {} images",
-                        net_tiles_, net_frames_);
+    line +=
+        std::format(", le filet des blocs a vu {} tuiles que la carte ne disait pas changées, sur {} images",
+                    net_tiles_, net_frames_);
   const auto stale = [this](TileStale why) { return stale_[static_cast<std::size_t>(why)]; };
   const std::array<std::pair<std::uint64_t, const char*>, 11> reasons{{
       {no_map_, "sans carte"},

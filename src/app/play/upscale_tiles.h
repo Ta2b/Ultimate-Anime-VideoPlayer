@@ -185,8 +185,8 @@ class SpanTiles {
   std::uint64_t camera_ = 0;                            // caméra qui bouge sans décalage entier
   std::uint64_t too_wide_ = 0;                          // la région dépassait kMaxShare
   std::uint64_t refused_ = 0;                           // le moteur a refusé le plan
-  std::uint64_t net_frames_ = 0;                        // images planifiées où le filet a vu ce que la carte taisait
-  std::uint64_t net_tiles_ = 0;                         // et ses tuiles, avant dilatation
+  std::uint64_t net_frames_ = 0;  // images planifiées où le filet a vu ce que la carte taisait
+  std::uint64_t net_tiles_ = 0;   // et ses tuiles, avant dilatation
   std::uint64_t checks_ = 0;
   std::uint32_t check_worst_ = 0;  // 1/256 de niveau
   double check_mean_ = 0.0;        // niveaux, le plus grand

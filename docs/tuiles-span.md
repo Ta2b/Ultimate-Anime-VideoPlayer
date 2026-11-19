@@ -82,7 +82,7 @@ fondu, caméra sans décalage entier.
   décalage est déclarée aux voies comme une lecture (`SpanFp8Engine::tile_read`). Un appel refusé avant le
   moteur annule la demande (`next_span_tiles` avec un cœur vide) : elle ne vaut pas pour l'appel suivant.
 
-ABI du backend : 50 (`Engine::span_tile_grid`, `Engine::next_span_tiles`), 56 (`PairScores::blocks`, le
+ABI du backend : 50 (`Engine::span_tile_grid`, `Engine::next_span_tiles`), 57 (`PairScores::blocks`, le
 filet). Nouvelle empreinte TensorRT, nouveau paquet Linux.
 
 ## Porte (plan : 48 dB ou plus d'un calcul complet, et l'outil 0.1 sans hausse)

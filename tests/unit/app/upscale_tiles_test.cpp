@@ -230,7 +230,7 @@ TEST_CASE("Tuiles qui bougent : l'écart des blocs voit ce que la carte laisse p
   kernels::SceneMotion scene = still_scene();
   SpanTiles t;
   t.set_grid(kGrid);
-  const TileFacts fresh{.fresh = true,
+  const TileFacts fresh{.stale = TileStale::None,
                         .can_shift = true,
                         .scene = &scene,
                         .blocks = PairBlocks{.deviation = deviation, .cols = 64, .side_px = 16.0F}};
@@ -272,7 +272,7 @@ TEST_CASE("Tuiles qui bougent : l'écart des blocs voit ce que la carte laisse p
   r.tiles.set_grid(kGrid);
   ReuseFacts facts{.same_epoch = true,
                    .has_output = true,
-                   .tiles_ok = true,
+                   .tiles_stale = TileStale::None,
                    .can_shift = true,
                    .scene = &scene,
                    .blocks = fresh.blocks};
