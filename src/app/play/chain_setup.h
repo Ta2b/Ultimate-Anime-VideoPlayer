@@ -146,6 +146,7 @@ struct ChainEngines {
   bool rife_encode_all = false;         // --rife-encode-all (UpscaleSetup::rife_encode_all)
   bool rife_at_slot = false;            // --rife-at-slot (UpscaleSetup::rife_at_slot)
   bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
+  bool temporal_fix_whole = false;      // --no-tfix-cache (chain_temporal.cpp)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   // La stabilisation temporelle avant SPAN (chain_temporal.cpp), à la taille de travail : la fenêtre et
   // l'encodeur de ses images (prepare/onnx_cache.h) ; nuls : éteinte ou refusée.

@@ -68,10 +68,10 @@ std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, C
               c.work.height, half ? " à demi-taille" : "");
     return true;
   }
-  auto graph = temporal_fix_graph(*found, half, paths::derived_models(p.paths));
+  // --no-tfix-cache : le graphe en un morceau, sans cache de l'encodeur (le retour en arrière).
+  const bool whole = c.temporal_fix_whole;
+  auto graph = temporal_fix_graph(*found, half, paths::derived_models(p.paths), whole);
   if (!graph) return refused(graph.error());
-  auto encoder_graph = temporal_fix_encoder(*found, half, paths::derived_models(p.paths));
-  if (!encoder_graph) return refused(encoder_graph.error());
   // La forme d'une image ; les traits gardés suivent le même profil, avec leurs canaux (ModelSource::twins).
   // Le profil laisse la largeur libre de quelques pixels (loose_width), le niveau d'optimisation 3 sans
   // pavage (tuned = false) : 28 ms au lieu de 42 en 1080p, construit en 79 s au lieu de 8 min (RTX 4070 Ti,
@@ -91,11 +91,21 @@ std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, C
   auto engine = build(*graph, kTemporalFixFirstBuildS);
   if (!engine) return refused(engine.error());
   if (!*engine) return std::nullopt;  // fenêtre fermée pendant la construction
-  if ((**engine)->input_names().size() != 2 * static_cast<std::size_t>(kTemporalFixFrames)) {
-    return refused(Refusal{
-        RefusalCode::ModelMismatch,
-        std::format("{} entrées au lieu de {}", (**engine)->input_names().size(), 2 * kTemporalFixFrames)});
+  const int inputs = whole ? kTemporalFixFrames : 2 * kTemporalFixFrames;
+  if ((**engine)->input_names().size() != static_cast<std::size_t>(inputs)) {
+    return refused(
+        Refusal{RefusalCode::ModelMismatch,
+                std::format("{} entrées au lieu de {}", (**engine)->input_names().size(), inputs)});
   }
+  if (whole) {
+    c.temporal_fix = std::move(**engine);
+    log->info("stabilisation temporelle {} : {} en {}x{}{}, en un seul moteur (--no-tfix-cache)", name(fix),
+              core::to_utf8(found->filename()), c.work.width, c.work.height,
+              half ? ", réseau à demi-taille" : "");
+    return true;
+  }
+  auto encoder_graph = temporal_fix_encoder(*found, half, paths::derived_models(p.paths));
+  if (!encoder_graph) return refused(encoder_graph.error());
   auto encoder = build(*encoder_graph, kTemporalFixEncoderFirstBuildS);
   if (!encoder) return refused(encoder.error());
   if (!*encoder) return std::nullopt;
