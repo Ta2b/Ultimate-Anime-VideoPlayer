@@ -284,6 +284,9 @@ SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Le
 
 ## SPAN FP16 natif dans le lecteur (essai, `--span-native`)
 
+Depuis le lot C du chantier AnimeJaNai, le FP16 natif ne passe plus par CUTLASS : voir
+[`span-native16.md`](span-native16.md). Ce qui suit décrit le chemin CUTLASS d'avant et sa mesure.
+
 Les noyaux FP16 de la #792 (`SpanFp8Weights::fp16`, blocs sans quantification, b5f48 en 48 canaux natifs) ne
 servaient qu'à `kirari_span_fp8_run --fp16`. `--span-native` les met dans la lecture, au cran Équilibre :
 

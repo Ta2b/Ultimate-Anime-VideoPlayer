@@ -1,0 +1,246 @@
+// Le SPAN FP16 natif (lot C du chantier AnimeJaNai, docs/span-native16.md) derrière SpanFp8Body : les
+// noyaux de span_native16_kernels.cuh, sans CUTLASS. 3 · blocs + 3 lancements par image, comme le corps
+// CUTLASS, mais :
+//   - le dégroupage est fondu au chargement de conv_1 (un lancement de moins) ;
+//   - la concaténation n'existe plus : conv_cat lit les quatre tenseurs là où leurs convolutions les ont
+//     écrits (trois écritures de 2·C octets par pixel en moins) ;
+//   - sommes en f16 par défaut (SpanFp8Weights::acc32 pour le f32), le débit plein des tensor cores.
+// La zone de travail tient six tenseurs de C canaux FP16 (768 o par pixel à 64 canaux, comme avant).
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "gpu/cuda/backend/span_fp8_body.h"
+#include "gpu/cuda/backend/span_native16_kernels.cuh"
+
+namespace kirari::gpu::cuda {
+namespace {
+
+namespace sn = span_native;
+
+// Mémoire d'appareil possédée.
+class Buffer {
+ public:
+  Buffer() = default;
+  Buffer(const Buffer&) = delete;
+  Buffer& operator=(const Buffer&) = delete;
+  ~Buffer() {
+    if (ptr_ != nullptr) static_cast<void>(cudaFree(ptr_));
+  }
+  cudaError_t upload(const void* host, std::size_t bytes) {
+    if (ptr_ != nullptr) static_cast<void>(cudaFree(std::exchange(ptr_, nullptr)));
+    const cudaError_t error = cudaMalloc(&ptr_, bytes);
+    if (error != cudaSuccess) {
+      ptr_ = nullptr;
+      return error;
+    }
+    return cudaMemcpy(ptr_, host, bytes, cudaMemcpyHostToDevice);
+  }
+  template <class T>
+  const T* as() const {
+    return static_cast<const T*>(ptr_);
+  }
+
+ private:
+  void* ptr_ = nullptr;
+};
+
+// Poids FP16 [sortie][position][entrée] (le paquet) rangés dans l'ordre des fragments B de mma m16n8k16 :
+// pas k (position, tranche de 16 entrées), paire de tuiles n8, lane (g = lane / 4, t = lane % 4) ; 4 mots
+// par lane : b0 et b1 de la tuile 2·np, puis de la tuile 2·np + 1. b0 = entrées 2t et 2t + 1 de la sortie
+// 8·tuile + g, b1 = entrées 2t + 8 et 2t + 9 ; la plus petite entrée dans la moitié basse du mot.
+std::vector<std::uint32_t> pack(const std::uint16_t* w, int cout, int taps, int cin) {
+  const int kcs = cin / 16, nps = cout / 16, kss = taps * kcs;
+  std::vector<std::uint32_t> out(static_cast<std::size_t>(kss) * nps * 32 * 4);
+  const auto at = [&](int n, int tap, int ci) -> std::uint32_t {
+    return w[(static_cast<std::size_t>(n) * taps + tap) * cin + ci];
+  };
+  for (int ks = 0; ks < kss; ++ks) {
+    const int tap = ks / kcs, kc = ks % kcs;
+    for (int np = 0; np < nps; ++np)
+      for (int lane = 0; lane < 32; ++lane) {
+        const int g = lane >> 2, t = lane & 3, k0 = kc * 16 + 2 * t;
+        const std::size_t base = ((static_cast<std::size_t>(ks) * nps + np) * 32 + lane) * 4;
+        for (int j = 0; j < 2; ++j) {
+          const int n = (2 * np + j) * 8 + g;
+          out[base + 2 * j] = at(n, tap, k0) | (at(n, tap, k0 + 1) << 16U);
+          out[base + 2 * j + 1] = at(n, tap, k0 + 8) | (at(n, tap, k0 + 9) << 16U);
+        }
+      }
+  }
+  return out;
+}
+
+constexpr std::int64_t kAlign = 256;
+constexpr std::int64_t align_up(std::int64_t bytes) {
+  return (bytes + kAlign - 1) / kAlign * kAlign;
+}
+
+template <int C, bool Acc16>
+class NativeBody final : public SpanFp8Body {
+  using M = sn::Mode;
+  using S = sn::Src;
+  // Mémoire partagée sous 48 Ko : aucun cudaFuncSetAttribute, deux blocs par SM.
+  static constexpr int kSmemFirst = sn::smem_bytes(sn::kImageCh, C, 9);
+  static constexpr int kSmemConv = sn::smem_bytes(C, C, 9);
+  static constexpr int kSmemCat = sn::smem_bytes(C, C, 1);
+  static constexpr int kSmemPixel = sn::smem_bytes(C, sn::kPixel, 9);
+  static_assert(kSmemConv <= 48 * 1024 && kSmemCat <= 48 * 1024 && kSmemPixel <= 48 * 1024);
+  static constexpr int kBlocks = SpanFp8Weights::kBlocks;
+  enum Tensor : int { kS0, kK1, kX0, kX1, kT1, kT2, kTensors };
+
+ public:
+  NativeBody(int height, int width) : fh_(height / 2), fw_(width / 2) {
+    grid_ = dim3(static_cast<unsigned>((fw_ + sn::kTW - 1) / sn::kTW),
+                 static_cast<unsigned>((fh_ + sn::kTH - 1) / sn::kTH));
+  }
+
+  bool upload(const SpanFp8Weights& weights, SpanFp8Status& status, std::string& error) override {
+    used_ = weights.blocks;
+    const auto sent = [&](cudaError_t result) {
+      if (result == cudaSuccess) return true;
+      static_cast<void>(cudaGetLastError());
+      status = result == cudaErrorMemoryAllocation ? SpanFp8Status::OutOfMemory : SpanFp8Status::Failed;
+      error = std::string("poids du SPAN FP16 natif : ") + cudaGetErrorString(result);
+      return false;
+    };
+    const auto put = [&](Conv& to, const SpanFp8ConvView& view, int cout, int taps, int cin) {
+      const std::vector<std::uint32_t> packed = pack(view.weights, cout, taps, cin);
+      return sent(to.w.upload(packed.data(), packed.size() * sizeof(std::uint32_t))) &&
+             sent(to.b.upload(view.bias, static_cast<std::size_t>(cout) * sizeof(float)));
+    };
+    if (!put(first_, weights.first, C, 9, sn::kImageCh) || !put(cat_, weights.concat, C, 1, 4 * C) ||
+        !put(pixel_, weights.pixel, sn::kPixel, 9, C))
+      return false;
+    for (int b = 0; b < used_; ++b) {
+      for (int i = 0; i < 3; ++i)
+        if (!put(conv_[b][i], weights.conv[b][i], C, 9, C)) return false;
+      if (!put(attention_[b], weights.attention[b], C, 1, C)) return false;
+    }
+    status = SpanFp8Status::Ok;
+    return true;
+  }
+
+  std::int64_t workspace_bytes() const override {
+    return kTensors * align_up(std::int64_t{fh_} * fw_ * C * 2);
+  }
+
+  void bind(void* workspace) override {
+    auto* bytes = static_cast<std::uint8_t*>(workspace);
+    for (int i = 0; i < kTensors; ++i)
+      t_[i] = reinterpret_cast<__half*>(bytes + i * align_up(std::int64_t{fh_} * fw_ * C * 2));
+    bound_ = workspace != nullptr;
+  }
+
+  bool launch_body(cudaStream_t stream, const void* input, std::string& error) override {
+    if (!bound_) {
+      error = "zone de travail absente";
+      return false;
+    }
+    static_cast<void>(cudaGetLastError());
+    sn::Params p = params(first_, t_[kS0]);
+    p.in[0] = static_cast<const __half*>(input);
+    run<sn::kImageCh, C, 9, 1, S::kImage, M::kPlain, false>(stream, p, kSmemFirst);
+    const int last = used_ - 1;
+    __half* const x[2] = {t_[kX0], t_[kX1]};
+    for (int b = 0; b < used_; ++b) {
+      const __half* in = b == 0 ? t_[kS0] : b == 1 ? t_[kK1] : x[b % 2];
+      __half* out = b == 0 ? t_[kK1] : b == last ? x[used_ % 2] : x[(b + 1) % 2];
+      sn::Params c1 = params(conv_[b][0], t_[kT1]);
+      c1.in[0] = in;
+      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c1, kSmemConv);
+      sn::Params c2 = params(conv_[b][1], t_[kT2]);
+      c2.in[0] = t_[kT1];
+      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c2, kSmemConv);
+      sn::Params c3 = params(conv_[b][2], out);
+      c3.in[0] = t_[kT2];
+      c3.skip = in;
+      c3.w1 = attention_[b].w.template as<uint4>();
+      c3.b1 = attention_[b].b.template as<float>();
+      run<C, C, 9, 1, S::kNhwc, M::kGate, false>(stream, c3, kSmemConv);
+    }
+    // Les tranches de la concaténation du SPAN : sortie de conv_1, du dernier bloc, du premier bloc, premier
+    // Relu du dernier bloc (l'ordre des poids de conv_cat).
+    sn::Params cat = params(cat_, t_[kT2]);
+    cat.in[0] = t_[kS0];
+    cat.in[1] = x[used_ % 2];
+    cat.in[2] = t_[kK1];
+    cat.in[3] = t_[kT1];
+    run<C, C, 1, 4, S::kNhwc, M::kPlain, false>(stream, cat, kSmemCat);
+    return !failed(error);
+  }
+
+  bool launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring, std::string& error) override {
+    if (!bound_) {
+      error = "zone de travail absente";
+      return false;
+    }
+    if (output == nullptr && ring.surface.object == 0) {
+      error = "ni sortie ni surface";
+      return false;
+    }
+    sn::Params p = params(pixel_, static_cast<__half*>(output));
+    p.in[0] = t_[kT2];
+    p.surface = ring.surface;
+    p.surf_w = ring.width;
+    p.surf_h = ring.height;
+    run<C, sn::kPixel, 9, 1, S::kNhwc, M::kPixel, false>(stream, p, kSmemPixel);
+    return !failed(error);
+  }
+
+  SpanFp8AccChange poll_accumulator() override { return SpanFp8AccChange::None; }
+  int overflow_frames() const override { return 0; }
+
+ private:
+  struct Conv {
+    Buffer w, b;
+  };
+
+  sn::Params params(const Conv& conv, __half* out) const {
+    sn::Params p;
+    p.out = out;
+    p.w = conv.w.template as<uint4>();
+    p.bias = conv.b.template as<float>();
+    p.fh = fh_;
+    p.fw = fw_;
+    return p;
+  }
+
+  template <int Cin, int Cout, int Taps, int Sources, sn::Src From, sn::Mode Mode, bool Relu>
+  void run(cudaStream_t stream, const sn::Params& p, int smem) const {
+    sn::conv_kernel<Cin, Cout, Taps, Sources, From, Mode, Relu, Acc16>
+        <<<grid_, sn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
+  }
+
+  static bool failed(std::string& error) {
+    const cudaError_t result = cudaGetLastError();
+    if (result == cudaSuccess) return false;
+    error = std::string("lancement des noyaux FP16 natifs : ") + cudaGetErrorString(result);
+    return true;
+  }
+
+  int fh_, fw_;
+  dim3 grid_;
+  int used_ = kBlocks;
+  bool bound_ = false;
+  Conv first_, cat_, pixel_;
+  std::array<std::array<Conv, 3>, kBlocks> conv_;
+  std::array<Conv, kBlocks> attention_;
+  std::array<__half*, kTensors> t_{};
+};
+
+}  // namespace
+
+std::unique_ptr<SpanFp8Body> make_span_fp8_body16(int height, int width, int channels, bool acc32) {
+  if (channels == 48) {
+    if (acc32) return std::make_unique<NativeBody<48, false>>(height, width);
+    return std::make_unique<NativeBody<48, true>>(height, width);
+  }
+  if (acc32) return std::make_unique<NativeBody<64, false>>(height, width);
+  return std::make_unique<NativeBody<64, true>>(height, width);
+}
+
+}  // namespace kirari::gpu::cuda
