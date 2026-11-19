@@ -492,26 +492,20 @@ __global__ void reduce_kernel(Params p, int width) {
   *reinterpret_cast<uint4*>(p.out + at * p.out_ld + n) = v;
 }
 
-// Une convolution. KH = 3 : 3 × 3 de bord 1, pas S. KH = 2 (S = 1) : la phase blockIdx.z / tiles d'une
+// Les sommes d'un bloc de conv_kernel (ou d'un noyau qui finit autrement) dans acc : la tuile de sortie
+// d'origine (ty0, tx0), le paquet z de poids (phase · tiles + tuile), la part kz de K ; s, la mémoire
+// partagée de la tuile d'entrée. KH = 3 : 3 × 3 de bord 1, pas S. KH = 2 (S = 1) : la phase z / tiles d'une
 // transposée 4 × 4 de pas 2, dont les deux prises par axe sont aux décalages py - 1 et py.
-template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, Acc A, bool Ahead = false>
-__global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
-  static_assert(Kc % 16 == 0 && CT % 16 == 0, "canaux par 16");
-  static_assert(I != In::kImage || Kc == 16, "l'image tient en une tranche de 16 canaux");
-  static_assert(O != Out::kPlanes4 || CT == 16, "la transposée de l'encodeur : 16 canaux");
+template <int Kc, int CT, int KH, int S, int Rows, In I, Acc A, bool Ahead>
+__device__ __forceinline__ void conv_sums(Frag<A> (&acc)[Rows * 2][CT / 8], __half* s, const Params& p,
+                                          int ty0, int tx0, int z, int kz, int warp, int lane) {
   using G = Geometry<KH, S, Rows>;
-  extern __shared__ __align__(16) unsigned char smem_raw[];
-  auto* s = reinterpret_cast<__half*>(smem_raw);
-  const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
-  const int ty0 = static_cast<int>(blockIdx.y) * G::kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
-  const int z = static_cast<int>(blockIdx.z) / p.ksplit, kz = static_cast<int>(blockIdx.z) - z * p.ksplit;
-  const int phase = z / p.tiles, tile = z - phase * p.tiles;
+  const int phase = z / p.tiles;
   const int origin_y = KH == 2 ? (phase >> 1) - 1 : -1;
   const int origin_x = KH == 2 ? (phase & 1) - 1 : -1;
   const int kcs = p.cin / 16;
   const uint4* w = p.w + static_cast<long>(z) * KH * KH * kcs * (CT / 16) * 32;
 
-  Frag<A> acc[Rows * 2][CT / 8];
 #pragma unroll
   for (int f = 0; f < Rows * 2; ++f)
 #pragma unroll
@@ -539,6 +533,24 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
     const int t1 = u1 - q * kTaps < kTaps ? u1 - q * kTaps : kTaps;
     accumulate<Kc, CT, KH, S, Rows, A, Ahead>(acc, s, w, q, kcs, t0, t1, warp, lane);
   }
+}
+
+// Une convolution (conv_sums), finie dans la mémoire partagée (stage) puis écrite (store), ou ses sommes
+// partielles (spill) quand K est découpé.
+template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, Acc A, bool Ahead = false>
+__global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
+  static_assert(Kc % 16 == 0 && CT % 16 == 0, "canaux par 16");
+  static_assert(I != In::kImage || Kc == 16, "l'image tient en une tranche de 16 canaux");
+  static_assert(O != Out::kPlanes4 || CT == 16, "la transposée de l'encodeur : 16 canaux");
+  extern __shared__ __align__(16) unsigned char smem_raw[];
+  auto* s = reinterpret_cast<__half*>(smem_raw);
+  const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
+  const int ty0 = static_cast<int>(blockIdx.y) * kWarps * Rows, tx0 = static_cast<int>(blockIdx.x) * kTW;
+  const int z = static_cast<int>(blockIdx.z) / p.ksplit, kz = static_cast<int>(blockIdx.z) - z * p.ksplit;
+  const int phase = z / p.tiles, tile = z - phase * p.tiles;
+
+  Frag<A> acc[Rows * 2][CT / 8];
+  conv_sums<Kc, CT, KH, S, Rows, I, A, Ahead>(acc, s, p, ty0, tx0, z, kz, warp, lane);
   if (p.ksplit > 1) {
     spill<CT, Rows, A>(acc, p, ty0, tx0, z, kz, warp, lane);
     return;

@@ -30,7 +30,9 @@ Le mélange reste juste pour GMFSS : GMFlow sous TensorRT, le reste natif
 `src/gpu/cuda/backend/rife_native_kernels.cuh` (une famille de convolutions), `rife_native_pick.cu` (les formes
 instanciées et les formes à essayer), `rife_native_weights.cu` (poids repliés, rangés en fragments B),
 `rife_native_layer.h` et `rife_native_bench.cu` (une couche, le banc du réglage), `rife_native_glue.cu` (la
-première couche du dernier bloc, entrée calculée à la volée par la colle de `rife_glue.cuh`), `rife_native_net.cu`
+première couche du dernier bloc, entrée calculée à la volée par la colle de `rife_glue.cuh`),
+`rife_native_finish.cu` (la dernière couche du dernier bloc, fin comprise, par les fonctions de `rife_finish.cuh`),
+`rife_native_net.cu`
 (le réseau), `rife_native_trial.cpp` (l'essai morceau par morceau), `rife_native_mix.cpp` (le choix du mélange),
 `rife_fused_native.cpp` (la chaîne pour l'essai), `prepare/rife_native.h` (les poids lus dans les morceaux ONNX).
 
@@ -74,6 +76,18 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   dépassée. La colle de TensorRT appelle les mêmes fonctions : sa SASS ne change que par l'arithmétique d'adresses,
   avec les mêmes opérations flottantes. Il existe 12 noyaux (sommes × 3 ou 4 blocs d'avant × tuile 16 ou 32), à 160
   registres au plus (sm_120), sans débordement ;
+- **fin dans la dernière couche** (`rife_native_finish.cu`). La transposée du dernier bloc écrivait Y (52 canaux,
+  56 rangés, à la moitié de la pleine résolution : 58 Mo en 1920 × 1088), dont fused_finish ne relisait que les
+  20 premiers (le flot du bloc et le masque, en quatre parités). Quand la forme réglée de cette couche n'a pas de
+  K découpé et qu'un noyau existe pour sa tranche et ses lignes par warp (sommes f16 ou f32), elle ne calcule plus
+  que sa première tuile de 32 canaux et fait la fin dans son épilogue, depuis la mémoire partagée où elle a rangé
+  sa sortie : mêmes sommes, même arrondi FP16 qu'à l'écriture de Y, puis les fonctions de fused_finish
+  (`rife_finish.cuh`). Sortie identique au bit à « transposée puis fused_finish » (émulateur sur processeur, sept
+  cas : sommes, tranches, lignes, image et mouvement, fenêtre et Catmull-Rom, grille qui ne tombe pas juste) ; Y
+  n'est pas écrit. L'essai par morceau écrit toujours Y. L'essai chronomètre la passe retenue avec la fin fondue
+  et avec la fin à part, et garde la plus rapide (ligne « fin du dernier bloc » du journal) ; la passe comparée
+  part de sorties à NaN, pour qu'un pixel oublié ne garde pas la valeur de TensorRT. Neuf noyaux, sans
+  débordement de sm_75 à sm_120 ;
 - **pas 2 sans conflit de banques** : la tuile d'entrée est rangée colonnes paires puis impaires, les 16 lignes
   d'un `ldmatrix` restent des pixels voisins (au pas 2 brut, deux lignes tombaient sur les mêmes banques) ;
 - **fragments B préchargés** : les poids du pas k suivant se lisent pendant les mma du pas courant ;

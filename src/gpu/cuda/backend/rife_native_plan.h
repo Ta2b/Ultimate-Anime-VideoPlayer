@@ -90,6 +90,15 @@ GlueLaunch pick_glue(RifeNativeSums sums, int flows, int ct);
 // Ses octets de mémoire partagée, pour des sources d'échelles scales (la dernière porte 52 canaux).
 int glue_smem(std::span<const int> scales);
 
+// La dernière couche du dernier bloc (la transposée), fin comprise (rife_native_finish.cu) : sa première
+// tuile de 32 canaux seulement (le flot du bloc et le masque y sont), puis fused_finish dans son épilogue au
+// lieu d'écrire Y. Le noyau de la tranche kc et de rows lignes par warp, pour des sommes de tête (f16 ou f32,
+// une ligne par warp en f16 seulement) ; nul sinon. Sa grille : (⌈ow / 32⌉, ⌈oh / (4 · rows)⌉, 4) ; ses
+// paramètres ceux de la couche, poids rangés pour une tuile de 32, sans découpe de K.
+using FinishLaunch = void (*)(dim3 grid, int smem, cudaStream_t stream, const Params& p,
+                              const FusedFinishParams& f);
+FinishLaunch pick_finish(RifeNativeSums sums, int kc, int rows);
+
 // Les poids d'une couche en FP16, [phase][cout][prise][cin] (cout et cin complétés à 16 par des zéros), le
 // bêta d'un résiduel replié (w · s, b · s), et ses biais [phase][cout]. Une seule phase hors transposée de
 // bloc ; la transposée de l'encodeur en 16 sorties phase · 4 + c sur 9 prises.

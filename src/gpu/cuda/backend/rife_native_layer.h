@@ -90,6 +90,13 @@ struct Layer {
   dim3 glue_grid;
   int glue_smem = 0;
   std::vector<int> glue_scales;
+  // La dernière couche du dernier bloc, fin comprise (pick_finish) : son noyau (nul sinon), ses poids rangés
+  // pour une tuile de 32, ses tuiles de 32 par phase, sa grille et sa mémoire partagée.
+  FinishLaunch finish = nullptr;
+  Buffer finish_w;
+  int finish_tiles = 0;
+  dim3 finish_grid;
+  int finish_smem = 0;
 
   std::int64_t in_bytes() const { return std::int64_t{ih} * iw * (in_ld == 0 ? 3 : in_ld) * 2; }
   std::int64_t out_bytes() const {
@@ -158,6 +165,13 @@ inline bool glue_fits(const Layer& layer, const FusedGlueParams& g) {
     if (g.source[j].scale != layer.glue_scales[static_cast<std::size_t>(j)] || g.source[j].pitch != 56)
       return false;
   return true;
+}
+
+// La fin f convient-elle au noyau de layer : la pleine résolution de sa sortie (Z, le double de Y, lui-même
+// le double de la grille de chaque phase) ?
+inline bool finish_fits(const Layer& layer, const FusedFinishParams& f) {
+  return layer.finish != nullptr && f.height == 4 * layer.oh && f.width == 4 * layer.ow &&
+         (f.x_pitch == 0 || f.x_pitch == 32);
 }
 
 // Le banc du réglage, sur la voie stream : une entrée de valeurs variées entre -1 et 1 (un défaut de

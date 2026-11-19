@@ -227,13 +227,14 @@ std::expected<void, Refusal> RifeFusedEngine::run_block(cudaStream_t stream,
                                                         const std::shared_ptr<SharedActivations>& arena,
                                                         const void* in, int b, std::byte* base,
                                                         std::size_t encode_a, std::size_t encode_b,
-                                                        const RifeNativeNet* net) {
+                                                        const RifeNativeNet* net,
+                                                        const FusedFinishParams* finish) {
   const auto i = static_cast<std::size_t>(b);
   if (net != nullptr) {
     std::optional<FusedGlueParams> glue;
     if (net->glues(b)) glue = glue_params(in, b, base, encode_a, encode_b);
     return cuda_check(net->block(stream, b, base + layout_.x[i], base + layout_.y[i], arena->data(),
-                                 glue ? &*glue : nullptr),
+                                 glue ? &*glue : nullptr, finish),
                       "RIFE natif : bloc");
   }
   const kernels::FusedDims x = kernels::rife_fused_x(plan_, b, height_, width_);
@@ -307,13 +308,27 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
         !ok)
       return ok;
   }
+  const FusedFinishParams finish = finish_params(in, base, outputs);
   // La colle d'un bloc dont le réseau natif calcule l'entrée à la volée ne passe pas : lui la refait.
+  // Le dernier bloc d'un réseau natif qui sait faire la fin la fait dans sa dernière couche, au bit près.
+  const bool fused = fused_end(finish);
   for (int b = first; b < plan_.blocks; ++b) {
-    if (auto ok = run_block(stream, arena, in, b, base, encode_a, encode_b, piece_net(b + 1)); !ok) return ok;
+    const FusedFinishParams* const end = fused && b + 1 == plan_.blocks ? &finish : nullptr;
+    if (auto ok = run_block(stream, arena, in, b, base, encode_a, encode_b, piece_net(b + 1), end); !ok)
+      return ok;
     if (b + 1 < plan_.blocks && !glued(b + 1)) {
       if (auto ok = launch_glue(stream, in, b + 1, base, encode_a, encode_b); !ok) return ok;
     }
   }
+  if (fused) return {};
+  return cuda_check(launch_fused_finish(finish, stream), "fused_finish<<<>>>");
+}
+
+FusedFinishParams RifeFusedEngine::finish_params(const void* in, std::byte* base,
+                                                 std::span<const Tensor> outputs) const {
+  const int h = height_;
+  const int w = width_;
+  const auto at_ptr = [base](std::size_t offset) { return static_cast<void*>(base + offset); };
   const auto last = static_cast<std::size_t>(plan_.blocks - 1);
   const kernels::FusedDims y_last = kernels::rife_fused_y(plan_, plan_.blocks - 1, h, w);
   FusedFinishParams finish{.height = h,
@@ -336,7 +351,7 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
     finish.window_width = window_.width;
     finish.window_height = window_.height;
   }
-  return cuda_check(launch_fused_finish(finish, stream), "fused_finish<<<>>>");
+  return finish;
 }
 
 std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,

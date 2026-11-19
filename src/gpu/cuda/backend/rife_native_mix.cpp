@@ -212,8 +212,9 @@ std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
   // les comptes d'encodage de la lecture.
   const std::int64_t trt_activation = own_activation_;
   const auto saved_encodes = encodes_;
-  const auto settle = [&](std::vector<int> route) {
+  const auto settle = [&](std::vector<int> route, bool fused_end = true) {
     keep_route(std::move(route), trt_activation);
+    set_fused_end(fused_end);
     encodes_ = saved_encodes;
   };
   const auto abandon = [&](Refusal refusal) {
@@ -235,6 +236,7 @@ std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
   for (const auto& net : natives_) own_activation_ = std::max(own_activation_, net->workspace_bytes());
   const auto run_chain = [&](const std::vector<int>& route) {
     set_route(route);
+    set_fused_end(true);
     return trial_output(stream, shared, pair.input, pair.outputs, pair.elements);
   };
   auto reference = run_chain({});
@@ -286,21 +288,26 @@ std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
     return lines;
   }
   forget_passes();
-  const std::vector<std::vector<int>> routes{{}, route_of(mix->options)};
-  auto chain = trial_times(stream, shared, pair.input, pair.outputs, routes);
+  auto chain = trial_mix_times(stream, shared, pair.input, pair.outputs, route_of(mix->options));
   if (!chain) return abandon(std::move(chain.error()));
-  const bool faster = (*chain)[1] <= (*chain)[0] * (1.0 - kMinGain);
+  const bool can_fuse = chain->size() == 3;
+  const bool separate = can_fuse && (*chain)[2] < (*chain)[1];
+  const double native_ms = separate ? (*chain)[2] : (*chain)[1];
+  const bool faster = native_ms <= (*chain)[0] * (1.0 - kMinGain);
   const std::string verdict = faster ? "RIFE natif retenu" : "RIFE natif écarté, TensorRT plus rapide";
   lines.push_back(std::format(
       "{} ({}×{}, {} ; chaîne contre la référence {:.1f} dB (prévus {:.1f}), seuil {:.1f} dB ; contre "
-      "TensorRT {:.1f} dB ; contre le natif f32 : chaîne {:.1f} dB, TensorRT {:.1f} dB ; passe de lecture ×2 "
-      ": "
-      "TensorRT {:.2f} ms, mélange {:.2f} ms ; essai {:.1f} s)",
+      "TensorRT {:.1f} dB ; contre le natif f32 : chaîne {:.1f} dB, TensorRT {:.1f} dB ; passe de lecture "
+      "×2 : TensorRT {:.2f} ms, mélange {:.2f} ms ; essai {:.1f} s)",
       verdict, w, h, mix_name(mix->options), mix->db, mix->predicted, bar,
       rife_mix::worst_psnr(*reference, mix->out, plane, motion_),
       rife_mix::worst_psnr(*exact, mix->out, plane, motion_),
-      rife_mix::worst_psnr(*exact, *reference, plane, motion_), (*chain)[0], (*chain)[1], seconds()));
-  settle(faster ? route_of(mix->options) : std::vector<int>{});
+      rife_mix::worst_psnr(*exact, *reference, plane, motion_), (*chain)[0], native_ms, seconds()));
+  if (can_fuse)
+    lines.push_back(
+        std::format("RIFE natif, fin du dernier bloc : fondue {:.3f} ms, à part {:.3f} ms, {} gardée",
+                    (*chain)[1], (*chain)[2], separate ? "à part" : "fondue"));
+  settle(faster ? route_of(mix->options) : std::vector<int>{}, !separate);
   return lines;
 }
 

@@ -67,6 +67,16 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
            layout_.x[static_cast<std::size_t>(last)];
   };
   for (int pass = 0; pass < 3; ++pass) {
+    // Les sorties partent de NaN : un pixel que la fin (à part ou dans la dernière couche) n'écrit pas ne
+    // garde pas la valeur d'une passe d'avant, TensorRT compris.
+    for (const Tensor& out : pass == 2 ? outputs : std::span<const Tensor>{}) {
+      std::size_t count = 1;
+      for (const auto d : out.shape.dims) count *= static_cast<std::size_t>(d);
+      if (auto ok = cuda_check(cudaMemsetAsync(fused_address(out), 0xFF, count * 2U, stream),
+                               "RIFE natif : sortie à NaN");
+          !ok)
+        return std::unexpected(std::move(ok.error()));
+    }
     if (pass == 2 && glue) {
       if (auto ok =
               cuda_check(cudaMemsetAsync(x_last(), 0xFF, static_cast<std::size_t>(x.elements()) * 2U, stream),
@@ -109,7 +119,7 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
 
 std::expected<std::vector<double>, Refusal> RifeFusedEngine::trial_times(
     cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& input,
-    std::span<const Tensor> outputs, std::span<const std::vector<int>> routes) {
+    std::span<const Tensor> outputs, std::span<const TrialRoute> routes) {
   const auto failed = [](cudaError_t error, const char* step) {
     static_cast<void>(cudaGetLastError());
     return std::unexpected(cuda_refusal(error, std::format("RIFE natif : mesure du temps ({})", step)));
@@ -129,7 +139,8 @@ std::expected<std::vector<double>, Refusal> RifeFusedEngine::trial_times(
   // Le lot de l'aiguillage v. warm : passes de chauffe (au premier tour, un premier lancement puis une
   // capture par emplacement de A).
   const auto batch = [&](std::size_t v, int warm) -> std::expected<double, Refusal> {
-    set_route(routes[v]);
+    set_route(routes[v].pieces);
+    set_fused_end(routes[v].fused_end);
     std::expected<void, Refusal> ok;
     for (int i = 0; i < warm && ok; ++i) ok = pass();
     cudaError_t e = ok ? cudaEventRecord(start.event, stream) : cudaSuccess;
@@ -156,6 +167,18 @@ std::expected<std::vector<double>, Refusal> RifeFusedEngine::trial_times(
   return times;
 }
 
+std::expected<std::vector<double>, Refusal> RifeFusedEngine::trial_mix_times(
+    cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& input,
+    std::span<const Tensor> outputs, const std::vector<int>& route) {
+  set_route(route);
+  set_fused_end(true);
+  std::vector<TrialRoute> routes{{}, {.pieces = route}};
+  auto* base = static_cast<std::byte*>(shared->data()) + scratch_offset_;
+  if (fused_end(finish_params(fused_address(input), base, outputs)))
+    routes.push_back({.pieces = route, .fused_end = false});
+  return trial_times(stream, shared, input, outputs, routes);
+}
+
 void RifeFusedEngine::set_route(std::vector<int> route) {
   route_ = std::move(route);
   native_on_ = false;
@@ -168,6 +191,12 @@ void RifeFusedEngine::set_route(std::vector<int> route) {
         std::max(native_workspace_, natives_[static_cast<std::size_t>(route_[p])]->workspace_bytes());
     route_code_ |= static_cast<std::uintptr_t>(route_[p] + 1) << (3U * p);
   }
+  if (!fused_end_) route_code_ |= kSeparateEnd;
+}
+
+void RifeFusedEngine::set_fused_end(bool on) {
+  fused_end_ = on;
+  route_code_ = on ? route_code_ & ~kSeparateEnd : route_code_ | kSeparateEnd;
 }
 
 std::expected<void, Refusal> RifeFusedEngine::run_piece(cudaStream_t stream,
