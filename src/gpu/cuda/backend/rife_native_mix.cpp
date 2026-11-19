@@ -475,12 +475,13 @@ std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
   };
   auto reference = run_chain({});
   if (!reference) return abandon(std::move(reference.error()));
-  std::vector<const RifeNativeNet*> view(natives_.size());
-  std::ranges::transform(natives_, view.begin(), [](const auto& net) { return net.get(); });
+  std::vector<RifeNativeNet*> nets_view(natives_.size());
+  std::ranges::transform(natives_, nets_view.begin(), [](const auto& net) { return net.get(); });
+  const std::vector<const RifeNativeNet*> view(nets_view.begin(), nets_view.end());
   RifeNativeTrial trial(*this, stream, shared, pair.input);
   auto quality = trial.quality(view);
   if (!quality) return abandon(std::move(quality.error()));
-  auto times = trial.times(view);
+  auto times = trial.times(nets_view, kLadderNames);
   if (!times) return abandon(std::move(times.error()));
   auto profile = trial.profile(*natives_[0], kLadderNames[0]);
   if (!profile) return abandon(std::move(profile.error()));

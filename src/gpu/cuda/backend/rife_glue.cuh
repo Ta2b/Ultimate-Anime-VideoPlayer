@@ -1,8 +1,8 @@
 // La colle de RIFE fusionné au point (rife_fused_kernels.h) : les 28 canaux de X_k en un point pleine
 // résolution, depuis les Y des blocs précédents relevés en mémoire partagée (warp_lib.cuh), l'entrée et les
 // deux encodages. Partagée par la colle (fused_glue, rife_fused_kernels.cu) et par la première convolution
-// du dernier bloc du RIFE natif, qui la calcule à la volée sans écrire X (rife_native_glue.cuh) : les mêmes
-// fonctions, donc les mêmes arrondis.
+// du dernier bloc du RIFE natif, qui la calcule à la volée et n'écrit de X que le flot (rife_native_glue.cu)
+// : les mêmes fonctions, donc les mêmes arrondis.
 #pragma once
 
 #include <cstddef>

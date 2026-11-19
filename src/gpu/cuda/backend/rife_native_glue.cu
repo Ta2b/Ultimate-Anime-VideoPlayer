@@ -4,9 +4,10 @@
 // (rife_glue.cuh, comme la colle), calcule les canaux de X de sa tuile d'entrée en mémoire partagée par les
 // fonctions de la colle (mêmes arrondis), puis somme comme conv_kernel<16, CT, 3, 2, 1> : même tuile, même
 // ordre des sommes. X tient en deux tranches de 16 canaux, calculées l'une après l'autre (la seconde refait
-// le flot, peu coûteux, plutôt que de doubler la tuile) : 28 Ko de tuile et moins de 15 Ko de relèvement,
-// deux blocs par multiprocesseur. Seul le flot accumulé (canaux 24 à 27) part en mémoire, dans X, pour la fin
-// (fused_finish) : chaque pixel par la tuile qui le possède.
+// le flot, peu coûteux, plutôt que de doubler la tuile) : 28 Ko de tuile et au plus 15 Ko de relèvement (des
+// échelles d'au moins 2, que glue_layer exige), deux blocs par multiprocesseur ; un seul sur Turing (64 Ko),
+// sauf pour le relèvement de 4.25 lite. Seul le flot accumulé (canaux 24 à 27) part en mémoire, dans X, pour
+// la fin (fused_finish) : chaque pixel par la tuile qui le possède.
 #include <cstddef>
 #include <cstdint>
 #include <span>

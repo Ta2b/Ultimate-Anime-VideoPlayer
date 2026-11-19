@@ -145,7 +145,8 @@ class RifeFusedEngine final : public Engine {
                                          const void* in, int b, std::byte* base, std::size_t encode_a,
                                          std::size_t encode_b, const RifeNativeNet* net);
   // Les encodages de A et de B pendant l'essai (run_piece) : trial_output encode les deux images, A au
-  // premier emplacement, B au second.
+  // premier emplacement, B au second. Vrai de la passe de référence à trial_times, dont les passes de lecture
+  // laissent B aux deux emplacements : aucun morceau seul ne passe après.
   std::pair<std::size_t, std::size_t> trial_encodes() const {
     const std::size_t bytes =
         std::size_t{4} * static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_) * 2U;

@@ -76,8 +76,12 @@ class RifeNativeNet {
   // que le flot accumulé, que lit la fin ; nul sinon.
   virtual cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace,
                             const FusedGlueParams* glue) const = 0;
-  // Ce réseau calcule-t-il l'entrée du bloc k à la volée (le dernier bloc, en pleine résolution) ?
+  // Ce réseau calcule-t-il l'entrée du bloc k à la volée (le dernier bloc, en pleine résolution) ? can_glue :
+  // il en a le noyau ; glues : il s'en sert (use_glue, vrai au départ). Sans lui, le bloc lit le X_k que la
+  // colle à part a écrit, par la forme réglée de sa première couche ; l'essai garde la plus rapide.
+  virtual bool can_glue(int k) const = 0;
   virtual bool glues(int k) const = 0;
+  virtual void use_glue(bool on) = 0;
   // Le profil d'un morceau (0 : l'encodeur, 1 + k : le bloc k) : ses couches comme encode ou block (glue
   // comme pour block), marks[0] enregistré avant la première et marks[i + 1] après la couche i
   // (cudaEventRecordExternal : la capture d'un graphe les garde). marks.size() doit valoir layers(piece) + 1.

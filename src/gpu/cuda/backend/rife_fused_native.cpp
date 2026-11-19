@@ -3,6 +3,7 @@
 // en tours intercalés, l'aiguillage de chaque morceau vers un réseau natif ou vers TensorRT, et un morceau
 // seul (rife_native_trial.h).
 #include <algorithm>
+#include <cstddef>
 #include <cuda_fp16.h>
 #include <format>
 #include <utility>
@@ -50,8 +51,21 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
     cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& input,
     std::span<const Tensor> outputs, std::size_t elements) {
   forget_passes();
-  // Trois passes : directe, capture du graphe, rejeu ; la dernière est comparée.
+  // Trois passes : directe, capture du graphe, rejeu ; la dernière est comparée. Avant elle, X du dernier
+  // bloc part de NaN quand son réseau le refait à la volée (il n'y écrit que le flot, que lit la fin) : un
+  // pixel qu'il oublierait rend la sortie non finie, au lieu de garder le flot de la passe d'avant.
+  const int last = plan_.blocks - 1;
   for (int pass = 0; pass < 3; ++pass) {
+    if (pass == 2 && glued(last)) {
+      kernels::FusedDims x = kernels::rife_fused_x(plan_, last, height_, width_);
+      x.channels = pitch(x.channels);
+      auto* base = static_cast<std::byte*>(shared->data()) + scratch_offset_;
+      if (auto ok = cuda_check(cudaMemsetAsync(base + layout_.x[static_cast<std::size_t>(last)], 0xFF,
+                                               static_cast<std::size_t>(x.elements()) * 2U, stream),
+                               "RIFE natif : X du dernier bloc à NaN");
+          !ok)
+        return std::unexpected(std::move(ok.error()));
+    }
     const Tensor inputs[]{input};
     if (auto ok = enqueue(stream, shared, inputs, outputs); !ok)
       return std::unexpected(std::move(ok.error()));
@@ -149,12 +163,13 @@ std::expected<void, Refusal> RifeFusedEngine::run_piece(cudaStream_t stream,
         fused_tensor(reinterpret_cast<std::uintptr_t>(base + layout_.encode), 0, 4, height_, width_);
     return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
   }
-  // Un bloc dont un réseau natif calcule l'entrée à la volée se mesure colle comprise, quelle que soit
-  // l'option : sans elle, TensorRT et un réseau qui ne la refait pas passeraient pour plus rapides.
+  // Un bloc dont un réseau natif sait calculer l'entrée à la volée se mesure colle comprise, quelle que soit
+  // l'option (ce réseau sans elle, use_glue, compris) : sans elle, TensorRT et un réseau qui ne la refait pas
+  // passeraient pour plus rapides.
   const int b = piece - 1;
   const auto [encode_a, encode_b] = trial_encodes();
   const void* const in = fused_address(input);
-  const bool with_glue = std::ranges::any_of(natives_, [b](const auto& n) { return n->glues(b); });
+  const bool with_glue = std::ranges::any_of(natives_, [b](const auto& n) { return n->can_glue(b); });
   if (with_glue && (net == nullptr || !net->glues(b))) {
     if (auto ok = launch_glue(stream, in, b, base, encode_a, encode_b); !ok) return ok;
   }

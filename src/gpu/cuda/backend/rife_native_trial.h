@@ -35,11 +35,16 @@ class RifeNativeTrial {
   std::expected<std::vector<std::vector<double>>, Refusal> quality(
       std::span<const RifeNativeNet* const> nets);
   // Le temps seul de chaque morceau, en millisecondes : [morceau][option], l'option 0 TensorRT, puis nets.
-  std::expected<std::vector<std::vector<double>>, Refusal> times(std::span<const RifeNativeNet* const> nets);
+  // Un réseau qui sait refaire l'entrée du dernier bloc à la volée y est aussi chronométré sans elle (la
+  // colle à part) : il garde la plus rapide des deux (use_glue), dont le temps est le sien ; une note de
+  // journal par tel réseau, nommé par names, donne les deux.
+  std::expected<std::vector<std::vector<double>>, Refusal> times(std::span<RifeNativeNet* const> nets,
+                                                                 std::span<const char* const> names);
   // Le temps de chaque couche de net (rejoué en graphe, le meilleur de trois) : une ligne de journal par
   // couche, name nommant le réseau ; une ligne par morceau dont le profil échoue sans perte du contexte.
   std::expected<std::vector<std::string>, Refusal> profile(const RifeNativeNet& net, std::string_view name);
-  // Ce que l'essai a dû changer à sa mesure (un morceau chronométré sans graphe) : des lignes de journal.
+  // Ce que l'essai note de sa mesure (un morceau chronométré sans graphe, la colle gardée pour le dernier
+  // bloc) : des lignes de journal.
   const std::vector<std::string>& notes() const { return notes_; }
 
  private:

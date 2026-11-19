@@ -112,10 +112,12 @@ class Net final : public RifeNativeNet {
                     const FusedGlueParams* glue) const override {
     return run(stream, static_cast<std::size_t>(k) + 1, x, y, workspace, {}, glue);
   }
-  bool glues(int k) const override {
+  bool can_glue(int k) const override {
     const auto piece = static_cast<std::size_t>(k) + 1;
     return k >= 0 && piece < pieces_.size() && !pieces_[piece].empty() && pieces_[piece][0].glue != nullptr;
   }
+  bool glues(int k) const override { return glue_on_ && can_glue(k); }
+  void use_glue(bool on) override { glue_on_ = on; }
   int layers(int piece) const override {
     return piece >= 0 && static_cast<std::size_t>(piece) < pieces_.size()
                ? static_cast<int>(pieces_[static_cast<std::size_t>(piece)].size())
@@ -130,7 +132,7 @@ class Net final : public RifeNativeNet {
   std::string layer_label(int piece, int i) const override {
     if (i < 0 || i >= layers(piece)) return "?";
     const Layer& l = pieces_[static_cast<std::size_t>(piece)][static_cast<std::size_t>(i)];
-    if (l.glue != nullptr)
+    if (l.glue != nullptr && glue_on_)
       return "3×3 pas 2 " + std::to_string(l.cin) + "→" + std::to_string(l.cout) + " sur " +
              std::to_string(l.ow) + "×" + std::to_string(l.oh) +
              ", entrée calculée à la volée (colle), tranche 16, tuile " + std::to_string(l.cout) +
@@ -192,6 +194,10 @@ class Net final : public RifeNativeNet {
   bool glue_layer(Layer& layer, const rn::Dense& dense, const std::vector<int>& scales,
                   std::string& error) const {
     if (scales.empty() || layer.kind != Kind::kHalf || layer.cin != 32 || layer.residual) return true;
+    // Le relèvement des Y tient sous 48 Ko de mémoire partagée avec des échelles d'au moins 2 : un découpage
+    // qui en aurait une de 1 avant le dernier bloc garde la colle à part.
+    if (std::ranges::any_of(scales, [](int d) { return d < 2; }) || rn::glue_smem(scales) > 48 * 1024)
+      return true;
     layer.glue = rn::pick_glue(layer.sums, static_cast<int>(scales.size()), layer.cout);
     if (layer.glue == nullptr) return true;
     layer.glue_scales = scales;
@@ -311,6 +317,7 @@ class Net final : public RifeNativeNet {
   int sms_ = 1;
   std::int64_t peak_ = 0;
   std::int64_t partial_ = 0;  // sommes partielles de la plus grande couche à K découpé
+  bool glue_on_ = true;       // use_glue
   std::vector<std::vector<Layer>> pieces_;
 };
 

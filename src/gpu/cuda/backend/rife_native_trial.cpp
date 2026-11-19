@@ -173,32 +173,65 @@ std::expected<double, Refusal> RifeNativeTrial::time(int piece, const RifeNative
 }
 
 std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
-    std::span<const RifeNativeNet* const> nets) {
+    std::span<RifeNativeNet* const> nets, std::span<const char* const> names) {
   std::vector<const RifeNativeNet*> options{nullptr};
   options.insert(options.end(), nets.begin(), nets.end());
   const auto count = static_cast<std::size_t>(pieces());
+  const int block = pieces() - 2;  // le dernier bloc
+  // Les variantes de chaque morceau : chaque option, et pour le dernier bloc chaque réseau qui sait refaire
+  // son entrée à la volée, sans elle (après la colle à part, par la forme réglée de sa première couche).
+  struct Variant {
+    std::size_t option = 0;
+    bool apart = false;
+  };
+  std::vector<std::vector<Variant>> variants(count);
+  for (std::size_t p = 0; p < count; ++p)
+    for (std::size_t o = 0; o < options.size(); ++o) variants[p].push_back({.option = o});
+  for (std::size_t n = 0; n < nets.size(); ++n)
+    if (nets[n]->can_glue(block)) variants.back().push_back({.option = n + 1, .apart = true});
+  // Une capture ou un lot d'une variante : son réseau sans la colle à la volée le temps de l'appel.
+  const auto as = [&](const Variant& v, auto&& step) {
+    if (v.apart) nets[v.option - 1]->use_glue(false);
+    auto result = step();
+    if (v.apart) nets[v.option - 1]->use_glue(true);
+    return result;
+  };
   std::vector<std::vector<Exec>> execs(count);
   for (std::size_t p = 0; p < count; ++p)
-    for (const RifeNativeNet* net : options) {
-      auto exec = capture(static_cast<int>(p), net);
+    for (const Variant& v : variants[p]) {
+      auto exec = as(v, [&] { return capture(static_cast<int>(p), options[v.option]); });
       if (!exec) return std::unexpected(std::move(exec.error()));
       execs[p].push_back(std::move(*exec));
     }
-  std::vector<std::vector<std::vector<double>>> rounds(count,
-                                                       std::vector<std::vector<double>>(options.size()));
+  std::vector<std::vector<std::vector<double>>> rounds(count);
+  for (std::size_t p = 0; p < count; ++p) rounds[p].resize(variants[p].size());
   for (int round = 0; round < kRounds; ++round)
     for (std::size_t p = 0; p < count; ++p)
-      for (std::size_t i = 0; i < options.size(); ++i) {
-        const std::size_t o =
-            round % 2 == 0 ? i : options.size() - 1 - i;  // TensorRT, natifs, puis l'inverse
-        auto ms = time(static_cast<int>(p), options[o], execs[p][o].get());
+      for (std::size_t i = 0; i < variants[p].size(); ++i) {
+        const std::size_t v =
+            round % 2 == 0 ? i : variants[p].size() - 1 - i;  // dans l'ordre, puis l'inverse
+        const Variant& at = variants[p][v];
+        auto ms = as(at, [&] { return time(static_cast<int>(p), options[at.option], execs[p][v].get()); });
         if (!ms) return std::unexpected(std::move(ms.error()));
-        rounds[p][o].push_back(*ms);
+        rounds[p][v].push_back(*ms);
       }
   std::vector<std::vector<double>> out(count);
   for (std::size_t p = 0; p < count; ++p) {
-    out[p].resize(options.size());
-    std::ranges::transform(rounds[p], out[p].begin(), median);
+    std::vector<double> medians(variants[p].size());
+    std::ranges::transform(rounds[p], medians.begin(), median);
+    out[p].assign(medians.begin(), medians.begin() + static_cast<std::ptrdiff_t>(options.size()));
+    // Un réseau garde la colle à part si elle le rend plus rapide sur le dernier bloc.
+    for (std::size_t v = options.size(); v < variants[p].size(); ++v) {
+      const std::size_t o = variants[p][v].option;
+      const bool apart = medians[v] < out[p][o];
+      notes_.push_back(
+          std::format("RIFE natif {}, {} : colle à la volée {:.3f} ms, colle à part {:.3f} ms ({})",
+                      names[o - 1], piece_name(static_cast<int>(p)), out[p][o], medians[v],
+                      apart ? "à part gardée" : "à la volée gardée"));
+      if (!apart) continue;
+      nets[o - 1]->use_glue(false);
+      out[p][o] = medians[v];
+    }
   }
   return out;
 }
