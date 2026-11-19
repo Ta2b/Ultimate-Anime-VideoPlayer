@@ -10,7 +10,8 @@
 cmake_minimum_required(VERSION 3.24)
 project(gmflow_mlp LANGUAGES CXX)
 set(KIRARI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../../src")
-set(gmflow_mlp_lecture "${KIRARI_SRC}/prepare/gmflow_mlp.cpp" "${KIRARI_SRC}/gpu/ir/onnx_reader.cpp"
+set(gmflow_mlp_lecture "${KIRARI_SRC}/prepare/gmflow_mlp.cpp" "${KIRARI_SRC}/prepare/gmflow_onnx_view.cpp"
+    "${KIRARI_SRC}/gpu/ir/onnx_reader.cpp"
     "${KIRARI_SRC}/gpu/ir/onnx_tensor.cpp" "${KIRARI_SRC}/gpu/ir/protobuf.cpp" "${KIRARI_SRC}/kernels/ref/half.cpp")
 
 add_executable(gmflow_mlp_vide gmflow_mlp_vide.cpp ${gmflow_mlp_lecture})

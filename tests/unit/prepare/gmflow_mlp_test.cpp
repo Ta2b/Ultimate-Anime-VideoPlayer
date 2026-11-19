@@ -1,7 +1,7 @@
 // Le MLP des couches de cross-attention de GMFlow lu pour le noyau natif (prepare/gmflow_mlp.h) : un faux
 // transformeur aux noms, opérateurs, constantes et attributs de la paire exportée (couche cachée réduite à
-// 64), lu et rangé, ses fautes refusées, le plan et ses fautes, puis la vraie paire quand elle est là
-// (KIRARI_RIFE_MODEL_DIR).
+// 64), lu et rangé, ses fautes refusées, le plan et ses fautes. La vraie paire se lit dans le cas de
+// gmflow_native_test.cpp, avec le squelette et l'attention.
 #include "prepare/gmflow_mlp.h"
 
 #include <bit>
@@ -9,7 +9,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
 #include <format>
 #include <limits>
 #include <string>
@@ -17,12 +16,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "prepare/model_source.h"
 #include "rife_fake.h"
-
-#ifndef KIRARI_RIFE_MODEL_DIR
-#define KIRARI_RIFE_MODEL_DIR ""
-#endif
 
 namespace kirari::prepare {
 namespace {
@@ -60,6 +54,7 @@ struct FakeMlp {
   float half = 0.5F;
   std::int64_t concat_axis = -1;
   std::int64_t norm_axis = -1;
+  std::int64_t norm_stash = 1;  // statistiques de norm2 (1 : f32, comme le noyau)
   float quarter_epsilon = 1e-5F;
   bool concat_swapped = false;
   bool residual_swapped = false;
@@ -88,9 +83,9 @@ class Builder {
     return name + "_output_0";
   }
   std::string norm(const std::string& name, const std::string& in, const std::string& module, float epsilon,
-                   std::int64_t axis) {
+                   std::int64_t axis, std::int64_t stash) {
     Bytes n = node(name, "LayerNormalization", {in, module + "weight", module + "bias"}, {name + "_output_0"},
-                   {Attr{.name = "axis", .num = axis}});
+                   {Attr{.name = "axis", .num = axis}, Attr{.name = "stash_type", .num = stash}});
     delimited(n, 5, float_attribute("epsilon", epsilon));
     add(n);
     return name + "_output_0";
@@ -112,11 +107,12 @@ void layer_weights(Builder& b, const FakeMlp& f, int layer) {
     for (int c = 0; c < f.hidden; ++c) w1.push_back(weight(layer, r, c));
   for (int r = 0; r < f.hidden; ++r)
     for (int c = 0; c < kC; ++c) w2.push_back(weight(layer + 1, r, c));
-  b.init(std::format("onnx::MatMul_{}0", layer), {2 * kC, f.hidden}, w1);
+  b.init(std::format("onnx::MatMul_{}0", layer), {std::int64_t{2} * kC, f.hidden}, w1);
   b.init(std::format("onnx::MatMul_{}1", layer),
          f.w2_transposed ? std::vector<std::int64_t>{kC, f.hidden} : std::vector<std::int64_t>{f.hidden, kC},
          w2);
-  b.init(std::format("onnx::MatMul_{}9", layer), {2 * kC, f.hidden}, w1);  // une copie sous un autre nom
+  b.init(std::format("onnx::MatMul_{}9", layer), {std::int64_t{2} * kC, f.hidden},
+         w1);  // une copie, autre nom
   const std::string module = std::format("gmfss.flownet.transformer.layers.{}.cross_attn_ffn.", layer);
   for (const std::string norm : {"norm1.", "norm2."}) {
     std::vector<float> gamma(kC), beta(kC);
@@ -135,8 +131,9 @@ void layer_use(Builder& b, const FakeMlp& f, int layer, int scale) {
   const std::string p = std::format("/flownet/transformer/layers.{}/cross_attn_ffn/", layer);
   const std::string module = std::format("gmfss.flownet.transformer.layers.{}.cross_attn_ffn.", layer);
   const std::string source = std::format("source_{}_{}", scale, layer);
-  const std::string message = b.norm(p + "norm1" + tail + "/LayerNormalization",
-                                     std::format("merge_{}_{}", scale, layer), module + "norm1.", 1e-5F, -1);
+  const std::string message =
+      b.norm(p + "norm1" + tail + "/LayerNormalization", std::format("merge_{}_{}", scale, layer),
+             module + "norm1.", 1e-5F, -1, 1);
   const std::string concat =
       b.simple(std::format("/flownet/transformer/layers.{}/cross_attn_ffn{}/Concat_16", layer, tail),
                "Concat", f.concat_swapped ? std::vector{message, source} : std::vector{source, message},
@@ -158,7 +155,7 @@ void layer_use(Builder& b, const FakeMlp& f, int layer, int scale) {
   std::string o = b.simple(p + "mlp/mlp.2" + tail + "/MatMul", "MatMul", {g, w2});
   if (f.bias_after_mlp) o = b.simple(p + "mlp/mlp.2" + tail + "/Add", "Add", {o, module + "norm2.bias"});
   const std::string n2 = b.norm(p + "norm2" + tail + "/LayerNormalization", o, module + "norm2.",
-                                scale == 1 ? f.quarter_epsilon : 1e-5F, f.norm_axis);
+                                scale == 1 ? f.quarter_epsilon : 1e-5F, f.norm_axis, f.norm_stash);
   b.simple(std::format("/flownet/transformer/layers.{}/cross_attn_ffn{}/Add", layer, tail), "Add",
            f.residual_swapped ? std::vector{n2, source} : std::vector{source, n2});
 }
@@ -207,6 +204,7 @@ TEST_CASE("GMFlow natif : les fautes du faux MLP sont refusées", "[prepare][gmf
   CHECK(refused({.half = 0.25F}));
   CHECK(refused({.concat_axis = 0}));
   CHECK(refused({.norm_axis = 0}));
+  CHECK(refused({.norm_stash = 0}));  // statistiques en FP16 : le noyau les tient en f32
   CHECK(refused({.quarter_epsilon = 1e-3F}));
   CHECK(refused({.concat_swapped = true}));  // [message, x] : W1 ne lirait plus le bon côté
   CHECK(refused({.residual_swapped = true}));
@@ -241,23 +239,6 @@ TEST_CASE("GMFlow natif : le MLP se tient, ses fautes sont refusées", "[prepare
   CHECK(broken([](GmflowMlp& m) { m.uses[3].layer = 6; }));
   CHECK(broken([](GmflowMlp& m) { m.uses[4] = m.uses[5]; }));  // deux fois le même emploi
   CHECK(broken([](GmflowMlp& m) { m.uses.clear(); }));
-}
-
-TEST_CASE("GMFlow natif : le MLP de la paire exportée se lit", "[prepare][gmflow]") {
-  const std::filesystem::path model =
-      std::filesystem::path(KIRARI_RIFE_MODEL_DIR) / "gmfss_fortuna_union_pair.onnx";
-  if (!std::filesystem::exists(model)) SKIP("gmfss_fortuna_union_pair.onnx absent");
-  auto bytes = read_onnx_bytes(model);
-  REQUIRE(bytes);
-  const auto mlp = gmflow_mlp(*bytes);
-  INFO((mlp ? std::string() : mlp.error().detail));
-  REQUIRE(mlp);
-  CHECK(mlp->hidden == 1024);
-  CHECK(mlp->layers.size() == 6);
-  REQUIRE(mlp->uses.size() == 12);
-  CHECK(std::abs(mlp->layers[0].epsilon - 1e-5F) < 1e-9F);
-  CHECK(mlp->uses[0].source == "/flownet/transformer/layers.0/self_attn/Add_output_0");
-  CHECK(mlp->uses[11].output == "/flownet/transformer/layers.5/cross_attn_ffn_1/Add_17_output_0");
 }
 
 }  // namespace kirari::prepare

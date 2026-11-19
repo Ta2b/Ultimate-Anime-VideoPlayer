@@ -5,8 +5,6 @@
 #include <cmath>
 #include <cstdint>
 #include <format>
-#include <functional>
-#include <map>
 #include <set>
 #include <string>
 #include <string_view>
@@ -14,6 +12,7 @@
 #include <vector>
 
 #include "gpu/ir/onnx_model.h"
+#include "prepare/gmflow_onnx_view.h"
 
 namespace kirari::prepare {
 namespace {
@@ -30,64 +29,27 @@ std::unexpected<Refusal> missing(std::string detail) {
       Refusal{RefusalCode::FieldMissing, "GMFlow natif : MLP non reconnu : " + std::move(detail)});
 }
 
-// Le graphe indexé : constantes (initialiseurs et sorties des nœuds Constant), nœuds par nom, producteur de
-// chaque tenseur, lecteurs de chaque tenseur.
-struct Model {
-  std::map<std::string, const onnx::Tensor*, std::less<>> initializers;
-  std::map<std::string, const onnx::Tensor*, std::less<>> constants;
-  std::map<std::string, const onnx::Node*, std::less<>> nodes;
-  std::map<std::string, const onnx::Node*, std::less<>> producers;
-  std::map<std::string, std::vector<const onnx::Node*>, std::less<>> readers;
-};
-
-void index_model(const onnx::Model& parsed, Model& model) {
-  for (const onnx::Tensor& tensor : parsed.graph.initializers) {
-    model.initializers.emplace(tensor.name, &tensor);
-    model.constants.emplace(tensor.name, &tensor);
-  }
-  for (const onnx::Node& node : parsed.graph.nodes) {
-    model.nodes.emplace(node.name, &node);
-    for (const std::string& out : node.outputs) model.producers.emplace(out, &node);
-    for (const std::string& in : node.inputs) model.readers[in].push_back(&node);
-    if (node.op_type != "Constant" || node.outputs.size() != 1) continue;
-    for (const onnx::Attribute& a : node.attributes) {
-      if (a.name == "value" && a.tensors.size() == 1)
-        model.constants.emplace(node.outputs[0], a.tensors.data());
-    }
-  }
-}
-
 // Le nœud name s'il existe, fait op et n'a qu'une sortie ; sinon nul.
-const onnx::Node* node_of(const Model& model, const std::string& name, std::string_view op) {
-  const auto found = model.nodes.find(name);
-  if (found == model.nodes.end() || found->second->op_type != op || found->second->outputs.size() != 1)
-    return nullptr;
-  return found->second;
-}
-
-const onnx::Attribute* attribute(const onnx::Node& node, std::string_view name) {
-  const auto found = std::ranges::find(node.attributes, name, &onnx::Attribute::name);
-  return found != node.attributes.end() ? &*found : nullptr;
+const onnx::Node* node_of(const OnnxView& g, const std::string& name, std::string_view op) {
+  const onnx::Node* n = g.node(name, op);
+  return n != nullptr && n->outputs.size() == 1 ? n : nullptr;
 }
 
 // Un attribut entier : le sien, ou implicit s'il est absent.
 std::int64_t int_attribute(const onnx::Node& node, std::string_view name, std::int64_t implicit) {
-  const onnx::Attribute* a = attribute(node, name);
+  const onnx::Attribute* a = onnx_attribute(node, name);
   return a != nullptr ? a->i : implicit;
 }
 
 // La constante name : une seule valeur, à tolerance près de want.
-bool scalar_is(const Model& model, const std::string& name, float want, float tolerance) {
-  const auto found = model.constants.find(name);
-  return found != model.constants.end() && found->second->floats.size() == 1 &&
-         std::abs(found->second->floats[0] - want) <= tolerance;
+bool scalar_is(const OnnxView& g, const std::string& name, float want, float tolerance) {
+  const auto value = g.scalar(name);
+  return value && std::abs(*value - want) <= tolerance;
 }
 
 // Le tenseur name n'est-il lu que par ces nœuds, chacun une fois ?
-bool only_read_by(const Model& model, const std::string& name, std::vector<const onnx::Node*> want) {
-  const auto found = model.readers.find(name);
-  if (found == model.readers.end()) return false;
-  std::vector<const onnx::Node*> got = found->second;
+bool only_read_by(const OnnxView& g, const std::string& name, std::vector<const onnx::Node*> want) {
+  std::vector<const onnx::Node*> got = g.readers(name);
   std::ranges::sort(got);
   std::ranges::sort(want);
   return got == want;
@@ -110,7 +72,7 @@ std::string prefix_of(int layer) {
   return std::format("/flownet/transformer/layers.{}/cross_attn_ffn/", layer);
 }
 
-std::expected<Nodes, Refusal> find_nodes(const Model& model, int layer, int scale) {
+std::expected<Nodes, Refusal> find_nodes(const OnnxView& g, int layer, int scale) {
   const std::string p = prefix_of(layer);
   const std::string tail = scale == 0 ? "" : "_1";
   const std::string gelu = p + "mlp/mlp.1" + tail + "/";
@@ -131,7 +93,7 @@ std::expected<Nodes, Refusal> find_nodes(const Model& model, int layer, int scal
        {&n.norm1, p + "norm1" + tail + "/LayerNormalization", "LayerNormalization"},
        {&n.norm2, p + "norm2" + tail + "/LayerNormalization", "LayerNormalization"}}};
   for (const Want& w : wants) {
-    *w.slot = node_of(model, w.name, w.op);
+    *w.slot = node_of(g, w.name, w.op);
     if (*w.slot == nullptr) return missing(std::format("{} {}", w.op, w.name));
   }
   return n;
@@ -139,19 +101,19 @@ std::expected<Nodes, Refusal> find_nodes(const Model& model, int layer, int scal
 
 // La GELU exacte du graphe : Mul_1(Mul(h, Add(Erf(Div(h, √2)), 1)), 0,5), lue par le second MatMul. √2 à un
 // arrondi FP16 près : la paire du lecteur est en FP16 (1,4140625), le noyau prend 1/√2 exact. Rien : bonne.
-const char* gelu_problem(const Model& model, const Nodes& n) {
+const char* gelu_problem(const OnnxView& g, const Nodes& n) {
   const std::string& h = n.mm1->outputs[0];
   const float sqrt2 = std::sqrt(2.0F);
   if (n.div->inputs.size() != 2 || n.div->inputs[0] != h ||
-      !scalar_is(model, n.div->inputs[1], sqrt2, sqrt2 * kFp16Rounding))
+      !scalar_is(g, n.div->inputs[1], sqrt2, sqrt2 * kFp16Rounding))
     return "Div par √2 de la GELU exacte";
   if (n.erf->inputs != std::vector{n.div->outputs[0]}) return "Erf";
   if (n.add->inputs.size() != 2 || n.add->inputs[0] != n.erf->outputs[0] ||
-      !scalar_is(model, n.add->inputs[1], 1.0F, 0.0F))
+      !scalar_is(g, n.add->inputs[1], 1.0F, 0.0F))
     return "Add de 1 après Erf";
   if (n.mul->inputs != std::vector{h, n.add->outputs[0]}) return "Mul de la GELU";
   if (n.mul1->inputs.size() != 2 || n.mul1->inputs[0] != n.mul->outputs[0] ||
-      !scalar_is(model, n.mul1->inputs[1], 0.5F, 0.0F))
+      !scalar_is(g, n.mul1->inputs[1], 0.5F, 0.0F))
     return "Mul par 0,5 de la GELU";
   if (n.mm2->inputs.size() != 2 || n.mm2->inputs[0] != n.mul1->outputs[0])
     return "le second MatMul ne lit pas la GELU";
@@ -162,7 +124,7 @@ const char* gelu_problem(const Model& model, const Nodes& n) {
 
 // La couche cachée et ce qui la suit ne sont lus que dans le MLP : le noyau ne les écrit jamais. Rien :
 // bonne, sinon le nom du tenseur lu ailleurs.
-std::string hidden_problem(const Model& model, const Nodes& n) {
+std::string hidden_problem(const OnnxView& g, const Nodes& n) {
   const std::array<std::pair<const onnx::Node*, std::vector<const onnx::Node*>>, 7> chain{{
       {n.mm1, {n.div, n.mul}},
       {n.div, {n.erf}},
@@ -173,30 +135,30 @@ std::string hidden_problem(const Model& model, const Nodes& n) {
       {n.mm2, {n.norm2}},
   }};
   for (const auto& [from, to] : chain) {
-    if (!only_read_by(model, from->outputs[0], to)) return from->outputs[0];
+    if (!only_read_by(g, from->outputs[0], to)) return from->outputs[0];
   }
   return {};
 }
 
 // Le Concat [x, message] sur le dernier axe, message la sortie de norm1, lu par le premier MatMul seul : la
 // source x, ou vide.
-std::string source_of(const Model& model, const Nodes& n) {
-  const auto found = model.producers.find(n.mm1->inputs[0]);
-  if (found == model.producers.end() || found->second->op_type != "Concat") return {};
-  const onnx::Node& concat = *found->second;
-  const onnx::Attribute* axis = attribute(concat, "axis");
+std::string source_of(const OnnxView& g, const Nodes& n) {
+  const onnx::Node* found = g.producer(n.mm1->inputs[0]);
+  if (found == nullptr || found->op_type != "Concat") return {};
+  const onnx::Node& concat = *found;
+  const onnx::Attribute* axis = onnx_attribute(concat, "axis");
   if (axis == nullptr || axis->i != -1 || concat.inputs.size() != 2 || concat.outputs.size() != 1 ||
       concat.inputs[1] != n.norm1->outputs[0] || concat.inputs[0] == concat.inputs[1] ||
-      !only_read_by(model, concat.outputs[0], {n.mm1}))
+      !only_read_by(g, concat.outputs[0], {n.mm1}))
     return {};
   return concat.inputs[0];
 }
 
 // L'Add du résiduel, seul lecteur de norm2 : source + LayerNorm ; sa sortie, ou vide.
-std::string residual_of(const Model& model, const Nodes& n, const std::string& source) {
-  const auto found = model.readers.find(n.norm2->outputs[0]);
-  if (found == model.readers.end() || found->second.size() != 1) return {};
-  const onnx::Node& add = *found->second.front();
+std::string residual_of(const OnnxView& g, const Nodes& n, const std::string& source) {
+  const std::vector<const onnx::Node*> readers = g.readers(n.norm2->outputs[0]);
+  if (readers.size() != 1) return {};
+  const onnx::Node& add = *readers.front();
   if (add.op_type != "Add" || add.inputs != std::vector{source, n.norm2->outputs[0]} ||
       add.outputs.size() != 1)
     return {};
@@ -205,42 +167,24 @@ std::string residual_of(const Model& model, const Nodes& n, const std::string& s
 
 // La LayerNorm norm2 de la couche : dernier axe, statistiques en f32, échelle et décalage nommés de channels
 // valeurs. Son ε, ou un refus.
-std::expected<float, Refusal> read_norm(const Model& model, const onnx::Node& norm, int layer, int channels,
+std::expected<float, Refusal> read_norm(const OnnxView& g, const onnx::Node& norm, int layer, int channels,
                                         GmflowMlpLayer* out) {
   const std::string module = std::format("gmfss.flownet.transformer.layers.{}.cross_attn_ffn.norm2.", layer);
   if (norm.inputs.size() != 3 || norm.inputs[1] != module + "weight" || norm.inputs[2] != module + "bias")
     return missing(norm.name + " : échelle et décalage " + module + "weight, bias attendus");
   if (int_attribute(norm, "axis", -1) != -1 || int_attribute(norm, "stash_type", 1) != 1)
     return missing(norm.name + " : axe ou type des statistiques");
-  const auto gamma = model.initializers.find(norm.inputs[1]);
-  const auto beta = model.initializers.find(norm.inputs[2]);
+  const onnx::Tensor* gamma = g.constant(norm.inputs[1]);
+  const onnx::Tensor* beta = g.constant(norm.inputs[2]);
   const auto n = static_cast<std::size_t>(channels);
-  if (gamma == model.initializers.end() || beta == model.initializers.end() ||
-      gamma->second->floats.size() != n || beta->second->floats.size() != n)
+  if (gamma == nullptr || beta == nullptr || gamma->floats.size() != n || beta->floats.size() != n)
     return missing(norm.name + std::format(" : {} canaux attendus", channels));
   if (out != nullptr) {
-    out->gamma = gamma->second->floats;
-    out->beta = beta->second->floats;
+    out->gamma = gamma->floats;
+    out->beta = beta->floats;
   }
-  const onnx::Attribute* eps = attribute(norm, "epsilon");
+  const onnx::Attribute* eps = onnx_attribute(norm, "epsilon");
   return eps != nullptr ? eps->f : 1e-5F;
-}
-
-// Le poids d'un MatMul : un initialiseur, ou un Identity (en chaîne) d'un initialiseur ; resolved reçoit le
-// nom de l'initialiseur.
-const onnx::Tensor* weight_of(const Model& model, std::string name, std::string& resolved) {
-  for (int hops = 0; hops < 4; ++hops) {
-    if (const auto init = model.initializers.find(name); init != model.initializers.end()) {
-      resolved = name;
-      return init->second;
-    }
-    const auto producer = model.producers.find(name);
-    if (producer == model.producers.end() || producer->second->op_type != "Identity" ||
-        producer->second->inputs.size() != 1)
-      return nullptr;
-    name = producer->second->inputs[0];
-  }
-  return nullptr;
 }
 
 // Les poids ONNX [rows][cols] transposés : [cols][rows].
@@ -251,17 +195,16 @@ std::vector<float> transpose(const std::vector<float>& from, std::size_t rows, s
   return out;
 }
 
-// Les deux poids d'un emploi : W1 [2C][hidden], W2 [hidden][C], et les noms de leurs initialiseurs.
+// Les deux poids d'un emploi : W1 [2C][hidden], W2 [hidden][C], les constantes (initialiseurs, à travers les
+// Identity du second appel) que lisent les deux MatMul ; leur identité dit si le quart reprend ceux du
+// huitième.
 struct Weights {
   const onnx::Tensor* w1 = nullptr;
   const onnx::Tensor* w2 = nullptr;
-  std::array<std::string, 2> names;
 };
 
-std::expected<Weights, Refusal> read_weights(const Model& model, const Nodes& n, int channels, int& hidden) {
-  Weights w;
-  w.w1 = weight_of(model, n.mm1->inputs[1], w.names[0]);
-  w.w2 = weight_of(model, n.mm2->inputs[1], w.names[1]);
+std::expected<Weights, Refusal> read_weights(const OnnxView& g, const Nodes& n, int channels, int& hidden) {
+  Weights w{.w1 = g.constant(n.mm1->inputs[1]), .w2 = g.constant(n.mm2->inputs[1])};
   if (w.w1 == nullptr || w.w2 == nullptr) return missing(n.mm1->name + " : poids constants attendus");
   const std::vector<std::int64_t>& d1 = w.w1->dims;
   const std::vector<std::int64_t>& d2 = w.w2->dims;
@@ -279,29 +222,29 @@ std::expected<Weights, Refusal> read_weights(const Model& model, const Nodes& n,
 
 // Un emploi lu : sa couche (à la première échelle) ou sa vérification (à la seconde, mêmes poids).
 struct Reading {
-  const Model& model;
+  const OnnxView& g;
   GmflowMlp& mlp;
-  std::array<std::array<std::string, 2>, kLayers> names;  // les initialiseurs de W1 et W2 de chaque couche
+  std::array<std::array<const onnx::Tensor*, 2>, kLayers> weights;  // W1 et W2 de chaque couche au huitième
 };
 
 std::expected<void, Refusal> read_use(Reading& r, int scale, int layer) {
-  auto nodes = find_nodes(r.model, layer, scale);
+  auto nodes = find_nodes(r.g, layer, scale);
   if (!nodes) return std::unexpected(std::move(nodes.error()));
   const Nodes& n = *nodes;
   const std::string where = n.mm1->name;
-  if (const char* why = gelu_problem(r.model, n); why != nullptr)
+  if (const char* why = gelu_problem(r.g, n); why != nullptr)
     return missing(std::format("{} : {}", where, why));
-  if (const std::string read = hidden_problem(r.model, n); !read.empty())
+  if (const std::string read = hidden_problem(r.g, n); !read.empty())
     return missing(std::format("{} : lu hors du MLP", read));
-  const std::string source = source_of(r.model, n);
+  const std::string source = source_of(r.g, n);
   if (source.empty()) return missing(where + " : Concat [x, message de norm1] sur le dernier axe attendu");
-  const std::string output = residual_of(r.model, n, source);
+  const std::string output = residual_of(r.g, n, source);
   if (output.empty()) return missing(n.norm2->name + " : Add(x, norm2) du résiduel attendu");
-  auto weights = read_weights(r.model, n, r.mlp.channels, r.mlp.hidden);
+  auto weights = read_weights(r.g, n, r.mlp.channels, r.mlp.hidden);
   if (!weights) return std::unexpected(std::move(weights.error()));
   const auto at = static_cast<std::size_t>(layer);
   GmflowMlpLayer fresh;
-  auto eps = read_norm(r.model, *n.norm2, layer, r.mlp.channels, scale == 0 ? &fresh : nullptr);
+  auto eps = read_norm(r.g, *n.norm2, layer, r.mlp.channels, scale == 0 ? &fresh : nullptr);
   if (!eps) return std::unexpected(std::move(eps.error()));
   if (scale == 0) {
     const auto h = static_cast<std::size_t>(r.mlp.hidden), c = static_cast<std::size_t>(r.mlp.channels);
@@ -309,8 +252,9 @@ std::expected<void, Refusal> read_use(Reading& r, int scale, int layer) {
     fresh.w2 = transpose(weights->w2->floats, h, c);
     fresh.epsilon = *eps;
     r.mlp.layers.push_back(std::move(fresh));
-    r.names[at] = weights->names;
-  } else if (weights->names != r.names[at] || *eps != r.mlp.layers[at].epsilon) {
+    r.weights[at] = {weights->w1, weights->w2};
+  } else if (weights->w1 != r.weights[at][0] || weights->w2 != r.weights[at][1] ||
+             *eps != r.mlp.layers[at].epsilon) {
     return missing(where + " : pas les poids ni l'ε du huitième");
   }
   r.mlp.uses.push_back(
@@ -337,10 +281,9 @@ const char* layer_problem(const GmflowMlp& mlp, const GmflowMlpLayer& l) {
 std::expected<GmflowMlp, Refusal> gmflow_mlp(std::span<const std::byte> pair) {
   auto parsed = onnx::read_onnx(pair);
   if (!parsed) return std::unexpected(Refusal{RefusalCode::ModelUnreadable, parsed.error().detail});
-  Model model;
-  index_model(*parsed, model);
+  const OnnxView g(*parsed);
   GmflowMlp mlp;
-  Reading reading{.model = model, .mlp = mlp, .names = {}};
+  Reading reading{.g = g, .mlp = mlp, .weights = {}};
   for (int scale = 0; scale < kScales; ++scale)
     for (int layer = 0; layer < kLayers; ++layer) {
       if (auto ok = read_use(reading, scale, layer); !ok) return std::unexpected(std::move(ok.error()));

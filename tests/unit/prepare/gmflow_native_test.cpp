@@ -1,7 +1,8 @@
 // Le squelette CNN de GMFlow lu pour les noyaux natifs (prepare/gmflow_native.h) : un faux squelette aux
 // noms, opérateurs et attributs de la paire exportée (canaux réduits), lu et rangé, ses fautes refusées, le
-// plan et ses fautes, puis la vraie paire quand elle est là (KIRARI_RIFE_MODEL_DIR), squelette et attention
-// (prepare/gmflow_attention_native.h, dont le faux transformeur est dans gmflow_attention_test.cpp).
+// plan et ses fautes, puis la vraie paire quand elle est là (KIRARI_RIFE_MODEL_DIR) : squelette, attention
+// (prepare/gmflow_attention_native.h) et MLP (prepare/gmflow_mlp.h), en un seul cas qui ne saute qu'une fois
+// sans elle (leurs faux sont dans gmflow_attention_test.cpp et gmflow_mlp_test.cpp).
 #include "prepare/gmflow_native.h"
 
 #include <array>
@@ -20,6 +21,7 @@
 
 #include "kernels/ref/half.h"
 #include "prepare/gmflow_attention_native.h"
+#include "prepare/gmflow_mlp.h"
 #include "prepare/model_source.h"
 #include "rife_fake.h"
 
@@ -287,7 +289,8 @@ TEST_CASE("GMFlow natif : le plan se tient, ses fautes sont refusées", "[prepar
   CHECK(broken([](GmflowBackbone& b) { b.convs[3].weights.pop_back(); }));
 }
 
-TEST_CASE("GMFlow natif : le squelette et l'attention de la paire exportée se lisent", "[prepare][gmflow]") {
+TEST_CASE("GMFlow natif : le squelette, l'attention et le MLP de la paire exportée se lisent",
+          "[prepare][gmflow]") {
   const std::filesystem::path model =
       std::filesystem::path(KIRARI_RIFE_MODEL_DIR) / "gmfss_fortuna_union_pair.onnx";
   if (!std::filesystem::exists(model)) SKIP("gmfss_fortuna_union_pair.onnx absent");
@@ -321,6 +324,16 @@ TEST_CASE("GMFlow natif : le squelette et l'attention de la paire exportée se l
     CHECK(attention->layers[i].cross == (i % 2 == 1));
     CHECK(attention->layers[i].shifted == (i / 2 % 2 == 1));
   }
+  // Le MLP des cross-attentions (PR 3) : six couches 256 → 1024 → 128, douze emplois (huitième puis quart).
+  const auto mlp = gmflow_mlp(*bytes);
+  INFO((mlp ? std::string() : mlp.error().detail));
+  REQUIRE(mlp);
+  CHECK(mlp->hidden == 1024);
+  CHECK(mlp->layers.size() == 6);
+  REQUIRE(mlp->uses.size() == 12);
+  CHECK(std::abs(mlp->layers[0].epsilon - 1e-5F) < 1e-9F);
+  CHECK(mlp->uses[0].source == "/flownet/transformer/layers.0/self_attn/Add_output_0");
+  CHECK(mlp->uses[11].output == "/flownet/transformer/layers.5/cross_attn_ffn_1/Add_17_output_0");
 }
 
 }  // namespace kirari::prepare

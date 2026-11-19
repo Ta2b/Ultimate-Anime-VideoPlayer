@@ -460,7 +460,8 @@ transformeur (1/8 et 1/4) partagent les initialiseurs (un Identity au second). D
 stocké en FP16 (1,4140625 : 1,1e-4 d'écart relatif, moins que l'arrondi relatif du FP16, 2⁻¹¹ = 4,9e-4) ; le noyau
 multiplie par le 1/√2 exact.
 
-**Lecture** (`src/prepare/gmflow_mlp.{h,cpp}`, types sans `std::expected` dans `gmflow_mlp_plan.h` pour nvcc).
+**Lecture** (`src/prepare/gmflow_mlp.{h,cpp}`, types sans `std::expected` dans `gmflow_mlp_plan.h` pour nvcc ; le graphe
+parcouru par `gmflow_onnx_view.{h,cpp}`, comme l'attention).
 `gmflow_mlp(paire)` trouve les nœuds de chaque couche par leurs noms
 (`/flownet/transformer/layers.<i>/cross_attn_ffn/mlp/mlp.0/MatMul`, suffixe `_1` au second appel) et suit le reste
 d'arête en arête. Elle refuse (FieldMissing, avec le nom du nœud) une GELU autre (constantes √2, 1 et 0,5, ordre
@@ -470,8 +471,9 @@ l'autre ordre, des poids ou un ε différents d'une échelle à l'autre. Elle re
 [caché][256], W2 [128][caché], γ, β, ε) et 12 emplois (échelle, couche, noms ONNX de x, du message et de la sortie,
 que l'émulation lit). `gmflow_mlp_check` le revérifie contre le noyau : 128 canaux, couche cachée multiple de 64
 jusqu'à 4 096, poids finis et représentables en FP16, ε positif, chaque emploi valide et unique. Tests
-(`tests/unit/prepare/gmflow_mlp_test.cpp`) : un faux transformeur aux noms et nœuds de la paire, lu et rangé, 14
-fautes refusées, les fautes du plan, puis la vraie paire quand elle est là (sautée en CI, plafonds relevés d'un).
+(`tests/unit/prepare/gmflow_mlp_test.cpp`) : un faux transformeur aux noms et nœuds de la paire, lu et rangé, 15
+fautes refusées, les fautes du plan ; la vraie paire, quand elle est là, se lit dans le cas du squelette et de
+l'attention (`gmflow_native_test.cpp`), qui ne saute qu'une fois en CI.
 
 **Noyau** (`src/gpu/cuda/backend/gmflow_mlp_kernels.cuh`, `gmflow_mlp_net.{h,cu}`) : un bloc de 4 warps (64 jetons,
 45 Ko de mémoire partagée, deux blocs par SM) ou de 8 warps (128 jetons, 78 Ko, un bloc par SM, pas sur Turing) ;
