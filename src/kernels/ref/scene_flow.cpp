@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "kernels/ref/check.h"
+#include "kernels/ref/scene_camera.h"
 #include "kernels/ref/scene_fit.h"
 #include "kernels/spec/color.h"
 
@@ -247,18 +248,6 @@ bool is_fade(const std::vector<TileView>& views) {
 }
 
 // Le modèle centré et réduit (pixels du flux) en caméra de travail : x' = x + d(x).
-std::array<double, 6> camera_of(const Displacement& d, double cx, double cy, double scale, int divisor) {
-  // d(x) = c0 + c1 (x − cx)/s + c2 (y − cy)/s, en flux ; en travail : X = k x, d_w = k d.
-  const double k = divisor;
-  const double a1 = d.c[1] / scale;
-  const double a2 = d.c[2] / scale;
-  const double b1 = d.c[4] / scale;
-  const double b2 = d.c[5] / scale;
-  const double a0 = d.c[0] - a1 * cx - a2 * cy;
-  const double b0 = d.c[3] - b1 * cx - b2 * cy;
-  return {k * a0, 1.0 + a1, a2, k * b0, b1, 1.0 + b2};
-}
-
 bool grid_ok(const SceneFlowTiles& tiles) {
   const std::size_t count = static_cast<std::size_t>(tiles.cols) * static_cast<std::size_t>(tiles.rows);
   return count > 0 && tiles.tiles.size() == count;
@@ -440,12 +429,13 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, 
   const Frame f = frame_of(tiles);
   const SceneCamera none;
   const SceneCamera& used = camera.fit && !out.cut_likely ? camera : none;
-  out.camera_fit = used.fit;
+  const SceneCameraWork work = scene_camera_work(used, tiles.flow_width, tiles.flow_height, tiles.divisor);
+  out.camera_fit = work.fit;
+  out.camera = work.camera;
+  out.camera_refined = work.refined;
+  out.residual = work.residual;
+  out.residual_tiles = work.residual_tiles;
   if (used.fit) {
-    out.camera = camera_of(Displacement{.c = used.model}, f.cx, f.cy, f.scale, tiles.divisor);
-    out.camera_refined = used.refined;
-    out.residual = (used.check >= 0.0 ? used.check : used.residual) * tiles.divisor;
-    out.residual_tiles = used.check >= 0.0 ? used.check_tiles : 0;
     const auto& c = out.camera;
     out.background_held = std::hypot(c[0], c[3]) < scene::kHeldCamera &&
                           std::abs(c[1] - 1.0) < scene::kHeldLinear && std::abs(c[2]) < scene::kHeldLinear &&

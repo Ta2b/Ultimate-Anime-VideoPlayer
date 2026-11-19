@@ -163,6 +163,44 @@ std::optional<SceneCameraRequest> scene_camera_request(const SceneCamera& camera
   return SceneCameraRequest{.model = camera.model, .decor = camera.decor};
 }
 
+SceneCameraWork scene_camera_work(const SceneCamera& camera, int flow_width, int flow_height, int divisor) {
+  SceneCameraWork out;
+  if (!camera.fit) return out;
+  // d(x) = c0 + c1 (x − cx)/s + c2 (y − cy)/s, en flux (le repère de scene_camera_frame) ; en travail :
+  // X = k x, d_w = k d.
+  const double cx = 0.5 * flow_width;
+  const double cy = 0.5 * flow_height;
+  const double s = std::max(1.0, 0.5 * std::max(flow_width, flow_height));
+  const auto& c = camera.model;
+  const double k = divisor;
+  const double a1 = c[1] / s;
+  const double a2 = c[2] / s;
+  const double b1 = c[4] / s;
+  const double b2 = c[5] / s;
+  out.camera = {k * (c[0] - a1 * cx - a2 * cy), 1.0 + a1, a2, k * (c[3] - b1 * cx - b2 * cy), b1, 1.0 + b2};
+  out.fit = true;
+  out.refined = camera.refined;
+  out.residual = (camera.check >= 0.0 ? camera.check : camera.residual) * k;
+  out.residual_tiles = camera.check >= 0.0 ? camera.check_tiles : 0;
+  return out;
+}
+
+double scene_camera_gap(const std::array<double, 6>& a, const std::array<double, 6>& b, int flow_width,
+                        int flow_height) {
+  const double s = std::max(1.0, 0.5 * std::max(flow_width, flow_height));
+  const double x = 0.5 * flow_width / s;
+  const double y = 0.5 * flow_height / s;
+  double gap = 0.0;
+  for (const double sx : {-x, x}) {
+    for (const double sy : {-y, y}) {
+      const double dx = (a[0] - b[0]) + (a[1] - b[1]) * sx + (a[2] - b[2]) * sy;
+      const double dy = (a[3] - b[3]) + (a[4] - b[4]) * sx + (a[5] - b[5]) * sy;
+      gap = std::max(gap, std::hypot(dx, dy));
+    }
+  }
+  return gap;
+}
+
 void scene_camera_apply(SceneCamera& camera, const SceneCameraRefined& refined) {
   if (refined.steps > 0) {
     camera.model = refined.model;

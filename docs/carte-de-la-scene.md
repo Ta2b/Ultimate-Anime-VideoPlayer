@@ -13,11 +13,14 @@ entraînement.
   exactement comme sans la carte.
 - Interrupteur : `--scene-map` (essai). Éteint par défaut tant que la porte 2.2 n'est pas passée.
 - Journal de fin : `carte de la scène : N paires lancées, N relues, N posées sur leur paire ; N sautées (NVOF
-  occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, N pas
-  lancés), N coupes probables, N fondus ; hôte : N µs pour lancer une paire, N µs pour tirer une carte, en
-  moyenne`. « Posées » est ce qui compte : avec RIFE, presque toutes les paires lancées. « Trop tard » : la
-  carte n'était pas relue quand l'étage a décidé de sa paire ; « affinages trop tard » : elle l'était, mais
-  pas sa caméra affinée (la carte part avec celle de NVOF). Les temps de l'hôte sont ceux du thread du lecteur.
+  occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, dont N
+  relus ensuite, N pas lancés ; N lancés derrière le flux depuis la caméra du plan, N écartés), N coupes
+  probables, N fondus ; hôte : N µs pour lancer une paire, N µs pour tirer une carte, en moyenne`. « Posées »
+  est ce qui compte : avec RIFE, presque toutes les paires lancées. « Trop tard » : la carte n'était pas relue
+  quand l'étage a décidé de sa paire ; « affinages trop tard » : elle l'était, mais pas sa caméra affinée (la
+  carte part avec celle de NVOF ; l'affinage, relu ensuite, va aux calques par `SceneMap::last_refined`).
+  « Lancés derrière le flux » : l'affinage parti au lancement de la paire (plus bas) ; « écartés » : de
+  ceux-là, ceux qui ont dû repartir de la caméra de NVOF. Les temps de l'hôte sont ceux du thread du lecteur.
 - Profil GPU de fin, quatre étapes. « carte de la scène : lumas », sur la voie, « carte de la scène :
   tuiles », la réduction sur les SM, et « carte de la scène : caméra », l'affinage sur les SM : avec les
   temps de l'hôte, c'est tout ce que la carte ajoute à chaque image. « carte de la scène : flux (NVOFA) » : le bloc matériel du flux optique, qui tourne à côté des SM ;
@@ -85,6 +88,20 @@ Méthode de la porte 2.1 (banc `tools/bench/qualite/nvof_mesures.py` : `camera`,
   lumas floutées, un histogramme des écarts (la médiane du poids de Huber), les sommes pondérées, et un fil qui
   résout. Les lumas de la paire restent dans leurs tampons jusqu'à l'affinage : une paire plus récente qui les
   réécrirait attend (« relâché » reposé après l'affinage), et un affinage demandé trop tard n'est pas lancé.
+- **Affinage à l'heure** (`app/play/scene_map.cpp`) : dans un plan, l'affinage part dès le lancement de la
+  paire, enfilé derrière son flux sur la file de NVOF, depuis la dernière caméra du plan (affinée si elle est
+  relue, sinon celle de NVOF de la paire d'avant) : il n'attend plus que l'hôte relise les tuiles, et finit
+  avec elles. Lancé seulement après la relecture, il arrivait trop tard sur un tiers des paires au passage du
+  19 novembre (177 sur 473 sans calques). Il est gardé si sa vérification sur l'image (`SceneCamera::check`)
+  reste sous 0,05 pixel du flux, ou sous deux fois celle de la dernière caméra affinée du plan sans passer
+  0,15, et s'il reste à 16 pixels du flux de la caméra de NVOF de sa paire ; sinon il repart des tuiles
+  relues, depuis la caméra de NVOF, comme la première paire d'un plan. Rejeu de dix extraits (`carte_rejeu`,
+  ligne `tot`, 1 590 paires, 1 479 départs) : 1 346 gardés, dont 3 vérifiés à plus de 0,05 pixel au-delà de
+  l'affinage parti de NVOF. Garder ceux qui restent à 2 pixels de NVOF, sans regarder l'image, en gardait
+  1 416 dont 46 ainsi faux (un départ qui glisse vers une autre solution, souvent une image sur trois sur un
+  dessin en trois), et écartait des départs justes là où NVOF biaise la caméra de 2 à 9 pixels. Un affinage
+  pas fini quand l'étage décide de sa paire est relu plus tard (`SceneMap::last_refined`, pixels de travail) :
+  les calques reprennent la caméra d'une paire voisine.
 - **Vérification**, celle que mesure la porte : sur chaque tuile (décor ou non), deux pas de Lucas-Kanade sur le
   décalage qui reste ; une tuile texturée dans un seul sens se mesure en travers du bord. `SceneMotion::residual`
   est alors la médiane de ces décalages sur les tuiles du décor (`residual_tiles` tuiles), sinon l'écart des

@@ -22,6 +22,11 @@
 // médiane de leur écart moyen |e| (codes), les autres avec leurs centiles 50 et 90 ; les tuiles qui bougent
 // par leurs pixels (kMovingShare), par le seul recalage (kShiftMoving), et les effets par l'image
 // (kEffectShare et kEffectCost). Les seuils de la séparation se règlent là-dessus : le décor donne le bruit.
+// Puis tot DÉPART ÉCART_NVOF ÉCART_AFFINÉE ÉCART_IMAGE : l'affinage que le lecteur lance derrière le flux,
+// depuis la caméra de la paire d'avant (scene_map.h ; DÉPART 0 : pas de caméra d'où partir, le reste à −1) ;
+// son plus grand écart aux coins à la caméra de NVOF de la paire et à celle affinée depuis NVOF (pixels du
+// flux, ref::scene_camera_gap ; −1 sans celle-ci), puis l'écart mesuré sur l'image après lui (−1 : pas
+// mesuré). Le rejeu n'a pas les coupes du lecteur : la paire d'après une coupe part de l'autre plan.
 // D : le diviseur du travail au flux (scene_flow_divisor), qui ne change que les pixels de travail.
 // --calques : après la carte, les calques et la plaque de décor rejoués sur la paire (calques.h, ligne
 // calques), avec une vue toutes les N paires (défaut 20) dans DOSSIER si --vues est donné. --sans-affinage :
@@ -165,10 +170,36 @@ bool write_map(const std::string& path, const SceneMotion& m) {
   return static_cast<bool>(out);
 }
 
-// Une tâche : faux (et un message) si un fichier manque ou si la carte refuse la paire.
-// late : l'affinage toujours en retard (--sans-affinage), comme au pire dans le lecteur.
-bool run(const std::string& line, int divisor, ref::SceneHistory& history, carte_rejeu::LayerReplay* layers,
-         bool late) {
+// La ligne tot : l'affinage depuis la caméra de la paire d'avant (previous), face à la caméra de NVOF de la
+// paire (nvof) et à celle affinée depuis elle (refined).
+bool print_early(const Plane<std::uint8_t>& a, const Plane<std::uint8_t>& b, const SceneFlowTiles& tiles,
+                 const ref::SceneCamera& nvof, const ref::SceneCamera& refined,
+                 const std::optional<ref::SceneCamera>& previous) {
+  const auto request = previous && nvof.fit ? ref::scene_camera_request(*previous) : std::nullopt;
+  if (!request) {
+    std::cout << "tot 0 -1 -1 -1\n";
+    return true;
+  }
+  const auto early = ref::scene_camera_refine(a, b, *request);
+  if (!early) {
+    std::cerr << "carte_rejeu : " << early.error().detail << "\n";
+    return false;
+  }
+  ref::SceneCamera camera = nvof;
+  ref::scene_camera_apply(camera, *early);
+  const int w = tiles.flow_width;
+  const int h = tiles.flow_height;
+  std::cout << "tot 1 " << ref::scene_camera_gap(early->model, nvof.model, w, h) << ' '
+            << (refined.refined ? ref::scene_camera_gap(early->model, refined.model, w, h) : -1.0) << ' '
+            << camera.check << "\n";
+  return true;
+}
+
+// Une tâche : faux (et un message) si un fichier manque ou si la carte refuse la paire. previous : la caméra
+// de la paire d'avant, puis celle-ci. late : l'affinage toujours en retard (--sans-affinage), comme au pire
+// dans le lecteur.
+bool run(const std::string& line, int divisor, ref::SceneHistory& history,
+         std::optional<ref::SceneCamera>& previous, carte_rejeu::LayerReplay* layers, bool late) {
   std::istringstream fields(line);
   int width = 0;
   int height = 0;
@@ -231,6 +262,8 @@ bool run(const std::string& line, int divisor, ref::SceneHistory& history, carte
   std::cout << "camera " << int{camera.fit} << ' ' << int{camera.refined} << ' ' << steps << ' '
             << camera.check << ' ' << camera.check_tiles << ' ' << camera.residual << ' ' << kept << "\n";
   print_image(*tiles, camera);
+  if (!print_early(a, b, *tiles, nvof, camera, previous)) return false;
+  previous = camera.fit ? std::optional(camera) : std::nullopt;
   if (layers != nullptr && !layers->pair(a, b, m, refined_late)) {
     std::cerr << "carte_rejeu : vue des calques impossible : " << line << "\n";
     return false;
@@ -282,10 +315,11 @@ int main(int argc, char** argv) {
   std::optional<carte_rejeu::LayerReplay> replay;
   if (layers) replay.emplace(divisor, views, every);
   ref::SceneHistory history;
+  std::optional<ref::SceneCamera> previous;
   std::string line;
   while (std::getline(std::cin, line)) {
     if (line.empty()) continue;
-    if (!run(line, divisor, history, replay ? &*replay : nullptr, late)) return 1;
+    if (!run(line, divisor, history, previous, replay ? &*replay : nullptr, late)) return 1;
   }
   return 0;
 }

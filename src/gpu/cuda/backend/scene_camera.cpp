@@ -147,7 +147,7 @@ std::expected<std::uint64_t, Refusal> SceneFlow::refine(std::uint64_t flow_ticke
   std::memcpy(slot.model, request.model.data(), sizeof(double) * 6);
   std::memcpy(slot.decor, request.decor.data(), tiles);
   cudaStream_t own = session_->stream();
-  // La file de NVOF a déjà passé la paire (ses tuiles sont relues) : les lumas sont là.
+  // Sur la file de NVOF, derrière le flux de la paire (ses tuiles relues ou non) : les lumas sont là.
   timing.begin(own);
   std::expected<void, Refusal> ready =
       cuda_check(cudaMemsetAsync(refine_state_, 0, sizeof(SceneRefineState), own), "cudaMemsetAsync");

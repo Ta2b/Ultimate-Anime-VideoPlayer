@@ -15,11 +15,39 @@ double since_us(std::chrono::steady_clock::time_point from) {
   return std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - from).count();
 }
 
+// L'affinage parti de la caméra du plan est gardé si sa vérification sur l'image (SceneCamera::check, pixels
+// du flux) reste sous kEarlyFloor, ou sous kEarlyFactor fois celle de la dernière caméra affinée du plan sans
+// passer kEarlyCeiling, et s'il reste à kEarlyGap pixels du flux de la caméra de NVOF de sa paire, aux coins
+// (garde contre une vérification faite sur trop peu de texture). Rejeu de dix extraits (carte_rejeu, 1 479
+// départs) : 1 346 gardés, dont 3 vérifiés à plus de 0,05 pixel au-delà de l'affinage parti de NVOF. L'écart
+// seul à la caméra de NVOF (2 pixels) en gardait 1 416, dont 46 ainsi faux (un départ qui glisse vers une
+// autre solution, souvent une image sur trois sur un dessin animé en trois), et écartait des départs justes
+// là où NVOF biaise la caméra de 2 à 9 pixels (panoramique3).
+constexpr double kEarlyFloor = 0.05;
+constexpr double kEarlyFactor = 2.0;
+constexpr double kEarlyCeiling = 0.15;
+constexpr double kEarlyGap = 16.0;
+
+// La vérification que l'affinage parti de la caméra du plan ne doit pas dépasser ; check : celle de la
+// dernière caméra affinée du plan (négative : aucune).
+double early_limit(double check) {
+  return check < 0.0 ? kEarlyFloor : std::clamp(kEarlyFactor * check, kEarlyFloor, kEarlyCeiling);
+}
+
+// L'affinage parti de la caméra du plan, posé sur tried, est-il gardé ? nvof : la caméra de NVOF de la paire.
+bool early_kept(const kernels::ref::SceneCamera& tried, const kernels::ref::SceneCamera& nvof, double limit,
+                int flow_width, int flow_height) {
+  return tried.refined && tried.check >= 0.0 && tried.check <= limit &&
+         kernels::ref::scene_camera_gap(tried.model, nvof.model, flow_width, flow_height) <= kEarlyGap;
+}
+
 }  // namespace
 
 void SceneMap::stop(const Refusal& refusal, const char* where) {
   on_ = false;
   pending_.clear();
+  late_.clear();
+  guess_.reset();
   log_channel("gpu")->info("carte de la scène éteinte pour la lecture ({} : {})", where, refusal.detail);
 }
 
@@ -45,7 +73,9 @@ void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tenso
     pending_.erase(pending_.begin());
     ++lost_;
   }
-  pending_.push_back({.ticket = *ticket, .left = left, .right = right, .restart = restart});
+  if (restart) ++shot_;
+  pending_.push_back({.ticket = *ticket, .left = left, .right = right, .restart = restart, .shot = shot_});
+  request_early(ops, pending_.back());
   last_left_ = left;
   last_right_ = right;
   last_epoch_ = epoch;
@@ -79,7 +109,30 @@ bool SceneMap::take_tiles(gpu::KernelOps& ops) {
   const auto asked = std::chrono::steady_clock::now();
   pair.camera = kernels::ref::scene_camera_of(*pair.tiles);
   map_us_ += since_us(asked);
+  // La caméra du plan pour la paire suivante, en attendant l'affinage de celle-ci ; la vérification de la
+  // dernière caméra affinée du plan reste.
+  if (pair.camera.fit) {
+    const double check = guess_ && guess_->shot == pair.shot ? guess_->check : -1.0;
+    guess_ = Guess{.shot = pair.shot, .camera = pair.camera, .check = check};
+  }
   return true;
+}
+
+void SceneMap::request_early(gpu::KernelOps& ops, Pending& pair) {
+  if (!refine_ || pair.restart || !guess_ || guess_->shot != pair.shot) return;
+  const double limit = early_limit(guess_->check);
+  const std::optional<kernels::SceneCameraRequest> request =
+      kernels::ref::scene_camera_request(guess_->camera);
+  if (!request) return;
+  auto ticket = ops.scene_camera_start(pair.ticket, *request);
+  if (!ticket) {
+    stop_refine(ticket.error(), "scene_camera_start");
+    return;
+  }
+  if (*ticket == 0) return;  // relectures toutes en vol : il partira des tuiles relues
+  pair.refine = *ticket;
+  pair.early_limit = limit;
+  ++refine_early_;
 }
 
 void SceneMap::request_refine(gpu::KernelOps& ops, Pending& pair) {
@@ -110,10 +163,77 @@ bool SceneMap::collect_refine(gpu::KernelOps& ops, Pending& pair) {
     return true;
   }
   if (!*taken) return false;
-  kernels::ref::scene_camera_apply(pair.camera, **taken);
-  if (pair.camera.refined) ++refined_;
   pair.refine = 0;
+  const Late where = late_of(pair);
+  if (!apply_refined(pair.camera, **taken, std::exchange(pair.early_limit, 0.0), where)) {
+    request_refine(ops, pair);  // depuis la caméra de NVOF, comme sans caméra du plan
+    return pair.refine == 0;
+  }
+  if (pair.camera.refined)
+    guess_ = Guess{.shot = pair.shot, .camera = pair.camera, .check = pair.camera.check};
   return true;
+}
+
+bool SceneMap::apply_refined(kernels::ref::SceneCamera& camera, const kernels::SceneCameraRefined& refined,
+                             double limit, const Late& where) {
+  if (limit > 0.0) {
+    kernels::ref::SceneCamera tried = camera;
+    kernels::ref::scene_camera_apply(tried, refined);
+    if (!early_kept(tried, camera, limit, where.flow_width, where.flow_height)) {
+      ++refine_off_;
+      return false;
+    }
+    camera = std::move(tried);
+  } else {
+    kernels::ref::scene_camera_apply(camera, refined);
+  }
+  if (!camera.refined) return true;
+  // La vérification du plan suit, pour l'affinage de la paire suivante (guess_ porte déjà une caméra de NVOF
+  // plus récente quand cet affinage arrive en retard).
+  if (guess_ && guess_->shot == where.shot && camera.check >= 0.0) guess_->check = camera.check;
+  ++refined_;
+  const kernels::ref::SceneCameraWork work =
+      kernels::ref::scene_camera_work(camera, where.flow_width, where.flow_height, where.divisor);
+  last_refined_ = Refined{.left = where.left,
+                          .right = where.right,
+                          .camera = work.camera,
+                          .residual = work.residual,
+                          .residual_tiles = work.residual_tiles};
+  return true;
+}
+
+void SceneMap::poll_late(gpu::KernelOps& ops) {
+  while (on_ && refine_ && !late_.empty()) {
+    Late& late = late_.front();
+    auto taken = ops.scene_camera_take(late.refine);
+    if (!taken) {
+      if (taken.error().code != RefusalCode::SequenceOrder) stop_refine(taken.error(), "scene_camera_take");
+      late_.erase(late_.begin());
+      continue;
+    }
+    if (!*taken) return;  // les suivants sont derrière lui sur la file de NVOF
+    if (apply_refined(late.camera, **taken, late.early_limit, late)) ++refine_after_;
+    late_.erase(late_.begin());
+  }
+}
+
+SceneMap::Late SceneMap::late_of(const Pending& pair) {
+  return Late{.early_limit = pair.early_limit,
+              .shot = pair.shot,
+              .left = pair.left,
+              .right = pair.right,
+              .camera = pair.camera,
+              .flow_width = pair.tiles ? pair.tiles->flow_width : 0,
+              .flow_height = pair.tiles ? pair.tiles->flow_height : 0,
+              .divisor = pair.tiles ? pair.tiles->divisor : 1};
+}
+
+void SceneMap::keep_late(Pending& pair) {
+  ++refine_late_;
+  // Le backend garde un affinage par paire en vol : au-delà, le plus ancien est périmé.
+  if (late_.size() >= gpu::kSceneFlowReadbacks) late_.erase(late_.begin());
+  late_.push_back(late_of(pair));
+  late_.back().refine = std::exchange(pair.refine, 0);
 }
 
 void SceneMap::finish(Pending& pair) {
@@ -136,6 +256,7 @@ void SceneMap::finish(Pending& pair) {
 }
 
 void SceneMap::poll(gpu::KernelOps& ops) {
+  poll_late(ops);  // d'abord les plus anciens : last_refined() garde le plus récent
   while (on_ && !pending_.empty()) {
     Pending& pair = pending_.front();
     if (!pair.tiles) {
@@ -144,7 +265,7 @@ void SceneMap::poll(gpu::KernelOps& ops) {
         if (on_ && pending_.size() < before) continue;  // perdue : la suivante
         return;                                         // pas encore finie : les suivantes non plus
       }
-      request_refine(ops, pair);
+      if (pair.refine == 0) request_refine(ops, pair);
     }
     if (pair.refine != 0 && !collect_refine(ops, pair)) return;  // caméra encore en affinage
     finish(pair);
@@ -156,7 +277,7 @@ void SceneMap::settle(gpu::KernelOps& ops, SourceId left, SourceId right) {
   if (!std::ranges::any_of(pending_, wanted)) return;
   while (on_ && !pending_.empty() && pending_.front().tiles) {
     const bool reached = wanted(pending_.front());
-    if (pending_.front().refine != 0) ++refine_late_;
+    if (pending_.front().refine != 0) keep_late(pending_.front());
     finish(pending_.front());
     if (reached) return;
     poll(ops);  // les suivantes, peut-être déjà relues
@@ -185,11 +306,14 @@ void SceneMap::log_summary() const {
   log_channel("gpu")->info(
       "carte de la scène : {} paires lancées, {} relues, {} posées sur leur paire ; {} sautées (NVOF "
       "occupé), "
-      "{} relues trop tard, {} perdues ; caméra ajustée sur {}, affinée sur {} ({} affinages trop tard, {} "
-      "pas lancés), {} coupes probables, {} fondus ; hôte : {:.0f} µs pour lancer une paire, {:.0f} µs pour "
-      "tirer une carte, en moyenne",
-      started_, read_, attached_, busy_, missed_, lost_, camera_fits_, refined_, refine_late_, refine_missed_,
-      cuts_, fades_, start_us_ / static_cast<double>(started_ + busy_),
+      "{} relues trop tard, {} perdues ; caméra ajustée sur {}, affinée sur {} ({} affinages trop tard, dont "
+      "{} relus ensuite, {} pas lancés ; {} lancés derrière le flux depuis la caméra du plan, {} écartés), "
+      "{} "
+      "coupes probables, {} fondus ; hôte : {:.0f} µs pour lancer une paire, {:.0f} µs pour tirer une carte, "
+      "en moyenne",
+      started_, read_, attached_, busy_, missed_, lost_, camera_fits_, refined_, refine_late_, refine_after_,
+      refine_missed_, refine_early_, refine_off_, cuts_, fades_,
+      start_us_ / static_cast<double>(started_ + busy_),
       read_ > 0 ? map_us_ / static_cast<double>(read_) : 0.0);
 }
 

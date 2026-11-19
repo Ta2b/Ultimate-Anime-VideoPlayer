@@ -4,6 +4,7 @@
 // (app/play/scene_map.cpp), comme scene_motion_of.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -28,5 +29,22 @@ std::optional<SceneCameraRequest> scene_camera_request(const SceneCamera& camera
 // en travers se mesure, et c'est le seul qui se voit). Une tuile compte si au moins scene::kCheckCover de ses
 // pixels l'ont été.
 void scene_camera_apply(SceneCamera& camera, const SceneCameraRefined& refined);
+
+// La caméra d'une paire en pixels de travail, telle que scene_motion_of la pose (SceneMotion::camera,
+// camera_refined, residual, residual_tiles) : identité si elle n'est pas ajustée. L'image du flux fait
+// flow_width × flow_height ; divisor va du travail au flux (SceneFlowTiles).
+struct SceneCameraWork {
+  std::array<double, 6> camera{0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+  bool fit = false;
+  bool refined = false;
+  double residual = 0.0;
+  int residual_tiles = 0;
+};
+SceneCameraWork scene_camera_work(const SceneCamera& camera, int flow_width, int flow_height, int divisor);
+
+// Le plus grand écart entre deux modèles (coordonnées réduites, pixels du flux) aux quatre coins de l'image
+// du flux, pixels du flux.
+double scene_camera_gap(const std::array<double, 6>& a, const std::array<double, 6>& b, int flow_width,
+                        int flow_height);
 
 }  // namespace kirari::kernels::ref
