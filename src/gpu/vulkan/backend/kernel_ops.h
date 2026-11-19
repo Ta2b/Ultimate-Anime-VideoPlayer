@@ -356,6 +356,7 @@ class VulkanKernelOps final : public KernelOps {
   std::uint32_t ring_generation_ = 0;
   // Mesures relues par l'hôte sans copie (scores_start, flow_max_start), kPendingReadbacks
   // emplacements à tour de rôle ; value : leur point sur la file, seul attendu par la relecture.
+  // pair_reads_ en a un de plus, le dernier, à scores_now seul : il ne prend la place d'aucun ticket.
   struct PairRead {
     std::optional<Buffer> sums;
     std::optional<Buffer> worst;
@@ -373,8 +374,11 @@ class VulkanKernelOps final : public KernelOps {
     std::uint64_t value = 0;
     std::uint64_t points = 0;  // points comptés dans l'histogramme
   };
-  std::array<PairRead, kPendingReadbacks> pair_reads_;
+  std::array<PairRead, kPendingReadbacks + 1> pair_reads_;
   std::array<FlowRead, kPendingReadbacks> flow_reads_;
+  // La mesure de la paire lancée dans slot, puis relue (attente hôte de cette mesure seule).
+  std::expected<void, Refusal> pair_launch(PairRead& slot, const Tensor& a, const Tensor& b);
+  std::expected<PairScores, Refusal> pair_read(const PairRead& slot);
   struct StatsRead {
     std::optional<Buffer> counts;
     std::uint64_t ticket = 0;
