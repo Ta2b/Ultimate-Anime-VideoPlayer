@@ -3,12 +3,15 @@
 // (libnvidia-opticalflow.so.1, nvofapi64.dll) ; le pilote CUDA passe par media/cuda_driver.h.
 #include <array>
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 #include "media/cuda_driver.h"
 #include "media/probe_flow.h"
@@ -54,15 +57,24 @@ constexpr auto kVectorBytes = static_cast<std::size_t>(kProbeFlowCellsX) * sizeo
 }  // namespace
 
 // La bibliothèque n'est jamais déchargée : le pilote garde ses fils (comme libcuda, media/cuda_driver.h).
+// Chaque appel de NVOF qui touche l'appareil (l'initialisation, les tampons, l'exécution, la destruction) se
+// fait le contexte rendu courant, comme dans les exemples du SDK : le fil de la pré-analyse n'en a aucun.
 struct ProbeFlow::Session {
+  // Un tampon de NVOF, son adresse sur l'appareil et l'écart de ses lignes, lus à sa création.
+  struct Buffer {
+    NvOFGPUBufferHandle handle = nullptr;
+    std::uintptr_t address = 0;
+    std::size_t pitch = 0;
+  };
+
   std::shared_ptr<CudaDriver> driver;
   PrimaryContext context;
   std::uintptr_t stream = 0;
   NV_OF_CUDA_API_FUNCTION_LIST calls{};
   NvOFHandle handle = nullptr;
-  NvOFGPUBufferHandle input = nullptr;
-  NvOFGPUBufferHandle reference = nullptr;
-  NvOFGPUBufferHandle flow = nullptr;
+  Buffer input;
+  Buffer reference;
+  Buffer flow;
 
   Session() = default;
   Session(const Session&) = delete;
@@ -71,9 +83,12 @@ struct ProbeFlow::Session {
   Session& operator=(Session&&) = delete;
   ~Session() {
     if (driver == nullptr) return;
+    // Une exécution refusée a pu laisser une copie en route sur le flux : elle finit avant que ses tampons
+    // soient rendus.
+    if (stream != 0) (void)driver->synchronize(context.context, stream);
     (void)driver->in_context(context.context, [this] {
-      for (NvOFGPUBufferHandle buffer : {input, reference, flow})
-        if (buffer != nullptr) calls.nvOFDestroyGPUBufferCuda(buffer);
+      for (const Buffer* buffer : {&input, &reference, &flow})
+        if (buffer->handle != nullptr) calls.nvOFDestroyGPUBufferCuda(buffer->handle);
       if (handle != nullptr) calls.nvOFDestroy(handle);
     });
     if (stream != 0) driver->destroy_stream(context.context, stream);
@@ -90,17 +105,15 @@ struct ProbeFlow::Session {
     return detail;
   }
 
-  std::uintptr_t address(NvOFGPUBufferHandle buffer) const {
-    return static_cast<std::uintptr_t>(calls.nvOFGPUBufferGetCUdeviceptr(buffer));
-  }
-  std::size_t pitch(NvOFGPUBufferHandle buffer) const {
-    NV_OF_CUDA_BUFFER_STRIDE_INFO stride{};
-    if (calls.nvOFGPUBufferGetStrideInfo(buffer, &stride) != NV_OF_SUCCESS) return 0;
-    return stride.strideInfo[0].strideXInBytes;
+  // La session et ses trois tampons, le contexte courant ; un message d'erreur, vide si tout va.
+  std::string start() {
+    std::string error;
+    if (auto entered = driver->in_context(context.context, [&] { error = create(); }); !entered)
+      return entered.error().detail;
+    return error;
   }
 
-  // La session et ses trois tampons ; un message d'erreur, vide si tout va.
-  std::string start() {
+  std::string create() {
     if (const auto status = calls.nvCreateOpticalFlowCuda(std::bit_cast<CUcontext>(context.context), &handle);
         status != NV_OF_SUCCESS)
       return failed(status, "nvCreateOpticalFlowCuda");
@@ -128,13 +141,27 @@ struct ProbeFlow::Session {
                                           .height = kProbeFlowCellsY,
                                           .bufferUsage = NV_OF_BUFFER_USAGE_OUTPUT,
                                           .bufferFormat = NV_OF_BUFFER_FORMAT_SHORT2};
-    for (auto [desc, into] :
-         {std::pair{&luma, &input}, std::pair{&luma, &reference}, std::pair{&vectors, &flow}}) {
-      if (const auto status =
-              calls.nvOFCreateGPUBufferCuda(handle, desc, NV_OF_CUDA_BUFFER_TYPE_CUDEVICEPTR, into);
-          status != NV_OF_SUCCESS)
-        return failed(status, "nvOFCreateGPUBufferCuda");
+    for (auto [desc, row, into] :
+         {std::tuple{&luma, kLumaBytes, &input}, std::tuple{&luma, kLumaBytes, &reference},
+          std::tuple{&vectors, kVectorBytes, &flow}}) {
+      if (std::string error = create_buffer(*desc, row, *into); !error.empty()) return error;
     }
+    return {};
+  }
+
+  // Un tampon de desc, ses lignes d'au moins row octets ; un message d'erreur, vide si tout va.
+  std::string create_buffer(const NV_OF_BUFFER_DESCRIPTOR& desc, std::size_t row, Buffer& into) {
+    if (const auto status =
+            calls.nvOFCreateGPUBufferCuda(handle, &desc, NV_OF_CUDA_BUFFER_TYPE_CUDEVICEPTR, &into.handle);
+        status != NV_OF_SUCCESS)
+      return failed(status, "nvOFCreateGPUBufferCuda");
+    NV_OF_CUDA_BUFFER_STRIDE_INFO stride{};
+    if (const auto status = calls.nvOFGPUBufferGetStrideInfo(into.handle, &stride); status != NV_OF_SUCCESS)
+      return failed(status, "nvOFGPUBufferGetStrideInfo");
+    into.address = static_cast<std::uintptr_t>(calls.nvOFGPUBufferGetCUdeviceptr(into.handle));
+    into.pitch = stride.strideInfo[0].strideXInBytes;
+    if (into.address == 0 || into.pitch < row)
+      return std::format("tampon de NVOF inattendu (lignes de {} octets pour {})", into.pitch, row);
     return {};
   }
 
@@ -142,10 +169,10 @@ struct ProbeFlow::Session {
   std::expected<std::vector<FlowVector>, std::string> run(const ProbeLuma& previous,
                                                           const ProbeLuma& current) {
     const std::uintptr_t ctx = context.context;
-    for (auto [luma, buffer] : {std::pair{&current, input}, std::pair{&previous, reference}}) {
+    for (auto [luma, buffer] : {std::pair{&current, &input}, std::pair{&previous, &reference}}) {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) : copie vers l'appareil, la source est lue
       void* host = const_cast<std::uint8_t*>(luma->data());
-      if (auto ok = driver->copy_host_2d(ctx, stream, true, address(buffer), pitch(buffer), host, kLumaBytes,
+      if (auto ok = driver->copy_host_2d(ctx, stream, true, buffer->address, buffer->pitch, host, kLumaBytes,
                                          kLumaBytes, kProbeFlowHeight);
           !ok)
         return std::unexpected(ok.error().detail);
@@ -153,17 +180,17 @@ struct ProbeFlow::Session {
     NV_OF_STATUS status = NV_OF_SUCCESS;
     auto ran = driver->in_context(ctx, [&] {
       NV_OF_EXECUTE_INPUT_PARAMS in{};
-      in.inputFrame = input;
-      in.referenceFrame = reference;
+      in.inputFrame = input.handle;
+      in.referenceFrame = reference.handle;
       in.disableTemporalHints = NV_OF_TRUE;  // chaque paire seule : sauts, cache et export rejouables
       NV_OF_EXECUTE_OUTPUT_PARAMS out{};
-      out.outputBuffer = flow;
+      out.outputBuffer = flow.handle;
       status = calls.nvOFExecute(handle, &in, &out);
     });
     if (!ran) return std::unexpected(ran.error().detail);
     if (status != NV_OF_SUCCESS) return std::unexpected(failed(status, "nvOFExecute"));
     std::vector<FlowVector> vectors(static_cast<std::size_t>(kProbeFlowCellsX) * kProbeFlowCellsY);
-    if (auto ok = driver->copy_host_2d(ctx, stream, false, address(flow), pitch(flow), vectors.data(),
+    if (auto ok = driver->copy_host_2d(ctx, stream, false, flow.address, flow.pitch, vectors.data(),
                                        kVectorBytes, kVectorBytes, kProbeFlowCellsY);
         !ok)
       return std::unexpected(ok.error().detail);
