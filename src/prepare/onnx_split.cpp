@@ -4,10 +4,11 @@
 // = 11 ; TensorProto.dims = 1, .data_type = 2, .float_data = 4, .int32_data = 5, .int64_data = 7, .name = 8,
 // .raw_data = 9, .external_data = 13, .data_location = 14 ; ValueInfoProto.name = 1, .type = 2 ;
 // TypeProto.tensor_type = 1 ; TypeProto.Tensor.elem_type = 1, .shape = 2 ; TensorShapeProto.dim = 1 ;
-// Dimension.dim_value = 1.
+// Dimension.dim_value = 1, .dim_param = 2.
 #include "prepare/onnx_split.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -225,17 +226,22 @@ std::expected<TensorValues, Refusal> read_tensor(Bytes message) {
   return out;
 }
 
-// ValueInfoProto { name ; type { tensor_type { elem_type ; shape { dim { dim_value }… } } } }.
+// ValueInfoProto { name ; type { tensor_type { elem_type ; shape { dim { dim_value | dim_param }… } } } }.
 std::vector<std::byte> value_info(const SplitTensor& tensor) {
   std::vector<std::byte> inner;
   put_varint(inner, (1U << 3U) | 0U);
   put_varint(inner, static_cast<std::uint64_t>(static_cast<std::uint32_t>(tensor.elem_type)));
   if (!tensor.dims.empty()) {
     std::vector<std::byte> shape;
-    for (const std::int64_t dim : tensor.dims) {
+    constexpr std::array<std::string_view, 4> kFree = {"batch", "channels", "height", "width"};
+    for (std::size_t i = 0; i < tensor.dims.size(); ++i) {
       std::vector<std::byte> one;
-      put_varint(one, (1U << 3U) | 0U);
-      put_varint(one, static_cast<std::uint64_t>(dim));
+      if (tensor.dims[i] < 0) {  // libre : nommée selon son rang, comme onnx_build::value_info
+        put_delimited(one, 2, as_bytes(i < kFree.size() ? kFree[i] : std::string_view("dim")));
+      } else {
+        put_varint(one, (1U << 3U) | 0U);
+        put_varint(one, static_cast<std::uint64_t>(tensor.dims[i]));
+      }
       put_delimited(shape, 1, one);
     }
     put_delimited(inner, 2, shape);

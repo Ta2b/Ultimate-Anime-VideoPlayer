@@ -13,6 +13,7 @@
 
 #include "app/play/temporal_fix.h"
 #include "core/types.h"
+#include "prepare/onnx_cache.h"
 
 namespace kirari::app::play {
 
@@ -24,11 +25,22 @@ inline constexpr std::string_view kTemporalFixDir = "temporalfix";
 std::optional<std::filesystem::path> find_temporal_fix(TemporalFix fix,
                                                        std::span<const std::filesystem::path> dirs);
 
-// Le modèle à construire : entrée coupée en kTemporalFixFrames, à demi-taille si half, dans dir. Un fichier
-// par modèle et par variante, quelle que soit la taille de travail. Refus : ceux de derived_model et de la
-// coupe.
+// Le nom des entrées de traits de la fenêtre (prepare/onnx_cache.h).
+inline constexpr std::string_view kTemporalFixFeatures = "features";
+
+// La découpe de l'encodeur (prepare/onnx_cache.h) : chaque image n'est encodée qu'une fois, ses traits
+// gardés à côté d'elle dans la fenêtre (temporal_window.h).
+prepare::EncoderCache temporal_fix_cache(bool half);
+
+// La fenêtre à construire : entrée coupée en kTemporalFixFrames images, suivies de leurs kTemporalFixFrames
+// traits gardés, à demi-taille si half, dans dir. Un fichier par modèle et par variante, quelle que soit la
+// taille de travail. Refus : ceux de derived_model et des découpes.
 std::expected<std::filesystem::path, Refusal> temporal_fix_graph(const std::filesystem::path& model,
                                                                  bool half, const std::filesystem::path& dir);
+// L'encodeur à construire : une image 1 × 3 × H × W → ses traits (prepare::feature_channels canaux).
+std::expected<std::filesystem::path, Refusal> temporal_fix_encoder(const std::filesystem::path& model,
+                                                                   bool half,
+                                                                   const std::filesystem::path& dir);
 
 // La taille de travail que la stabilisation prend : paire, et multiple de 4 à demi-taille (le réseau lit
 // alors une image paire). Faux : la lecture se fait sans elle.
