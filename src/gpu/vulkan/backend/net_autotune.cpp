@@ -34,8 +34,8 @@ namespace {
 // 2 : Conv directe à plusieurs pixels (PIX) ; 3 : taille de sous-groupe exigée ; 4 : coopmat à
 // 8 sous-groupes, en wave32 sur AMD, sorties vérifiées contre le noyau direct ; 5 : Conv 3 × 3
 // par Winograd ; 6 : coopmat à 16 sous-groupes et tm 8 (mémoire partagée des RDNA 4) ; 7 : tolérance selon
-// la précision, 1 % en sommes float (P2.45) ; 8 : boucles des noyaux déroulées (matrices coopératives, direct,
-// Winograd), dont les temps relatifs changent. Un appareil à tuiles 8 × 16 × 16 y ajoute « m8 »
+// la précision, 1 % en sommes float (P2.45) ; 8 : boucles des noyaux déroulées (matrices coopératives,
+// direct, Winograd), dont les temps relatifs changent. Un appareil à tuiles 8 × 16 × 16 y ajoute « m8 »
 // (candidate_set).
 constexpr std::string_view kCandidateSet = "c8";
 
@@ -261,9 +261,10 @@ std::expected<void, Refusal> Autotuner::save() const {
 
 namespace {
 
-// À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide, au plus 10 %), la variante aux sommes en float
-// l'emporte sur celle à précision réduite : la précision ne coûte alors rien, et un écart de bruit ne
-// tranche pas. `full_precision_us` reçoit la meilleure variante aux sommes float, pour chiffrer le gain.
+// À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide, au plus 10 %), la variante aux
+// sommes en float l'emporte sur celle à précision réduite : la précision ne coûte alors rien, et un écart de
+// bruit ne tranche pas. `full_precision_us` reçoit la meilleure variante aux sommes float, pour chiffrer le
+// gain.
 std::optional<Measured> pick_best(std::vector<Measured>& measured, std::optional<double>& full_precision_us) {
   const auto fp16_sums = [](const Measured& m) { return low_precision(m.choice); };
   std::optional<Measured> best;
@@ -412,9 +413,9 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
       }
     }
   }
-  // À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide, au plus 10 %), la variante aux sommes en float
-  // l'emporte sur celle à précision réduite : la précision ne coûte alors rien, et un écart de bruit ne
-  // tranche pas.
+  // À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide, au plus 10 %), la variante aux
+  // sommes en float l'emporte sur celle à précision réduite : la précision ne coûte alors rien, et un écart
+  // de bruit ne tranche pas.
   std::optional<double> full_precision_us;  // la meilleure variante aux sommes float, pour chiffrer le gain
   std::optional<Measured> best = pick_best(measured, full_precision_us);
   if (!best) {
