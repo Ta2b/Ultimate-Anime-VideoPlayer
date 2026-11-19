@@ -100,9 +100,9 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   // Une image saine mais pas fraîche (saut, image abîmée derrière) : entière.
   CHECK_FALSE(t.plan(TileFacts{.stale = TileStale::Restart, .can_shift = true, .scene = &scene}).tiled);
 
-  // Dérive lente (nuages) : 0,2 pixel par paire, sous le seuil du flux ; à la troisième, plus de 0,5 pixel
-  // reçu depuis le calcul : tout est à refaire, la région dépasse kMaxShare, l'image est entière.
-  for (auto& s : scene.tiles) s.dx = 0.2F;
+  // Dérive lente (nuages) : 0,012 pixel par paire, sous le seuil du flux ; à la troisième, plus de 0,025
+  // pixel reçu depuis le calcul : tout est à refaire, la région dépasse kMaxShare, l'image est entière.
+  for (auto& s : scene.tiles) s.dx = 0.012F;
   CHECK(t.plan(fresh).tiled);
   CHECK(t.plan(fresh).tiled);
   CHECK_FALSE(t.plan(fresh).tiled);
@@ -131,7 +131,7 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   // qui entre (première colonne) et le bord d'où le contenu sort (dernière colonne) se recalculent, avec ce
   // qui les voit.
   kernels::SceneMotion pan = still_scene();
-  pan.camera[0] = 4.05;
+  pan.camera[0] = 4.02;
   pan.background_held = false;
   for (auto& s : pan.tiles) {
     s.dx = 4.0F;
@@ -176,7 +176,8 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   CHECK(once.summary() ==
         "SPAN par tuiles : 0 images sur 4 calculées (0.0 %) ; images entières : 1 sans carte, 1 refus du "
         "moteur, 1 sortie d'avant gradée sur place, 1 début, saut ou image abîmée ; caméra de la carte sur 3 "
-        "images : 3 tenues (sous 0.25 pixel partout), 0 en partie (zoom, rotation), 0 qui bougent partout");
+        "images : 3 tenues (sous 0.025 pixel partout), 0 en partie (zoom, rotation), 0 qui bougent partout, "
+        "médiane au centre sous 0.016 pixel");
   // Rien de calculé : la ligne le dit aussi.
   SpanTiles idle;
   idle.set_grid(kGrid);
@@ -230,34 +231,35 @@ TEST_CASE("Tuiles qui bougent : caméra au bruit près, lente, qui bouge partout
   t.set_grid(kGrid);
   kernels::SceneMotion scene = still_scene();
   // La carte ne dit pas la caméra tenue (son seuil se lit au coin haut gauche, partie linéaire comprise) :
-  // jusqu'ici, chacune de ces images était entière (« caméra sans décalage entier »).
+  // avant le 19 novembre, chacune de ces images était entière (« caméra sans décalage entier »).
   scene.background_held = false;
   const TileFacts facts{.stale = TileStale::None, .can_shift = true, .scene = &scene};
   CHECK_FALSE(t.plan(facts).tiled);  // la première suit l'état
 
-  // Dialogue fixe : l'ajustement hésite de ± 0,15 pixel d'une paire à l'autre. Signé, le bruit s'annule :
-  // toutes les images par tuiles, rien à recalculer.
+  // Plan fixe : l'ajustement hésite de ± 0,02 pixel d'une paire à l'autre. Signé, le bruit s'annule : toutes
+  // les images par tuiles, rien à recalculer.
   for (int i = 0; i < 10; ++i) {
-    scene.camera[0] = i % 2 == 0 ? 0.15 : -0.15;
+    scene.camera[0] = i % 2 == 0 ? 0.02 : -0.02;
     const TilePlan p = t.plan(facts);
     REQUIRE(p.tiled);
     CHECK(kernels::count_span_tiles(p.core) == 0);
   }
 
-  // Caméra lente, 0,15 pixel par paire dans le même sens : à la deuxième, 0,3 pixel reçu, au-delà du quart de
-  // pixel : tout est à refaire, la région dépasse kMaxShare, l'image est entière ; puis ça recommence.
-  scene.camera[0] = 0.15;
+  // Caméra lente, 0,02 pixel par paire dans le même sens : à la deuxième, 0,04 pixel reçu, au-delà de
+  // kCameraMax (0,025) : tout est à refaire, la région dépasse kMaxShare, l'image est entière ; puis ça
+  // recommence.
+  scene.camera[0] = 0.02;
   CHECK(t.plan(facts).tiled);
   CHECK_FALSE(t.plan(facts).tiled);
   CHECK(t.plan(facts).tiled);
 
-  // Une caméra qui bouge partout d'au moins le quart de pixel, sans décalage entier : entière d'emblée.
+  // Un panoramique sous-pixel (0,62 pixel par paire), sans décalage entier : entière d'emblée.
   scene.camera[0] = 0.62;
   CHECK_FALSE(t.plan(facts).tiled);
 
-  // Zoom lent autour du centre (0,05 % par paire) : les colonnes du bord bougent de plus d'un quart de pixel
-  // et se recalculent, avec ce qui les voit ; le centre se reprend.
-  constexpr double kZoom = 0.0005;
+  // Zoom très lent autour du centre (0,005 % par paire) : les colonnes du bord bougent de plus de 0,025
+  // pixel et se recalculent, avec ce qui les voit ; le centre se reprend.
+  constexpr double kZoom = 0.00005;
   scene.camera = {-kZoom * 512.0, 1.0 + kZoom, 0.0, -kZoom * 256.0, 0.0, 1.0 + kZoom};
   const TilePlan p = t.plan(facts);
   REQUIRE(p.tiled);
@@ -266,13 +268,30 @@ TEST_CASE("Tuiles qui bougent : caméra au bruit près, lente, qui bouge partout
   CHECK(core_at(p, 8, 16) == 0);
   CHECK(core_at(p, 5, 3) == 0);
 
-  // Le bilan : la région trop large et ce qui la remplissait, puis ce que faisait la caméra.
+  // Le bilan : la région trop large et ce qui la remplissait, puis ce que faisait la caméra : 13 images à
+  // 0,02 pixel, deux sans mouvement au centre (la première, le zoom), une à 0,62 ; la direction, 0,68 pixel
+  // de chemin net sur 0,88 parcourus.
   const std::string line = t.summary();
   CHECK(line.contains("1 région trop large (100.0 % des tuiles en cause, 100.0 % de région, caméra 100 %)"));
   CHECK(line.contains("1 caméra sans décalage entier"));
+  CHECK(line.ends_with(
+      " ; caméra de la carte sur 16 images : 14 tenues (sous 0.025 pixel partout), 1 en partie (zoom, "
+      "rotation), 1 qui bougent partout, médiane au centre sous 0.031 pixel, cohérence de direction 77 % "
+      "(100 : "
+      "un panoramique ; près de 0 : du bruit)"));
+  // Une coupe ferme la suite : un aller-retour de part et d'autre ne s'annule plus, chaque suite compte
+  // entière.
+  SpanTiles cut;
+  cut.set_grid(kGrid);
+  scene.camera = {0.5, 1.0, 0.0, 0.0, 0.0, 1.0};
+  cut.plan(facts);
+  scene.camera_fit = false;
+  cut.plan(facts);
+  scene.camera_fit = true;
+  scene.camera[0] = -0.5;
+  cut.plan(facts);
   CHECK(
-      line.ends_with(" ; caméra de la carte sur 16 images : 14 tenues (sous 0.25 pixel partout), 1 en partie "
-                     "(zoom, rotation), 1 qui bougent partout (médiane au centre 0.625 pixel)"));
+      cut.summary().ends_with("cohérence de direction 100 % (100 : un panoramique ; près de 0 : du bruit)"));
 }
 
 TEST_CASE("Tuiles qui bougent : l'écart des blocs voit ce que la carte laisse passer", "[app][tiles]") {

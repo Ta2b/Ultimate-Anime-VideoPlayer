@@ -38,10 +38,12 @@ copie), sortie d'avant écrasée (image créée par-dessus, source sautée), cha
 TemporalFix, Smooth, plaque), début, saut ou image abîmée, entrée de SPAN changée, rafraîchissement, coupe ou
 fondu, caméra sans décalage entier. La région trop large dit ce qui la remplissait : part des tuiles en cause
 et de la région une fois les deux portées ajoutées, puis la part de chaque cause (bords d'un décalage, carte,
-filet des blocs, âge, dérive, caméra, luminosité). En fin de ligne, la caméra de la carte sur les images où elle est ajustée :
-tenues (sous 0,25 pixel aux quatre coins et au centre), en partie (zoom, rotation) et qui bougent partout,
-avec la médiane de leur déplacement au centre. Sans tuiles actives, la ligne dit pourquoi (`--no-span-tiles`,
-moteur sans grille), et le démarrage donne la grille.
+filet des blocs, âge, dérive, caméra, luminosité). En fin de ligne, la caméra de la carte sur les images où
+elle est ajustée : tenues (sous 0,025 pixel aux quatre coins et au centre), en partie (zoom, rotation) et qui
+bougent partout, la médiane du déplacement au centre et la cohérence de sa direction (|Σ d| / Σ |d| sur
+chaque suite d'images entre deux coupes : près de 100 % sous un panoramique, près de 0 pour une caméra
+fantôme, du bruit de l'ajustement, qu'une médiane des normes ne distingue pas). Sans tuiles actives, la ligne
+dit pourquoi (`--no-span-tiles`, moteur sans grille), et le démarrage donne la grille.
 
 ## Comment
 
@@ -57,8 +59,8 @@ moteur sans grille), et le démarrage donne la grille.
   celui d'un calcul complet, au flottant près.
 - **Décision** (`app/play/upscale_tiles.{h,cpp}`) : ce qui a changé, c'est une tuile dont une tuile de la
   carte dessous a changé (le signal `changed` de la carte, qui ignore le grain), ainsi que là où son contenu
-  va ; une tuile qui a dérivé de plus d'un demi-pixel de travail depuis son dernier calcul (mouvements lents
-  additionnés), qui a reçu de la caméra un quart de pixel ou plus (plus bas), ou glissé de plus d'un code de
+  va ; une tuile qui a dérivé de 0,025 pixel de travail ou plus depuis son dernier calcul (mouvements lents
+  additionnés), qui a reçu autant de la caméra (plus bas), ou glissé de plus d'un code de
   luminosité (`SceneTile::shift`, signé : le grain s'y annule, une lueur ou un fondu local s'additionne) ; une
   tuile reprise 24 fois de suite. Le **cœur** recalculé est ce qui a changé dilaté de la portée (une sortie
   voit l'entrée jusqu'à 26 pixels de demi-résolution autour d'elle), plus le rayon du débandage (16 pixels de
@@ -67,13 +69,19 @@ moteur sans grille), et le démarrage donne la grille.
   recette de l'entrée de SPAN change (débandage, filtre de réduction) et quand la région dépasse 70 % de
   l'image.
 - **Caméra sans décalage** : chaque tuile additionne ce que la caméra de la carte lui fait (l'affine au coin
-  de la tuile qui bouge le plus, moins le décalage appliqué), signé ; à un quart de pixel de travail (le seuil
-  où la carte dit la caméra tenue), elle se recalcule. Le bruit de l'ajustement sur un plan fixe s'annule, une
-  caméra lente s'additionne et ne laisse jamais plus d'un quart de pixel d'écart, un zoom ou une rotation
-  gardent les tuiles près de leur centre. L'image n'est entière d'emblée que si la caméra bouge d'au moins un
-  quart de pixel aux quatre coins et au centre. Avant le 19 novembre, toute caméra que la carte ne disait pas
-  tenue rendait l'image entière ; or la carte lit son seuil au coin haut gauche, partie linéaire comprise (un
-  zoom de 0,03 % y fait déjà un quart de pixel en 1080p).
+  de la tuile qui bouge le plus, moins le décalage appliqué), signé ; à 0,025 pixel de travail, elle se
+  recalcule. Le bruit de l'ajustement sur un plan fixe s'annule, une caméra lente s'additionne, un zoom ou une
+  rotation gardent les tuiles près de leur centre. L'image n'est entière d'emblée que si la caméra bouge
+  d'autant aux quatre coins et au centre. Avant le 19 novembre, toute caméra que la carte ne disait pas tenue
+  rendait l'image entière ; or la carte lit son seuil au coin haut gauche, partie linéaire comprise (un zoom
+  de 0,03 % y fait déjà un quart de pixel en 1080p).
+- **Budget de glissement** (`SpanTiles::kStillDrift`, 0,025 pixel de travail, pour la dérive, la caméra et
+  l'accroche d'un décalage) : une sortie reprise d'une entrée qui a glissé de δ n'est pas celle du calcul
+  complet. Mesure du 19 novembre (`tools/bench/qualite/tuiles_panoramique.py`, ArtCNN C4F32 2× à la place de
+  SPAN, trois images de Spy×Family en 720p, fenêtre de 512 pixels) : la reprise sans décalage s'écarte au pire
+  bloc de 0,6 à 0,7 niveau à δ = 0,02, de 1,4 à 1,7 à 0,05, de 7 à 8,5 à 0,25 et de 14 à 17 à 0,5, environ
+  34 niveaux par pixel. La porte en tolère 1 : 0,025 en laisse 0,85. Jusque-là, la dérive tolérait un
+  demi-pixel et la caméra un quart.
 - **Filet sous la carte** : la carte juge des tuiles de 32 × 32 pixels de travail sur une image réduite de
   moitié, et ne dit « a changé » qu'à 6 codes d'écart moyen ou sur un vecteur net ; une petite bouche ou un
   clignement dans un plan large y passent. L'écart de chaque bloc 16 × 16 de la mesure de la paire (celle des
@@ -83,7 +91,7 @@ moteur sans grille), et le démarrage donne la grille.
   niveau au pire bloc), une bouche si (une cinquantaine de pixels qui changent de 80 codes : 15 niveaux). Pas
   sous un décalage : la mesure compare les mêmes pixels, pas le contenu suivi. La ligne de fin dit combien de
   tuiles le filet a ajoutées, sur combien d'images : beaucoup, c'est que la carte en laisse passer.
-- **Décalage** : caméra ajustée sans zoom ni rotation, résidu sous un demi-pixel, translation à moins de 1/8 de
+- **Décalage** : caméra ajustée sans zoom ni rotation, résidu sous un demi-pixel, translation à moins de 0,025
   pixel d'un multiple de 2 pixels de travail (le pas du dégroupage). La sortie d'avant (l'autre tampon de
   SPAN) se copie décalée dans la nouvelle ; ne se reprend que le décor sûr qui suit. Les deux bords de l'axe
   décalé sont dans ce qui a changé : la bande qui entre n'a pas de source, et près du bord d'où le contenu
@@ -91,6 +99,13 @@ moteur sans grille), et le démarrage donne la grille.
   que la tuile a reçu de la caméra. Le débandage tire ses points sur une grille fixe de l'écran : sous un
   décalage, un aplat débandé repris peut s'écarter d'un seuil du débandage (environ un niveau) de son calcul
   complet ; la porte le mesure.
+- **Panoramique sous-pixel** : rien ne s'y reprend, et c'est juste. Décaler la sortie d'avant d'une fraction de
+  pixel (même mesure, l'entrée suivante étant l'image décalée en Lanczos comme par le compositeur) s'écarte du
+  calcul complet de 1 à 3,7 niveaux au pire bloc et de 0,05 à 0,36 en moyenne pour δ de 0,05 à 0,5, en
+  bicubique comme en Lanczos : le réseau ne commute pas avec un rééchantillonnage, alors qu'un décalage entier
+  de l'entrée est exact (au pas de 2 pour SPAN, à cause du dégroupage). Un panoramique de 0,8 pixel par image
+  n'atteint un multiple de 2 qu'après plusieurs images (12 pour 0,825), avec un reste de phase : il faudrait
+  garder autant de sorties 4K, pour rien de sûr. Les tuiles ne servent qu'aux plans à caméra tenue.
 - **Moteur** (`gpu/cuda/backend/span_fp8_tiles.cpp`) : `next_span_tiles` avant l'appel, puis l'appel lance le
   corps masqué en direct (pas le graphe de l'image entière) ; les masques passent par une mémoire épinglée
   tournante. Le chemin qui écrit l'anneau depuis SPAN abandonne les tuiles. La sortie d'avant lue pour le
@@ -123,7 +138,11 @@ ligne au journal, la sortie d'avant gradée sur place sans que le bilan le dise 
 d'avant le grade et la ligne de fin toujours écrite (plus haut). Deuxième essai, même extrait : 0 image sur
 716 par tuiles, dont 595 « caméra sans décalage entier » et 104 « région trop large » (sous DistilDRBA, 591
 sur 715) ; temps de SPAN identique avec ou sans tuiles. D'où la caméra additionnée par tuile (plus haut) et le
-détail de la région trop large et de la caméra au bilan, à mesurer de nouveau. Audit du
+détail de la région trop large et de la caméra au bilan. Troisième essai (#945) : toujours 0 sur 715, dont
+593 « caméra sans décalage entier », la caméra bougeant partout sur 604 images sur 701 (médiane 0,825 pixel au
+centre). D'où la mesure du panoramique sous-pixel et du budget (plus haut), le budget ramené à 0,025 pixel, et
+la cohérence de direction au bilan ; `tuiles_panoramique.py` vérifie la caméra sans la carte (corrélation de
+phase sur les images décodées). Audit du
 19 novembre : voisines d'une tuile changée, bord sortant d'un panoramique, lueur locale, recette de l'entrée,
 grade réellement passé, lecture déclarée aux voies, demande annulée après un refus. Puis la mesure du
 contrôle (`scores_now`) qui, sous DistilDRBA après une image sautée, périmait le ticket du pont : `scores_now`
