@@ -23,12 +23,14 @@
 #include "gpu/cuda/backend/scene_flow.h"
 #include "gpu/cuda/backend/shared_activations.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
+#include "gpu/cuda/backend/tfix_fused_engine.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "prepare/builder.h"
 #include "prepare/drba_split.h"
 #include "prepare/identity.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
+#include "prepare/tfix_split.h"
 
 namespace kirari::gpu::cuda {
 namespace {
@@ -368,6 +370,8 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
   if (prepare::is_rife_fused_manifest(model.onnx_path)) return build_rife_fused(model, shapes, progress);
   // DistilDRBA coupé en quatre morceaux : quatre constructions, un seul artefact.
   if (prepare::is_drba_fused_manifest(model.onnx_path)) return build_drba_fused(model, shapes, progress);
+  // TemporalFix coupé en morceaux : l'encodeur ou la fenêtre.
+  if (prepare::is_tfix_fused_manifest(model.onnx_path)) return build_tfix_fused(model, shapes, progress);
   // Pas de vérification ici : désérialiser le plan sur le GPU juste après sa construction, pour le jeter et
   // le charger de nouveau à l'ouverture, coûtait un chargement de trop (C05-03). Un plan refusé à ce
   // chargement est mis de côté et reconstruit par le lecteur (player_engines.cpp, Artifact::reused, C05-01).
@@ -379,6 +383,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Arti
   if (span_fp8_artifact_shape(artifact.cache_key)) return load_span_fp8(artifact);
   if (rife_fused_artifact_key_parse(artifact.cache_key)) return load_rife_fused(artifact);
   if (drba_fused_artifact_key_parse(artifact.cache_key)) return load_drba_fused(artifact);
+  if (tfix_fused_artifact_key_parse(artifact.cache_key)) return load_tfix_fused(artifact);
   // Les activations dans la zone de la voie choisie avant le chargement (use_lane) ; un moteur
   // lancé sur l'autre voie y passe à son lancement.
   auto engine = TrtEngine::load(*runtime_, artifact.path, arena());
@@ -492,6 +497,9 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
       return enqueue_rife_fused(*rife, inputs, outputs);
     if (auto* drba = dynamic_cast<DrbaFusedEngine*>(&engine))
       return enqueue_drba_fused(*drba, inputs, outputs);
+    if (dynamic_cast<TfixWindowEngine*>(&engine) != nullptr ||
+        dynamic_cast<TfixEncoderEngine*>(&engine) != nullptr)
+      return enqueue_tfix_fused(engine, inputs, outputs);
     auto* fused = dynamic_cast<SpanFp8Engine*>(&engine);
     if (fused == nullptr) return refuse(RefusalCode::DeviceMismatch, "enqueue : moteur d'un autre backend");
     return enqueue_span_fp8(*fused, inputs, outputs);

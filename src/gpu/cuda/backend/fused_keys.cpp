@@ -107,4 +107,37 @@ std::optional<DrbaFusedKey> drba_fused_artifact_key_parse(std::string_view text)
   return key;
 }
 
+constexpr std::string_view kTfixPrefix = "tfix-fused:";
+
+std::string tfix_fused_artifact_key(const TfixFusedKey& key) {
+  std::string engines;
+  for (const std::string& engine : key.engines)
+    engines += std::format("{}{}", engines.empty() ? "" : ",", engine);
+  return std::format("{}{}:{}x{}:{}:{}", kTfixPrefix, key.window ? "window" : "encoder", key.height,
+                     key.width, key.half ? 1 : 0, engines);
+}
+
+std::optional<TfixFusedKey> tfix_fused_artifact_key_parse(std::string_view text) {
+  if (!text.starts_with(kTfixPrefix)) return std::nullopt;
+  text.remove_prefix(kTfixPrefix.size());
+  const std::vector<std::string_view> fields = split(text, ':');
+  if (fields.size() != 4 || (fields[0] != "window" && fields[0] != "encoder") ||
+      (fields[2] != "0" && fields[2] != "1"))
+    return std::nullopt;
+  const std::vector<std::string_view> size = split(fields[1], 'x');
+  if (size.size() != 2) return std::nullopt;
+  const auto height = parse_int(size[0]);
+  const auto width = parse_int(size[1]);
+  if (!height || !width) return std::nullopt;
+  TfixFusedKey key{
+      .window = fields[0] == "window", .height = *height, .width = *width, .half = fields[2] == "1"};
+  for (const std::string_view part : split(fields[3], ',')) {
+    if (!plain_file_name(part)) return std::nullopt;
+    key.engines.emplace_back(part);
+  }
+  if (!kernels::tfix_size_valid(key.height, key.width) || key.engines.size() != (key.window ? 4U : 1U))
+    return std::nullopt;
+  return key;
+}
+
 }  // namespace kirari::gpu::cuda

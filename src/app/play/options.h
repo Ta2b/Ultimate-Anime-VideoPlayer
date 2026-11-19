@@ -172,6 +172,9 @@ struct PlayOptions {
   // canaux natifs, b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par
   // défaut jusqu'à la mesure sur la carte (tools/bench/span_native/banc.sh).
   bool span_native = false;
+  // TemporalFix fusionné (docs/temporalfix.md) sous TensorRT, par défaut ; --no-tfix-fused (essai) garde
+  // le graphe à cache de l'encodeur, pour la mesure ABAB.
+  bool temporal_fix_fused = true;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
