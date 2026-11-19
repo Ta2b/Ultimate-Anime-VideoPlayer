@@ -61,7 +61,7 @@ struct ReuseFacts {
 // Ce que l'étage règle au démarrage (UpscaleSetup::span_reuse).
 struct SpanReuseSetup {
   bool whole = true;   // --no-span-reuse : SPAN sur chaque image
-  bool tiles = false;  // --span-tiles : par tuiles quand l'image n'est pas reprise entière (essai)
+  bool tiles = true;   // --no-span-tiles : jamais par tuiles, même quand l'image n'est pas reprise entière
   bool check = false;  // --span-tiles-check : une image par tuiles sur 24 comparée à un calcul complet
 };
 

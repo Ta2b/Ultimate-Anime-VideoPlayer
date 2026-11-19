@@ -3,7 +3,7 @@
 // dérive lente partout, lueur locale qui s'additionne, voisin d'un recalcul qui garde sa somme, recette de
 // l'entrée, sans mesure, mesure sur la copie réduite, première image, limite d'âge, refus, bilan), puis dans
 // la reprise du lot A (sorte Tiles, reprise entière gardée au seuil de chaque bloc, reprise imposée, tuiles
-// non demandées).
+// coupées).
 #include "app/play/upscale_tiles.h"
 
 #include <cstdint>
@@ -279,8 +279,8 @@ TEST_CASE("Tuiles qui bougent : dans la reprise du lot A", "[app][tiles]") {
       line.contains("1 sortie d'avant écrasée (image créée, source sautée), 1 chaîne sans tuiles (export, "
                     "YUV, TemporalFix, Smooth, plaque), 2 début, saut ou image abîmée"));
 
-  // Les tuiles non demandées (le défaut du lecteur, sans --span-tiles) : chaque image se calcule entière, et
-  // le journal de fin ne dit rien des tuiles.
+  // Les tuiles coupées (--no-span-tiles) : chaque image se calcule entière, et le journal de fin ne dit rien
+  // des tuiles.
   SpanReuse off;
   off.tiles.enabled = false;
   off.tiles.set_grid(kGrid);

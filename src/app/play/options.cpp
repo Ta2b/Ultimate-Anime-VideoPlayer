@@ -203,8 +203,8 @@ constexpr std::array<Flag, 55> kFlags{{
     {"--scene-map", &PlayOptions::scene_map, true},
     {"--skip-held", &PlayOptions::skip_held, true},
     {"--no-span-reuse", &PlayOptions::span_reuse, false},
-    {"--span-tiles", &PlayOptions::span_tiles, true},
-    {"--no-span-tiles", &PlayOptions::span_tiles, false},  // le défaut, gardé pour les anciennes commandes
+    {"--span-tiles", &PlayOptions::span_tiles, true},  // le défaut, gardé pour les anciennes commandes
+    {"--no-span-tiles", &PlayOptions::span_tiles, false},
     {"--span-tiles-check", &PlayOptions::span_tiles_check, true},
     {"--fast-steady", &PlayOptions::fast_steady, true},
     {"--smooth-drawings", &PlayOptions::smooth_drawings, true},

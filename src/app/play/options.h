@@ -233,10 +233,10 @@ struct PlayOptions {
   // --no-span-reuse (mesure, avec --debug) : SPAN sur chaque image, dessins tenus compris
   // (UpscaleSetup::span_reuse, upscale_reuse.h). Pour l'ABAB du lot A.
   bool span_reuse = true;
-  // --span-tiles (essai, avec --debug) : SPAN par tuiles quand l'image n'est pas reprise entière
-  // (upscale_tiles.h), jugées sur l'écart des blocs de la paire ; sans effet sans SPAN FP16 natif. Éteint par
-  // défaut jusqu'au contrôle et aux temps du PC ; --no-span-tiles reste accepté.
-  bool span_tiles = false;
+  // --no-span-tiles (mesure, avec --debug) : SPAN jamais par tuiles (upscale_tiles.h, jugées sur l'écart des
+  // blocs de la paire), pour l'ABAB ; sans effet sans SPAN FP16 natif. --span-tiles, le défaut, reste
+  // accepté.
+  bool span_tiles = true;
   // --span-tiles-check (mesure, avec --debug, implique --span-tiles) : une image par tuiles sur 24 se calcule
   // aussi entière, et l'écart des deux va au journal de fin (porte des tuiles qui bougent,
   // docs/tuiles-span.md). Coûte une attente hôte.
