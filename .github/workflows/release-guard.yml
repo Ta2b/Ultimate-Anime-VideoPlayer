@@ -17,12 +17,19 @@ name: Garde de release
 #   (tools/release/hardware_report.py, docs/signature-des-releases.md), ou une dérogation écrite dont l'empreinte
 #   TensorRT est celle de sa préversion de référence (tools/release/hardware-waiver.sh).
 # Sans étiquette (artefact seulement), rien n'est vérifié.
+#
+# Garde légère (entrée « leger », Release rapide : décision de Tatoub, 19 novembre 2026) : seulement le commit et la
+# version de l'étiquette, quelques secondes. Ni ci.yml vert, ni témoin complet, ni rapports matériels, ni clé de
+# secours : c'est le propriétaire qui décide de publier sans eux (docs/signature-des-releases.md, « Release rapide »).
 on:
   workflow_call:
     inputs:
       tag:
         type: string
         required: true
+      leger:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -56,7 +63,7 @@ jobs:
           [ -s "tools/release/notes/$TAG.md" ] \
             || { echo "::error::tools/release/notes/$TAG.md manque ou est vide : une release finale a ses notes"; exit 1; }
       - name: Clé de secours
-        if: inputs.tag != ''
+        if: inputs.tag != '' && !inputs.leger
         env:
           TAG: ${{ inputs.tag }}
         run: tools/ci/check-backup-key.sh "$TAG"
@@ -65,6 +72,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
+          LEGER: ${{ inputs.leger }}
         run: |
           tagged="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" -q .sha)" \
             || { echo "::error::étiquette $TAG introuvable dans $GITHUB_REPOSITORY"; exit 1; }
@@ -72,38 +80,41 @@ jobs:
             echo "::error::le commit construit ($GITHUB_SHA) n'est pas celui de l'étiquette $TAG ($tagged)"
             exit 1
           fi
-          # Tout lancement vert suffit pour une préversion (C51-07) ; une étiquette finale exige en plus, ci-dessous, le
-          # témoin d'un lancement complet (une seule exigence : le titre « (complète) » de run-name n'est plus lu).
-          green="$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success \
-            --json databaseId -q length)"
-          if [ "${green:-0}" -eq 0 ]; then
-            echo "::error::ci.yml n'est pas vert sur $GITHUB_SHA : pas de release"
-            exit 1
+          if [ "$LEGER" = true ]; then
+            echo "garde légère (Release rapide) : ci.yml n'est pas demandé" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
-          # Une étiquette finale : un lancement complet, sur main, sans dérogation, dont le témoin le dit.
-          if [[ "$TAG" != *-* ]]; then
-            complete=0
-            for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success \
-              --limit 30 --json databaseId -q '.[].databaseId'); do
-              dir="$(mktemp -d)"
-              gh run download "$id" -R "$GITHUB_REPOSITORY" -n ci-verdict -D "$dir" 2>/dev/null || continue
-              if jq -e --arg sha "$GITHUB_SHA" \
-                '.complete == true and .allow_arch_red == false and .ref == "refs/heads/main" and .sha == $sha' \
-                "$dir/ci-verdict.json" >/dev/null; then
-                complete=1
-                echo "lancement complet de ci.yml sur main : $id"
-                break
-              fi
-            done
-            if [ "$complete" -eq 0 ]; then
-              echo "::error::$TAG est une étiquette finale : lancer CI avec « complete » sur main, sans dérogation d'Arch, sur $GITHUB_SHA, et vert (pas de témoin ci-verdict conforme)"
-              exit 1
+          # Une préversion : un lancement vert de toutes les parties (un lancement partiel, où des parties ont été
+          # décochées, ne compte pas ; un témoin d'avant les parties, sans le champ, valait toutes). Une étiquette
+          # finale : de plus complet, sur main, sans dérogation d'Arch (C28-05 ; le titre de run-name n'est pas lu).
+          if [[ "$TAG" == *-* ]]; then
+            want='((has("toutes_parties") | not) or .toutes_parties == true)'
+          else
+            want='((has("toutes_parties") | not) or .toutes_parties == true) and .complete == true and .allow_arch_red == false and .ref == "refs/heads/main" and .sha == $sha'
+          fi
+          ok=0
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success \
+            --limit 30 --json databaseId -q '.[].databaseId'); do
+            dir="$(mktemp -d)"
+            gh run download "$id" -R "$GITHUB_REPOSITORY" -n ci-verdict -D "$dir" 2>/dev/null || continue
+            if jq -e --arg sha "$GITHUB_SHA" "$want" "$dir/ci-verdict.json" >/dev/null; then
+              ok=1
+              echo "lancement de ci.yml retenu : $id"
+              break
             fi
+          done
+          if [ "$ok" -eq 0 ]; then
+            if [[ "$TAG" == *-* ]]; then
+              echo "::error::ci.yml n'est pas vert sur $GITHUB_SHA avec toutes ses parties : pas de release (ou Release rapide)"
+            else
+              echo "::error::$TAG est une étiquette finale : lancer CI avec « complete » et toutes les parties sur main, sans dérogation d'Arch, sur $GITHUB_SHA, et vert (pas de témoin ci-verdict conforme)"
+            fi
+            exit 1
           fi
       # Ce que la CI ne peut pas juger sans carte NVIDIA (C28-02) : le rapport des tests cachés du poste de référence,
       # Linux et Windows, pour ce commit, sans échec et sous le plafond de sauts. Une préversion n'en a pas besoin.
       - name: Rapports des tests matériels (étiquette finale)
-        if: inputs.tag != '' && !contains(inputs.tag, '-')
+        if: inputs.tag != '' && !contains(inputs.tag, '-') && !inputs.leger
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}

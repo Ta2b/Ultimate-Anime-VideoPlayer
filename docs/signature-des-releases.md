@@ -79,6 +79,27 @@ Gardes à part : `vendor-watch.yml` (chaque semaine) relit la roue de NVIDIA que
 (`tools/release/check-vendor.py`) ; `resign-manifest.yml` (chaque semaine) re-signe le manifeste de la « latest » quand
 il lui reste moins de 45 jours. Un échec de l'un ou l'autre ouvre une issue dans ce dépôt.
 
+## Release rapide (sans tests)
+
+Une seconde voie, au choix de Tatoub (19 novembre 2026), quand tout a déjà été vérifié ailleurs : Actions > **Release
+rapide (sans tests)** > Run workflow, sur la branche dont le dernier commit est à publier (main en général), avec
+l'étiquette `v<VERSION>` ou `v<VERSION>-rc.N`. Ne pas pousser l'étiquette soi-même : la poussée lancerait la voie
+complète ci-dessus.
+
+`release-rapide.yml` vérifie que l'étiquette dit la version de `CMakeLists.txt`, la pose sur ce commit avec le jeton
+du workflow (une étiquette posée ainsi ne lance pas de workflow ; une étiquette qui existe déjà doit nommer ce même
+commit), puis lance `release.yml` sur l'étiquette avec `sans_tests`. Ce qui tourne alors :
+
+- la **garde légère** : le commit construit est celui de l'étiquette, l'étiquette dit la version. Ni `ci.yml` vert, ni
+  témoin complet, ni rapports matériels, ni clé de secours ;
+- les **paquets TensorRT** Linux et Windows, construits et publiés s'ils manquent pour leur empreinte ;
+- les **paquets du lecteur**, compilés sans les tests unitaires (`KIRARI_BUILD_TESTS=OFF`), l'AppImage et
+  l'installeur ;
+- la **publication** : index NVIDIA signé, et pour une étiquette finale le manifeste signé et la « latest ».
+
+Ce qui ne tourne pas : `rules.yml`, les tests du paquet, la découpe des modèles livrés, la fumée du paquet (Linux et
+Windows). La même chose se lance aussi depuis Actions > Release, avec l'étiquette et la case « sans_tests ».
+
 ## Réglages du dépôt, une fois
 
 Ce qui suit se fait sur GitHub, sans le PC :

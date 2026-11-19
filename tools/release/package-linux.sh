@@ -15,7 +15,9 @@
 # depuis la release (engine_install.h). Chaque moteur n'est empaqueté que s'il a été construit :
 #
 #   KIRARI_DEPS_PREFIX=<prefixe> [KIRARI_WITH_CUDA=ON [KIRARI_TENSORRT_ROOT=<racine>]] \
-#     [KIRARI_RELEASE_TAG=v0.2.0] tools/release/package-linux.sh [dossier-de-sortie]
+#     [KIRARI_RELEASE_TAG=v0.2.0] [KIRARI_BUILD_TESTS=OFF] tools/release/package-linux.sh [dossier-de-sortie]
+#
+# KIRARI_BUILD_TESTS=OFF (Release rapide) : les tests unitaires ne se compilent pas, le paquet est le même.
 #
 # patchelf range chaque binaire sur $ORIGIN : rien ne dépend du préfixe de construction.
 set -euo pipefail
@@ -44,7 +46,8 @@ SUFFIX=""
 case "$TAG" in "v$VERSION"-*) SUFFIX="${TAG#"v$VERSION"}" ;; esac
 cmake --preset linux-release -S "$ROOT" \
   -DKIRARI_WITH_CUDA="${KIRARI_WITH_CUDA:-OFF}" -DKIRARI_VERSION_SUFFIX="$SUFFIX" \
-  ${KIRARI_TENSORRT_ROOT:+-DKIRARI_TENSORRT_ROOT="$KIRARI_TENSORRT_ROOT"}
+  ${KIRARI_TENSORRT_ROOT:+-DKIRARI_TENSORRT_ROOT="$KIRARI_TENSORRT_ROOT"} \
+  ${KIRARI_BUILD_TESTS:+-DKIRARI_BUILD_TESTS="$KIRARI_BUILD_TESTS"}
 cmake --build --preset linux-release
 BUILD="$ROOT/build/linux-release"
 

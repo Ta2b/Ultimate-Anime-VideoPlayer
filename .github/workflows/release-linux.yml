@@ -26,6 +26,10 @@ on:
       tag:
         type: string
         required: true
+      # Release rapide (release.yml) : garde légère, ni règles, ni tests, ni découpe, ni fumée.
+      sans_tests:
+        type: boolean
+        default: false
     outputs:
       archive-sha256:
         description: "SHA-256 de kirari-linux-x64.tar.gz tel que cette construction l'a produit (B51-07)"
@@ -57,16 +61,18 @@ env:
 
 jobs:
   rules:
+    if: ${{ !inputs.sans_tests }}
     uses: ./.github/workflows/rules.yml
 
   guard:
     uses: ./.github/workflows/release-guard.yml
     with:
       tag: ${{ inputs.tag || '' }}
+      leger: ${{ inputs.sans_tests == true }}
 
   # Le paquet TensorRT de l'empreinte courante : rien à faire s'il existe déjà, sinon construit et publié (A28-01).
   tensorrt:
-    if: inputs.tag != ''
+    if: ${{ !cancelled() && inputs.tag != '' && needs.guard.result == 'success' && (needs.rules.result == 'success' || (inputs.sans_tests && needs.rules.result == 'skipped')) }}
     needs: [rules, guard]
     uses: ./.github/workflows/trt-package.yml
     with:
@@ -78,7 +84,7 @@ jobs:
     name: Lecteur Linux (x64)
     needs: [rules, guard, tensorrt]
     # Sans étiquette, le job tensorrt est sauté : le paquet se construit quand même.
-    if: ${{ !cancelled() && needs.rules.result == 'success' && needs.guard.result == 'success' && (needs.tensorrt.result == 'success' || needs.tensorrt.result == 'skipped') }}
+    if: ${{ !cancelled() && (needs.rules.result == 'success' || (inputs.sans_tests && needs.rules.result == 'skipped')) && needs.guard.result == 'success' && (needs.tensorrt.result == 'success' || needs.tensorrt.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     outputs:
@@ -140,6 +146,9 @@ jobs:
       - name: Place sur le disque
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - name: Paquet
+        env:
+          # Release rapide : les tests ne se compilent pas.
+          KIRARI_BUILD_TESTS: ${{ inputs.sans_tests && 'OFF' || '' }}
         run: |
           [ -z "$KIRARI_TAG" ] || export KIRARI_RELEASE_TAG="$KIRARI_TAG"
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
@@ -152,16 +161,18 @@ jobs:
       # arrête tout avant l'artefact et la release, préversions comprises. Couche de validation coupée ; un test sauté
       # ne passe pas pour réussi (plafond « linux-release » de skip-ceiling.txt).
       - name: Tests (Vulkan logiciel sous Xvfb)
+        if: ${{ !inputs.sans_tests }}
         env:
           KIRARI_TEST_VULKAN_VALIDATION: "off"
         run: xvfb-run -a ctest --preset linux-release -j 3 --output-junit "$GITHUB_WORKSPACE/junit.xml"
       - name: Tests sautés
+        if: ${{ !inputs.sans_tests }}
         run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" linux-release
       # Les modèles livrés passent la découpe du chemin fusionné (RIFE 4.26, 4.25, 4.22 lite, 4.25 lite, DistilDRBA et
       # son demi-flot, TemporalFix s1 à s3) : un graphe que la découpe ne reconnaît plus arrête la release au lieu de ralentir l'utilisateur
       # (A28-07). Un saut compte comme un échec.
       - name: Découpe des modèles livrés
-        if: env.KIRARI_TAG != ''
+        if: env.KIRARI_TAG != '' && !inputs.sans_tests
         run: |
           models="$RUNNER_TEMP/package/kirari-linux-x64/models/rife"
           for f in rife_v4.26.onnx rife_v4.25.onnx rife_v4.22_lite.onnx rife_v4.25_lite.onnx distil_drba_v2_lite.onnx \
@@ -192,6 +203,7 @@ jobs:
       # trouvées, le lecteur qui répond puis joue un clip en Vulkan logiciel jusqu'à un instantané, l'AppImage de même.
       # Un échec arrête tout avant la release.
       - name: Fumée du paquet
+        if: ${{ !inputs.sans_tests }}
         run: |
           source tools/release/versions.env
           sudo apt-get install -y -qq $APT_TESTS ffmpeg
