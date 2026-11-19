@@ -127,7 +127,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 36> kTrialOptions{
+constexpr std::array<std::string_view, 37> kTrialOptions{
     "--rife-image",      "--ring-rgb10a2",   "--no-ring-rgb10a2", "--hdr-metadata",   "--no-hdr-metadata",
     "--probe-nvdec",     "--no-probe-nvdec", "--shot-cuts",       "--no-shot-cuts",   "--one-lane",
     "--lanes",           "--skip-held",      "--anime-shots",     "--no-anime-shots", "--fast-steady",
@@ -135,7 +135,7 @@ constexpr std::array<std::string_view, 36> kTrialOptions{
     "--audio-pll",       "--no-audio-pll",   "--vsync-index",     "--no-vsync-index", "--present",
     "--no-present",      "--no-vrr",         "--rife-calm-model", "--rife-warm",      "--profile-dispatches",
     "--rife-encode-all", "--rife-at-slot",   "--filtered-warp",   "--warp-l2",        "--rife-hwc8",
-    "--no-rife-hwc8"};
+    "--no-rife-hwc8",    "--no-tfix-cache"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -191,6 +191,7 @@ constexpr std::array<Flag, 39> kFlags{{
     {"--skip-held", &PlayOptions::skip_held, true},
     {"--fast-steady", &PlayOptions::fast_steady, true},
     {"--smooth-drawings", &PlayOptions::smooth_drawings, true},
+    {"--no-tfix-cache", &PlayOptions::temporal_fix_whole, true},
     {"--ring-watcher", &PlayOptions::ring_watcher, true},
     {"--no-ring-watcher", &PlayOptions::ring_watcher, false},
     {"--precise-wait", &PlayOptions::precise_wait, true},
@@ -612,6 +613,8 @@ std::string play_usage(bool debug) {
          "shot\n"
          "  --smooth-drawings      a drawing held 2 to 6 frames blends into motion (motion RIFE; the\n"
          "                         Video menu option \"Smooth held drawings\" for this playback)\n"
+         "  --no-tfix-cache        trial: temporal stabilization in one engine, each frame encoded at\n"
+         "                         every pass, instead of the encoder cache (same output)\n"
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass instead of\n"
          "                         keeping the encoding of the pair and of the previous B (same output)\n"

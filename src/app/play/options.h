@@ -181,6 +181,9 @@ struct PlayOptions {
   // --rife-warm (essai, P6.15) : la passe du milieu d'une paire calme reprend les blocs grossiers de RIFE de
   // la paire précédente (RIFE fusionné sous Vulkan) ; UpscaleSetup::rife_warm.
   bool rife_warm = false;
+  // --no-tfix-cache (essai) : TemporalFix en un seul moteur, chaque image encodée à chaque passe, au
+  // lieu du cache de l'encodeur (prepare/onnx_cache.h) ; le retour en arrière si le cache se trompe.
+  bool temporal_fix_whole = false;
   // --rife-encode-all (mesure, avec --debug) : RIFE fusionné encode les deux images à chaque passe, comme
   // avant fusion3, au lieu de garder l'encodage de la paire et de la B précédente ; la sortie est la même
   // (UpscaleSetup::rife_encode_all). Pour mesurer le gain en ABAB (docs/rife-fusionne.md).
