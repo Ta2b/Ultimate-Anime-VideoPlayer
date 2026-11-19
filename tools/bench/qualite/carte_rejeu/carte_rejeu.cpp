@@ -103,8 +103,9 @@ float centile(std::vector<float> values, int c) {
   return values[static_cast<std::size_t>(c) * (values.size() - 1) / 100];
 }
 
-// L'écart après la caméra, tuile par tuile : les critères de seen_of et by_image
-// (kernels/ref/scene_flow.cpp), recopiés.
+// L'écart après la caméra, tuile par tuile : les critères de seen_of, by_image et light_of
+// (kernels/ref/scene_flow.cpp), recopiés ; ceux d'une lumière tuile par tuile, sans ses voisines ni son
+// vecteur (la carte, elle, les regarde).
 void print_image(const SceneFlowTiles& tiles, const ref::SceneCamera& camera) {
   constexpr float kArea = static_cast<float>(kSceneTileFlowPixels * kSceneTileFlowPixels);
   const double unit = tiles.flow_height / 720.0;
@@ -114,6 +115,9 @@ void print_image(const SceneFlowTiles& tiles, const ref::SceneCamera& camera) {
   int moving = 0;
   int shifted = 0;
   int effects = 0;
+  int soft = 0;               // tuiles qui bougent sans bord net (kLightSharp)
+  int lights = 0;             // et dont l'accord et l'écart gardé suffisent (kLightAgree, kLightKept)
+  std::vector<float> agrees;  // accord des tuiles qui bougent
   for (std::size_t i = 0; i < camera.checks.size() && i < tiles.tiles.size(); ++i) {
     const SceneTileCheck& t = camera.checks[i];
     if (t.pixels < scene::kCheckCover * kArea) continue;
@@ -124,6 +128,12 @@ void print_image(const SceneFlowTiles& tiles, const ref::SceneCamera& camera) {
         t.l1 >= scene::kCheckFloor * t.pixels && std::hypot(t.sx, t.sy) >= scene::kShiftMoving * unit;
     if (t.moving >= scene::kMovingShare) {
       ++moving;
+      const float agree = std::abs(2.0F * t.brighter - t.moving) / t.moving;
+      agrees.push_back(agree);
+      if (t.sharp <= scene::kLightSharp * t.moving) {
+        ++soft;
+        if (agree >= scene::kLightAgree && t.settled >= scene::kLightKept * t.error) ++lights;
+      }
     } else if (by_shift) {
       ++shifted;
     }
@@ -134,7 +144,8 @@ void print_image(const SceneFlowTiles& tiles, const ref::SceneCamera& camera) {
   std::cout << "image " << decor.size() + others.size() << ' ' << decor.size() << ' ' << centile(decor, 50)
             << ' ' << centile(decor, 90) << ' ' << centile(decor, 99) << ' ' << centile(decor_error, 50)
             << ' ' << others.size() << ' ' << centile(others, 50) << ' ' << centile(others, 90) << ' '
-            << moving << ' ' << shifted << ' ' << effects << "\n";
+            << moving << ' ' << shifted << ' ' << effects << ' ' << soft << ' ' << lights << ' '
+            << centile(agrees, 50) << ' ' << centile(agrees, 90) << "\n";
 }
 
 bool write_map(const std::string& path, const SceneMotion& m) {

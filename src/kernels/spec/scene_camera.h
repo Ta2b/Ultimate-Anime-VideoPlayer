@@ -31,9 +31,12 @@
 // (2 kCheckRadius + 1)², kCheckSteps pas de Lucas-Kanade sur le décalage (sx, sy) qui reste après le modèle
 // affiné, sur tous les pixels de la tuile dans l'image (scene_warp_term, au point i + dx + sx) : sommes
 // Σ gx², Σ gx gy, Σ gy², Σ gx e, Σ gy e et le nombre de pixels comptés, puis scene_check_step. Rend
-// (sx, sy, l1, l2, pixels) du dernier pas. Au premier pas, sur le modèle seul, aussi Σ |e| et le nombre de
-// pixels qui bougent (scene_pixel_moving), rendus par pixel compté (scene_check_seen) : l'écart après la
-// caméra, ce que la carte voit d'un dessin qui bouge hors d'elle (ref::scene_motion_of).
+// (sx, sy, l1, l2, pixels) du dernier pas. Au premier pas, sur le modèle seul, aussi Σ |e|, le nombre de
+// pixels qui bougent (scene_pixel_moving), celui de ceux qui bougent en s'éclaircissant (e < 0 : b plus clair
+// que a) et celui de ceux qui changent d'un bord net (scene_change_sharp), rendus par pixel compté
+// (scene_check_seen) : l'écart après la caméra, ce que la carte voit d'un dessin qui bouge hors d'elle ou
+// d'une lumière qui change sur place (ref::scene_motion_of). Au dernier pas, Σ |e| par pixel compté encore,
+// au décalage du pas d'avant (scene_check_settled) : ce que le recalage de la tuile en explique.
 // ref::scene_camera_apply tire l'écart de la caméra des seules tuiles du décor.
 //
 // Référence : ref::scene_camera_refine (kernels/ref/scene_camera.cpp) ; port : gpu/cuda/backend
@@ -86,6 +89,11 @@ static_assert(kCheckRadius == kRefineFineRadius, "la vérification reprend les l
 // mesure (19 novembre), à revoir sur la ligne « image » du banc 2.3 (carte_lecteur.py).
 inline constexpr float kMovingCodes = 6.0F;
 inline constexpr float kMovingSlack = 0.5F;  // pixels à 720p
+// Un pixel change d'un bord net si |∇e| = |∇a − ∇b| (au point déplacé) atteint kSharpEdge codes par pixel
+// (scene_change_sharp) : le bord d'une bouche qui s'ouvre, d'un œil qui cligne, d'un objet qui apparaît
+// (un pas de 30 codes, flouté en 3 × 3, en donne 10). Une lueur change en douceur : 60 codes de crête sur
+// un rayon de 8 pixels en donnent moins de 5. Réglé sans mesure.
+inline constexpr float kSharpEdge = 8.0F;
 }  // namespace scene
 
 // Ce que le lecteur demande pour une paire, et ce qu'il relit.
@@ -100,12 +108,18 @@ struct SceneTileCheck {
   float l1 = 0.0F;  // valeurs propres du tenseur de structure du dernier pas (sommes sur la tuile)
   float l2 = 0.0F;
   float pixels = 0.0F;  // pixels comptés au dernier pas
-  // Au premier pas, sur le modèle seul : écart moyen |e| (codes, lumas floutées) et part des pixels qui
-  // bougent (scene_pixel_moving), sur les pixels comptés.
+  // Au premier pas, sur le modèle seul : écart moyen |e| (codes, lumas floutées), part des pixels qui
+  // bougent (scene_pixel_moving), de ceux qui bougent en s'éclaircissant (e < 0) et de ceux qui bougent
+  // d'un bord net, sur les pixels comptés.
   float error = 0.0F;
   float moving = 0.0F;
+  float brighter = 0.0F;
+  float sharp = 0.0F;  // part des pixels qui bougent et changent d'un bord net (scene_change_sharp)
+  // Au dernier pas : écart moyen |e| au décalage du pas d'avant. Bien sous error si la tuile s'est déplacée
+  // (le recalage l'explique), guère moins si sa lumière a changé.
+  float settled = 0.0F;
 };
-static_assert(sizeof(SceneTileCheck) == 7 * sizeof(float));
+static_assert(sizeof(SceneTileCheck) == 10 * sizeof(float));
 
 struct SceneCameraRefined {
   std::array<double, 6> model{};      // affiné ; celui de la demande si aucun pas n'a été fait
@@ -322,8 +336,10 @@ struct SceneCheckSums {
   float bx = 0.0F;
   float by = 0.0F;
   float pixels = 0.0F;
-  float error = 0.0F;   // Σ |e|
-  float moving = 0.0F;  // pixels qui bougent
+  float error = 0.0F;     // Σ |e|
+  float moving = 0.0F;    // pixels qui bougent
+  float brighter = 0.0F;  // dont ceux qui s'éclaircissent (e < 0)
+  float sharp = 0.0F;     // dont ceux qui changent d'un bord net
 };
 KIRARI_SCENE_HD inline void scene_check_step(const SceneCheckSums& s, SceneTileCheck& out) {
   const float half = 0.5F * (s.xx + s.yy);
@@ -353,11 +369,36 @@ KIRARI_SCENE_HD inline bool scene_pixel_moving(const SceneWarpTerm& t, float sla
   const float magnitude = t.e < 0.0F ? -t.e : t.e;
   return magnitude > scene::kMovingCodes + slack * sqrtf(t.gx * t.gx + t.gy * t.gy);
 }
+// Le changement du pixel (i, j) a un bord net : |∇a(i, j) − (t.gx, t.gy)| ≥ kSharpEdge, ∇a en différences
+// centrées (d'un côté seulement au bord de l'image).
+KIRARI_SCENE_HD inline bool scene_change_sharp(const float* a, int width, int height, int i, int j,
+                                               const SceneWarpTerm& t) {
+  const int il = i > 0 ? i - 1 : i;
+  const int ir = i + 1 < width ? i + 1 : i;
+  const int ju = j > 0 ? j - 1 : j;
+  const int jd = j + 1 < height ? j + 1 : j;
+  const std::size_t w = static_cast<std::size_t>(width);
+  const float* row = a + static_cast<std::size_t>(j) * w;
+  const float ax = ir > il ? (row[ir] - row[il]) / static_cast<float>(ir - il) : 0.0F;
+  const float ay = jd > ju ? (a[static_cast<std::size_t>(jd) * w + static_cast<std::size_t>(i)] -
+                              a[static_cast<std::size_t>(ju) * w + static_cast<std::size_t>(i)]) /
+                                 static_cast<float>(jd - ju)
+                           : 0.0F;
+  const float ex = ax - t.gx;
+  const float ey = ay - t.gy;
+  return ex * ex + ey * ey >= scene::kSharpEdge * scene::kSharpEdge;
+}
 // Le premier pas de la vérification : l'écart après la caméra, par pixel compté.
 KIRARI_SCENE_HD inline void scene_check_seen(const SceneCheckSums& s, SceneTileCheck& out) {
   const float count = s.pixels > 1.0F ? s.pixels : 1.0F;
   out.error = s.error / count;
   out.moving = s.moving / count;
+  out.brighter = s.brighter / count;
+  out.sharp = s.sharp / count;
+}
+// Le dernier pas de la vérification : l'écart qui reste au décalage du pas d'avant, par pixel compté.
+KIRARI_SCENE_HD inline void scene_check_settled(const SceneCheckSums& s, SceneTileCheck& out) {
+  out.settled = s.error / (s.pixels > 1.0F ? s.pixels : 1.0F);
 }
 
 }  // namespace kirari::kernels

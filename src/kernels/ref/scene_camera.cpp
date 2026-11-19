@@ -111,10 +111,15 @@ SceneTileCheck check_tile(const Lumas& l, const std::array<double, 6>& p, int co
         s.by += t.gy * t.e;
         s.pixels += 1.0F;
         s.error += std::abs(t.e);
-        s.moving += scene_pixel_moving(t, slack) ? 1.0F : 0.0F;
+        const bool moving = scene_pixel_moving(t, slack);
+        s.moving += moving ? 1.0F : 0.0F;
+        s.brighter += moving && t.e < 0.0F ? 1.0F : 0.0F;
+        if (step == 0 && moving)
+          s.sharp += scene_change_sharp(l.a.data(), l.width, l.height, i, j, t) ? 1.0F : 0.0F;
       }
     }
     if (step == 0) scene_check_seen(s, out);
+    if (step == scene::kCheckSteps - 1) scene_check_settled(s, out);
     scene_check_step(s, out);
   }
   return out;

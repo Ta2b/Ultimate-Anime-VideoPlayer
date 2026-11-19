@@ -85,7 +85,8 @@ struct SceneFlowTiles {
 // Classe d'une tuile. Uncertain : le flux ne permet pas de trancher (aplat qui change ou dont le vecteur
 // contredit la caméra, vecteurs sans correspondance sans effet, mouvement sans caméra ajustée). Un aplat qui
 // suit la caméra et ne change guère est décor : rien n'y bouge de visible. Caméra affinée, c'est l'écart
-// après la caméra mesuré sur l'image qui sépare le décor du dessin et de l'effet (kMovingShare).
+// après la caméra mesuré sur l'image qui sépare le décor du dessin et de l'effet (kMovingShare). Une lumière
+// qui change sur place est un effet (kLightAgree).
 enum class SceneClass : std::uint8_t { Uncertain, Background, Drawing, Effect };
 
 struct SceneTile {
@@ -186,6 +187,32 @@ inline constexpr float kShiftMoving = 1.0F;  // pixels à 720p
 inline constexpr float kEffectShare = 0.3F;
 inline constexpr float kEffectCost =
     12.0F;  // sur 255 ; 27 % des vecteurs coûtent plus de 8, 2,2 % plus de 16
+// Les effets lumineux. Instantanés de Re:Zero (16:20 et 16:43, une lueur et une aura) : aucune tuile en
+// effet, et les éclats HDR en dépendent (app/play/effect_book.cpp). Une lueur coûte peu à NVOF (rien de net à
+// apparier) et, sur place, ne déplace pas son vecteur. Ce qui la distingue :
+// - d'un dessin qui se déplace : ses pixels qui changent vont presque tous dans le même sens de luminosité
+//   (l'accord |éclaircis − assombris| / qui bougent atteint kLightAgree), quand un dessin assombrit d'un côté
+//   ce qu'il éclaircit de l'autre ;
+// - d'un dégradé qui glisse (d'un seul sens aussi sur une tuile) : aucun recalage ne l'explique, il reste au
+//   moins kLightKept de l'écart après celui de Lucas-Kanade (SceneTileCheck::settled) ;
+// - d'une bouche qui s'ouvre, d'un œil qui cligne, d'un objet qui apparaît (sur place et d'un seul sens) :
+// elle
+//   change en douceur ; ni sa tuile ni ses huit voisines n'ont plus de kLightSharp de leurs pixels qui
+//   bougent sur un bord net (scene::kSharpEdge, spec/scene_camera.h ; le cœur d'une grande bouche change sans
+//   bord, les tuiles de son bord le trahissent) ;
+// - d'un objet clair qui entre dans une tuile sombre : il entraîne ses vecteurs, ceux d'une lumière suivent
+// la
+//   caméra.
+// Une tuile est donc une lumière (effet, de confiance l'accord) si au moins kMovingShare de ses pixels
+// bougent après la caméra et que tout cela tient. Il y faut l'écart après la caméra (une demande d'affinage :
+// presque toutes les paires où la caméra est ajustée) ; sans lui, rien ne sépare une lueur d'une bouche.
+// Jamais sur un fondu (le glissement y est partout). Réglés sans mesure, à revoir sur des extraits à effets
+// (carte_lecteur.py).
+inline constexpr float kLightAgree = 0.6F;  // 80 % des pixels qui bougent dans le même sens
+// Un dégradé qui glisse de 4 pixels du flux garde la moitié de son écart (le premier pas du recalage va à
+// kCheckClip) ; une lueur sur une texture forte (cas du test), 57 à 83 %, sur un fond sombre, presque tout.
+inline constexpr float kLightKept = 0.5F;
+inline constexpr float kLightSharp = 0.25F;
 }  // namespace scene
 
 }  // namespace kirari::kernels

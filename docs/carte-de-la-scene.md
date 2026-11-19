@@ -93,8 +93,8 @@ Méthode de la porte 2.1 (banc `tools/bench/qualite/nvof_mesures.py` : `camera`,
 ## Les classes des tuiles
 
 Décor : la tuile suit le modèle de la caméra. Dessin : elle s'en écarte, ou ses vecteurs s'éparpillent. Effet :
-elle ne correspond plus et change fort. Incertain : le flux ne tranche pas (vecteurs sans correspondance sans
-effet, mouvement sans caméra ajustée, et les aplats ci-dessous).
+elle ne correspond plus et change fort, ou une lumière y change sur place. Incertain : le flux ne tranche pas
+(vecteurs sans correspondance sans effet, mouvement sans caméra ajustée, et les aplats ci-dessous).
 
 - **Par l'image**, quand la caméra est affinée (le cas courant) : l'écart après la caméra de chaque tuile tranche,
   quoi que disent ses vecteurs. Deuxième passage de la porte 2.3 : sur les dialogues, les personnages finissaient
@@ -109,6 +109,27 @@ effet, mouvement sans caméra ajustée, et les aplats ci-dessous).
   bouge, la chaîne le traite comme le décor sans rien perdre. Seuils réglés sans mesure, à revoir sur la table
   « Écart après la caméra » de `carte_lecteur.py` (le décor y donne le bruit). Sans affinage relu (affinage trop
   tard, trop peu de décor, coupe), les règles des vecteurs ci-dessous restent.
+
+- **Lumières** (effets lumineux, avant toute autre règle, jamais sur un fondu). Instantanés de Re:Zero à 16:20
+  et 16:43 (une lueur, une aura) : aucune tuile en effet, alors que les éclats HDR en dépendent
+  (`app/play/effect_book.cpp`). Une lueur coûte peu à NVOF et ne déplace pas son vecteur ; seule la règle du coût
+  la voyait, presque jamais. La vérification compte aussi, parmi les pixels qui bougent, ceux qui
+  s'éclaircissent et ceux qui changent d'un bord net (|∇a − ∇b| d'au moins `kSharpEdge`, 8 codes par pixel), et
+  l'écart qui reste au dernier pas, après le recalage de la tuile (`settled`). Une tuile est une lumière (effet,
+  de confiance l'accord) si :
+  - au moins `kMovingShare` de ses pixels bougent, et presque tous dans le même sens : l'accord
+    |éclaircis − assombris| / qui bougent atteint `kLightAgree` (0,6, 80 % d'un côté). Un dessin qui se
+    déplace assombrit d'un côté ce qu'il éclaircit de l'autre ;
+  - ni elle ni ses huit voisines ne changent d'un bord net (plus de `kLightSharp`, 25 %, de leurs pixels qui
+    bougent) : une bouche qui s'ouvre ou un œil qui cligne vont aussi d'un seul sens, sur place, mais d'un bord
+    net ; le cœur d'une grande bouche change sans bord, les tuiles de son bord le trahissent ;
+  - le recalage n'explique pas le changement (au moins `kLightKept`, la moitié, de l'écart reste) : un dégradé
+    qui glisse va lui aussi d'un seul sens sur une tuile ;
+  - son vecteur suit la caméra : un objet clair qui entre dans une tuile sombre l'éclaircit aussi, mais il
+    entraîne ses vecteurs.
+
+  Une lueur tout à fait immobile ne se voit pas ainsi : rien n'y change d'une image à l'autre. Seuils réglés
+  sans mesure, à revoir sur la table « Lumières » de `carte_lecteur.py`, avec des extraits à effets.
 
 - **Aplats** (texture sous `kTextureFloor`). NVOF n'y voit rien, mais rien n'y bouge de visible : un aplat qui
   ne contredit pas la caméra est décor, pleinement sûr sous `kStillDiff` d'écart |b − a|, plus du tout à

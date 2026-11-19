@@ -145,7 +145,7 @@ __global__ void scene_check(SceneCheckParams p) {
   const std::size_t tile = static_cast<std::size_t>(blockIdx.y) * static_cast<std::size_t>(p.cols) +
                            static_cast<std::size_t>(blockIdx.x);
   const int tid = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
-  constexpr int kSums = 8;
+  constexpr int kSums = 10;
   __shared__ float partial[kWarps][kSums];
   __shared__ float shift[2];  // le décalage du pas en cours, celui du résultat que tient le fil 0
   kernels::SceneTileCheck result;
@@ -173,7 +173,11 @@ __global__ void scene_check(SceneCheckParams p) {
         v[4] = t.gy * t.e;
         v[5] = 1.0F;
         v[6] = fabsf(t.e);
-        v[7] = kernels::scene_pixel_moving(t, slack) ? 1.0F : 0.0F;
+        const bool moving = kernels::scene_pixel_moving(t, slack);
+        v[7] = moving ? 1.0F : 0.0F;
+        v[8] = moving && t.e < 0.0F ? 1.0F : 0.0F;
+        if (step == 0 && moving)
+          v[9] = kernels::scene_change_sharp(p.a, p.width, p.height, i, j, t) ? 1.0F : 0.0F;
       }
     }
     for (int k = 0; k < kSums; ++k) {
@@ -193,8 +197,11 @@ __global__ void scene_check(SceneCheckParams p) {
         sums.pixels += partial[w][5];
         sums.error += partial[w][6];
         sums.moving += partial[w][7];
+        sums.brighter += partial[w][8];
+        sums.sharp += partial[w][9];
       }
       if (step == 0) kernels::scene_check_seen(sums, result);
+      if (step == scene::kCheckSteps - 1) kernels::scene_check_settled(sums, result);
       kernels::scene_check_step(sums, result);
       shift[0] = result.sx;
       shift[1] = result.sy;

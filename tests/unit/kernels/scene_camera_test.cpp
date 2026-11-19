@@ -1,9 +1,9 @@
 // L'affinage de la caméra de la carte (kernels/spec/scene_camera.h) : sur une image lisse déplacée par une
 // affine connue, la caméra ajustée sur des vecteurs biaisés (comme NVOF sur un panoramique lent) est
 // ramenée à la vraie par Lucas-Kanade, et l'écart mesuré sur l'image le dit ; un dessin qui bouge hors de la
-// caméra sans que NVOF le voie (une bouche, des yeux) est dessin par l'écart après la caméra ; un aplat ne
-// s'affine pas ; trop peu de décor, pas de demande.
-// Un seul cas, comme le veut la consigne des tests groupés.
+// caméra sans que NVOF le voie (une bouche, des yeux) est dessin par l'écart après la caméra ; une lueur qui
+// s'allume sur place est un effet, une tache nette qui apparaît ne l'est pas ; un aplat ne s'affine pas ;
+// trop peu de décor, pas de demande. Un seul cas, comme le veut la consigne des tests groupés.
 #include "kernels/ref/scene_camera.h"
 
 #include <algorithm>
@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
 #include <optional>
 #include <vector>
 
@@ -61,9 +62,26 @@ bool in_patch(int i, int j) {
   return i >= kPatchX0 && i < kPatchX0 + kPatchSide && j >= kPatchY0 && j < kPatchY0 + kPatchSide;
 }
 
-// a, et b : le point x de a en x + d(x) dans b, d du modèle p (l'affine inversée exactement) ; avec patch, le
-// dessin bouge en plus.
-Pair moved(const std::array<double, 6>& p, bool flat = false, bool patch = false) {
+// Ce qui change dans le carré du dessin : il bouge (Moved), une lueur douce s'y allume (Glow : cloche en
+// cosinus de kGlowCodes sur le rayon du carré), une tache nette y apparaît (Spot : kGlowCodes de plus sur un
+// disque de kSpotRadius pixels, bord franc).
+enum class Patch : std::uint8_t { None, Moved, Glow, Spot };
+constexpr double kGlowCodes = 50.0;
+constexpr double kSpotRadius = 10.0;
+
+double lit(Patch patch, int i, int j) {
+  const double r =
+      std::hypot(i + 0.5 - (kPatchX0 + 0.5 * kPatchSide), j + 0.5 - (kPatchY0 + 0.5 * kPatchSide));
+  const double radius = 0.5 * kPatchSide;
+  if (patch == Patch::Glow && r < radius)
+    return kGlowCodes * 0.5 * (1.0 + std::cos(std::numbers::pi * r / radius));
+  if (patch == Patch::Spot && r < kSpotRadius) return kGlowCodes;
+  return 0.0;
+}
+
+// a, et b : le point x de a en x + d(x) dans b, d du modèle p (l'affine inversée exactement) ; dans le carré
+// du dessin, ce que dit patch.
+Pair moved(const std::array<double, 6>& p, bool flat = false, Patch patch = Patch::None) {
   const SceneCameraFrame f = scene_camera_frame(kWidth, kHeight);
   const double s = f.inv_scale;
   const double m00 = 1.0 + p[1] * s;
@@ -83,8 +101,8 @@ Pair moved(const std::array<double, 6>& p, bool flat = false, bool patch = false
       const double sx = (m11 * ux - m01 * uy) / det;
       const double sy = (-m10 * ux + m00 * uy) / det;
       out.a.at(i, j) = flat ? std::uint8_t{90} : code(scene(x, y));
-      const double extra = patch && in_patch(i, j) ? kPatchShift : 0.0;
-      out.b.at(i, j) = flat ? std::uint8_t{90} : code(scene(sx - extra, sy));
+      const double extra = patch == Patch::Moved && in_patch(i, j) ? kPatchShift : 0.0;
+      out.b.at(i, j) = flat ? std::uint8_t{90} : code(scene(sx - extra, sy) + lit(patch, i, j));
     }
   }
   return out;
@@ -108,11 +126,43 @@ SceneFlowTiles tiles_of(const Pair& pair, const std::array<double, 6>& seen) {
   return *tiles;
 }
 
+// La vraie caméra (coordonnées réduites).
+constexpr std::array<double, 6> kTruth{2.3, 1.0, 0.5, -1.1, -0.4, 1.0};
+
+// La carte d'une paire où NVOF ne voit que la caméra, après l'affinage et sa vérification.
+struct Mapped {
+  SceneFlowTiles tiles;
+  ref::SceneCamera camera;
+  SceneMotion motion;
+  const SceneTileCheck& check(int col, int row) const {
+    return camera.checks[static_cast<std::size_t>(row * tiles.cols + col)];
+  }
+};
+Mapped mapped(const Pair& pair) {
+  Mapped out;
+  out.tiles = tiles_of(pair, kTruth);
+  out.camera = ref::scene_camera_of(out.tiles);
+  REQUIRE(out.camera.fit);
+  const auto request = ref::scene_camera_request(out.camera);
+  REQUIRE(request);
+  const auto refined = ref::scene_camera_refine(pair.a, pair.b, *request);
+  REQUIRE(refined);
+  ref::scene_camera_apply(out.camera, *refined);
+  REQUIRE(out.camera.checks.size() == out.tiles.tiles.size());
+  ref::SceneHistory history;
+  out.motion = ref::scene_motion_of(out.tiles, history, out.camera);
+  return out;
+}
+
+// L'accord des pixels qui bougent : |éclaircis − assombris| / qui bougent.
+float agree(const SceneTileCheck& t) {
+  return t.moving > 0.0F ? std::abs(2.0F * t.brighter - t.moving) / t.moving : 0.0F;
+}
+
 }  // namespace
 
 TEST_CASE("affinage de la caméra de la carte", "[scene_flow][scene_camera]") {
   // Une translation, un zoom de 1/128 et un cisaillement ; NVOF voit en plus un cisaillement inventé.
-  constexpr std::array<double, 6> kTruth{2.3, 1.0, 0.5, -1.1, -0.4, 1.0};
   constexpr std::array<double, 6> kNvofBias{0.3, 0.0, 1.2, -0.2, 0.0, 0.0};
 
   SECTION("le cisaillement inventé par NVOF est retiré, l'écart mesuré sur l'image le dit") {
@@ -156,7 +206,7 @@ TEST_CASE("affinage de la caméra de la carte", "[scene_flow][scene_camera]") {
   }
 
   SECTION("un dessin que NVOF ne voit pas bouge après la caméra : dessin ; le décor reste décor") {
-    const Pair pair = moved(kTruth, false, true);
+    const Pair pair = moved(kTruth, false, Patch::Moved);
     const SceneFlowTiles tiles = tiles_of(pair, kTruth);  // NVOF n'y voit que la caméra
     ref::SceneCamera camera = ref::scene_camera_of(tiles);
     REQUIRE(camera.fit);
@@ -193,6 +243,34 @@ TEST_CASE("affinage de la caméra de la carte", "[scene_flow][scene_camera]") {
         CHECK(motion.at(col, row).confidence >= 0.9F);
       }
     }
+  }
+
+  SECTION("une lueur qui s'allume sur place : effet ; une tache nette qui apparaît : dessin") {
+    const int col0 = kPatchX0 / kSceneTileFlowPixels;
+    const int row0 = kPatchY0 / kSceneTileFlowPixels;
+    const Mapped glow = mapped(moved(kTruth, false, Patch::Glow));
+    const Mapped spot = mapped(moved(kTruth, false, Patch::Spot));
+    for (int row = row0; row < row0 + 2; ++row) {
+      for (int col = col0; col < col0 + 2; ++col) {
+        CAPTURE(col, row);
+        const SceneTileCheck& g = glow.check(col, row);
+        CHECK(g.moving >= scene::kMovingShare);
+        CHECK(g.brighter == g.moving);
+        CHECK(g.sharp == 0.0F);
+        CHECK(g.settled >= scene::kLightKept * g.error);  // aucun recalage ne l'explique
+        CHECK(glow.motion.at(col, row).kind == SceneClass::Effect);
+        CHECK(glow.motion.at(col, row).confidence >= 0.99F);
+        CHECK(glow.motion.at(col, row).changed);
+        const SceneTileCheck& s = spot.check(col, row);
+        CHECK(s.moving >= scene::kMovingShare);
+        CHECK(agree(s) >= scene::kLightAgree);  // d'un seul sens aussi, mais d'un bord net
+        CHECK(s.sharp > scene::kLightSharp * s.moving);
+        CHECK(spot.motion.at(col, row).kind == SceneClass::Drawing);
+      }
+    }
+    // Ailleurs, rien ne change : décor.
+    CHECK(glow.motion.at(1, 1).kind == SceneClass::Background);
+    CHECK(spot.motion.at(1, 1).kind == SceneClass::Background);
   }
 
   SECTION("un aplat ne s'affine pas : rien à suivre") {
