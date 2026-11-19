@@ -34,9 +34,10 @@ namespace {
 // 2 : Conv directe à plusieurs pixels (PIX) ; 3 : taille de sous-groupe exigée ; 4 : coopmat à
 // 8 sous-groupes, en wave32 sur AMD, sorties vérifiées contre le noyau direct ; 5 : Conv 3 × 3
 // par Winograd ; 6 : coopmat à 16 sous-groupes et tm 8 (mémoire partagée des RDNA 4) ; 7 : tolérance selon
-// la précision, 1 % en sommes float (P2.45). Un appareil à tuiles 8 × 16 × 16 y ajoute « m8 »
+// la précision, 1 % en sommes float (P2.45) ; 8 : boucles des noyaux déroulées (matrices coopératives, direct,
+// Winograd), dont les temps relatifs changent. Un appareil à tuiles 8 × 16 × 16 y ajoute « m8 »
 // (candidate_set).
-constexpr std::string_view kCandidateSet = "c7";
+constexpr std::string_view kCandidateSet = "c8";
 
 // Hachage incrémental d'entiers, FNV-1a sur leurs huit octets.
 class Signature {
@@ -119,6 +120,10 @@ bool agrees(const std::vector<float>& out, const std::vector<float>& ref, bool l
 
 // Écart de vitesse sous lequel la précision départage deux variantes.
 constexpr double kPrecisionTie = 1.05;
+// Au plus ce que le bruit ajoute à kPrecisionTie : une couche mesurée à ± 50 % ne laisse pas une variante
+// deux fois plus lente l'emporter par sa précision (sur une RTX 4070 Ti, SPAN restait en sommes float, 17 ms
+// au lieu de 9,5).
+constexpr double kNoiseTieCap = 0.10;
 // Écart type relatif au-delà duquel une mesure se reprend.
 constexpr double kNoisy = 0.10;
 
@@ -256,7 +261,7 @@ std::expected<void, Refusal> Autotuner::save() const {
 
 namespace {
 
-// À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide), la variante aux sommes en float
+// À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide, au plus 10 %), la variante aux sommes en float
 // l'emporte sur celle à précision réduite : la précision ne coûte alors rien, et un écart de bruit ne
 // tranche pas. `full_precision_us` reçoit la meilleure variante aux sommes float, pour chiffrer le gain.
 std::optional<Measured> pick_best(std::vector<Measured>& measured, std::optional<double>& full_precision_us) {
@@ -268,7 +273,8 @@ std::optional<Measured> pick_best(std::vector<Measured>& measured, std::optional
   }
   if (measured.empty()) return best;
   const Measured& quick = std::ranges::min(measured, {}, &Measured::median_us);
-  const double tie = std::max(kPrecisionTie * quick.median_us, quick.median_us + (2.0 * quick.spread_us));
+  const double noise = std::min(2.0 * quick.spread_us, kNoiseTieCap * quick.median_us);
+  const double tie = std::max(kPrecisionTie * quick.median_us, quick.median_us + noise);
   for (Measured& m : measured) {
     if (m.median_us > tie) continue;
     if (!best || fp16_sums(*best) > fp16_sums(m) ||
@@ -406,7 +412,7 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
       }
     }
   }
-  // À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide), la variante aux sommes en float
+  // À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide, au plus 10 %), la variante aux sommes en float
   // l'emporte sur celle à précision réduite : la précision ne coûte alors rien, et un écart de bruit ne
   // tranche pas.
   std::optional<double> full_precision_us;  // la meilleure variante aux sommes float, pour chiffrer le gain
