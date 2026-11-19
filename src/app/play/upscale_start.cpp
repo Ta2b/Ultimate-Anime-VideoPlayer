@@ -47,6 +47,7 @@ UpscaleStage::~UpscaleStage() {
   log_temporal();
   log_shots();
   scene_.log_summary();
+  layers_.log_summary(setup_.layers);
   if (fences_mapped_) setup_.backend->kernels()->unmap_fences(setup_.yuv_slots->fence_block());
   if (setup_.rife_motion != nullptr) {
     log_channel("gpu")->info(
@@ -226,8 +227,10 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     return refuse(RefusalCode::FormatUnsupported,
                   std::format("étage gpu : le backend {} n'écrit pas en YUV pour l'encodeur", caps.name));
   }
-  ring_direct_ = caps.ring_targets && !setup_.yuv_slots &&
-                 (warps_spanned() || (by_motion() && setup_.engine == nullptr));
+  // Calques : l'image intermédiaire passe par un tenseur, composée sur place avant l'écriture du slot.
+  ring_direct_ =
+      layers_ring_direct(setup_.layers, caps.ring_targets && !setup_.yuv_slots &&
+                                            (warps_spanned() || (by_motion() && setup_.engine == nullptr)));
   if (ring_direct_)
     log_channel("gpu")->info("images intermédiaires écrites directement dans le slot du ring");
   if (setup_.yuv_slots) map_yuv_fences();
@@ -262,6 +265,8 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
       if (auto ok = alloc(middles_[i], planes(3, w, h)); !ok) return ok;
     }
   }
+  if (auto ok = layers_.allocate(backend, setup_.layers, planes(3, w, h), out_shape, warps_spanned()); !ok)
+    return ok;
   if (auto ok = allocate_temporal(); !ok) return ok;
   if (looks_ahead()) {  // plan par plan aussi : RIFE d'abord, DistilDRBA avec (allocate_ahead)
     if (auto ok = allocate_ahead(); !ok) return ok;

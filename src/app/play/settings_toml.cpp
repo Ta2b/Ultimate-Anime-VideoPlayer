@@ -352,6 +352,8 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
     reads.push_back(read(*interpolation, "interpolation", "smooth_drawings", s.smooth_drawings));
+    reads.push_back(read(*interpolation, "interpolation", "layers", s.layers));
+    reads.push_back(read(*interpolation, "interpolation", "background_plate", s.background_plate));
     read_motion_trials(*interpolation, s, reads);
     reads.push_back(read(*interpolation, "interpolation", "rife_fused", s.rife_fused));
     reads.push_back(read(*interpolation, "interpolation", "cubic_warp", s.cubic_warp));

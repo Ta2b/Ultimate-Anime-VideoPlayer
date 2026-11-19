@@ -107,7 +107,8 @@ namespace kirari::gpu {
 // 49 : KernelOps::motion_doubt (le fondu local du mouvement de RIFE, kernels/spec/motion_doubt.h).
 // 50 : Engine::span_tile_grid et next_span_tiles (les tuiles qui bougent : SPAN sur les seules tuiles
 // changées, la sortie d'avant reprise ou décalée ; kernels/spec/span_tiles.h).
-inline constexpr int kBackendAbi = 50;
+// 51 : KernelOps::compose_layers (l'interpolation par calques et la plaque de décor, kernels/spec/layers.h).
+inline constexpr int kBackendAbi = 51;
 
 using DeviceUuid = kirari::DeviceUuid;
 

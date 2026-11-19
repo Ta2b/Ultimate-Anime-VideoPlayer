@@ -149,10 +149,9 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // ×N demandé, arrondi au-dessus (×1,5 compte pour ×2) ; 1 : pas d'interpolation.
   std::uint32_t wanted = on_grid ? static_cast<std::uint32_t>((factor.num + factor.den - 1) / factor.den) : 1;
   if (free_mode) wanted = on_grid ? 2U : 1U;
-  // En retard sur l'horloge maître (GPU débordé : 4K ×3, scène lourde) : les instants
-  // intermédiaires de tête qui seront passés quand ils seront prêts (une période de sortie plus
-  // loin, ou après le retard mesuré des images) sont sautés, les suivants faits ; l'image seule
-  // s'il n'en reste aucun.
+  // En retard sur l'horloge maître (GPU débordé : 4K ×3, scène lourde) : les instants intermédiaires de tête
+  // qui seront passés quand ils seront prêts (une période de sortie plus loin, ou après le retard mesuré des
+  // images) sont sautés, les suivants faits ; l'image seule s'il n'en reste aucun.
   std::size_t late = 0;
   double play_rate = 1.0;
   if (!free_mode && on_grid && setup_.clock != nullptr && previous_ && previous_->epoch == frame.epoch) {
@@ -201,10 +200,11 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     count_measured(facts);
     mark_pair(frame, facts);
   }
-  // La carte de la scène (scene_pair), puis Smooth : une tenue fondue en un mouvement (upscale_smooth.cpp).
+  // La carte de la scène (scene_pair), puis Smooth (upscale_smooth.cpp), puis calques (layer_stage.h).
   smooth_advance(frame, scene_pair(frame, facts), on_grid);
   if (auto ok = smooth_decide(frame, spec, facts, on_grid); !ok)
     return std::unexpected(std::move(ok.error()));
+  layers_.arrive(facts, setup_.layers, smooth_first_, smooth_second_);
   // L'image seule si l'interpolation ne tourne pas ; la grille repart alors d'elle.
   outputs_ = 1;
   intermediates_ = 0;

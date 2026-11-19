@@ -30,6 +30,7 @@
 #include "gpu/gpu_profile.h"
 #include "gpu/tensor.h"
 #include "kernels/spec.h"
+#include "kernels/spec/layers.h"
 #include "kernels/spec/scene_flow.h"
 
 namespace kirari::gpu {
@@ -305,6 +306,18 @@ class KernelOps {
   };
   virtual std::expected<void, Refusal> gmfss_still(const StillJob& /*job*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_still : absent de ce backend"});
+  }
+  // La composition par calques (spec layers.h, ref::compose_layers), sur place dans out : la source 0 dans a,
+  // la source 1 dans b (lue si params.count vaut 2, sinon b peut être vide). Trois images RGB FP16 de même
+  // taille ; out n'est ni a ni b.
+  struct LayerJob {
+    Tensor out;
+    Tensor a;
+    Tensor b;
+    kernels::LayerParams params;
+  };
+  virtual std::expected<void, Refusal> compose_layers(const LayerJob& /*job*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "compose_layers : absent de ce backend"});
   }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.

@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "app/play/free_engines.h"
+#include "app/play/layer_stage.h"
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
 #include "app/play/rife_plan.h"
@@ -106,9 +107,8 @@ struct UpscaleSetup {
   // Réglages changés en cours de lecture (facteur RIFE, réduction, débandage) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
-  // Horloge maître : les instants intermédiaires qui seront passés avant d'être prêts sont sautés,
-  // la paire entière s'il n'en reste aucun (la chaîne rattrape au lieu de prendre du retard sur le
-  // son). nullptr : jamais.
+  // Horloge maître : les instants intermédiaires passés avant d'être prêts sont sautés, la paire entière
+  // s'il n'en reste aucun (la chaîne rattrape au lieu de prendre du retard sur le son). nullptr : jamais.
   const MasterClock* clock = nullptr;
   int source_width = 0;  // images décodées
   int source_height = 0;
@@ -133,7 +133,8 @@ struct UpscaleSetup {
   // gardées ; l'étage lit alors jusqu'à kSmoothMaxHold - 1 images en avance (frames_ahead). Une tenue plus
   // longue, ou coupée, garde le rythme des sources.
   bool smooth_drawings = false;
-  GmfssSetup gmfss;  // GMFSS Fortuna Union (upscale_gmfss.cpp) : avec rife_motion, ou seul
+  GmfssSetup gmfss;   // GMFSS Fortuna Union (upscale_gmfss.cpp) : avec rife_motion, ou seul
+  LayerSetup layers;  // l'interpolation par calques et la plaque de décor (layer_stage.h)
   // Le filtre qui lit les images au warp de la variante mouvement de RIFE (PlaySettings::cubic_warp).
   kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;
   bool pan_lock = false;     // mouvement d'ensemble au même warp (PlaySettings::pan_lock, spec/warp_pan.h)
@@ -167,8 +168,7 @@ class UpscaleStage final : public RingStage {
   void skip(const DecodedFrame& frame, std::uint32_t output) override;
   std::expected<void, Refusal> late(const DecodedFrame& frame, std::uint32_t output) override;
   Fate drba_fate(std::uint32_t output);
-  // DistilDRBA, instant écrit pour b tenu : c'est l'image source elle-même (left == right), à l'écran
-  // ensuite.
+  // DistilDRBA, instant écrit pour b tenu : l'image source elle-même (left == right), à l'écran ensuite.
   Output held_b(Output made, const DecodedFrame& frame, std::uint32_t output);
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
@@ -188,10 +188,10 @@ class UpscaleStage final : public RingStage {
                                                   const Target& out);
   // warp_blend et warp_blend_poses vers out (KernelOps, ou leurs variantes _ring).
   std::expected<void, Refusal> blend(const gpu::Tensor& a, const gpu::Tensor& b, const gpu::Motion& motion,
-                                     float t, const Target& out) const;
+                                     float t, const Target& out);
   std::expected<void, Refusal> blend_poses(const gpu::Tensor& a, const gpu::Tensor& b,
                                            const gpu::Motion& motion, const gpu::Motion* previous, float t,
-                                           const Target& out) const;
+                                           const Target& out);
   // Le warp et la composition écrivent l'image intermédiaire directement dans le slot
   // (BackendCaps::ring_targets, étude 1) : après SPAN, ou sans SPAN par la variante mouvement.
   // middle_outs_ et middles_ ne sont alors pas alloués.
@@ -505,6 +505,7 @@ class UpscaleStage final : public RingStage {
   // GMFSS (upscale_gmfss.cpp) : ses tenseurs ; la paire forte qui prend le mélange ; l'image à t du mélange
   // (M, ou RIFE sur la demi-paire puis le warp) ; GMFSS seul, l'image à t dans middle().
   GmfssBuffers gmfss_;
+  LayerStage layers_;  // calques et plaque de décor (layer_stage.h)
   bool gmfss_only() const { return setup_.gmfss.use == GmfssUse::Only; }
   std::expected<void, Refusal> allocate_gmfss();
   bool gmfss_pair() const;

@@ -62,7 +62,9 @@ std::expected<void, Refusal> check_tiles(SpanReuse& reuse, gpu::Backend& backend
 void tile_facts(ReuseFacts& rf, const UpscaleSetup& setup, bool before_warp, bool previous_spanned,
                 bool output_has_source, std::uint32_t intermediates, const PairFacts& facts) {
   const bool playing = setup.clock != nullptr && !setup.yuv_slots;
-  const bool plain = setup.temporal_fix == nullptr && !setup.smooth_drawings;
+  // La plaque de décor (layer_stage.h) réécrit la sortie : ses pixels ne se reprennent pas d'une image à
+  // l'autre.
+  const bool plain = setup.temporal_fix == nullptr && !setup.smooth_drawings && setup.layers.plate == nullptr;
   const bool kept = before_warp ? !setup.grader && previous_spanned : output_has_source && intermediates == 0;
   rf.tiles_ok = playing && plain && kept;
   rf.can_shift = before_warp;
@@ -176,6 +178,10 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
   if (ok && tiled) ok = check_tiles(reuse_, *setup_.backend, *setup_.engine, inputs, results[0]);
   reuse_.spanned = ok ? std::optional(frame_id_) : std::nullopt;
+  // La plaque de décor (layer_stage.h), avant le grade : le décor de b repris de l'image clé.
+  if (ok)
+    ok = layers_.after_span(*setup_.backend, setup_.layers, inputs[0], results[0],
+                            setup_.warp == kernels::RifeWarp::CatmullRom);
   if (ok) ok = grade_spanned(span_of_[current_]);
   use_lane(back);
   return ok;

@@ -227,6 +227,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                 .compose = settings.gmfss_compose,
                 .cost_us = gmfss_cost_us,
                 .pair_us = gmfss_pair_us},
+      .layers = {.layers = layers, .plate = plate.get()},
       .warp =
           settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
       // Mouvement d'ensemble : le warp de RIFE mouvement et celui de DistilDRBA mouvement.
@@ -663,6 +664,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   ChainEngines c;
   take_trials(c, p.options);
   c.smooth_drawings = settings.smooth_drawings;  // --smooth-drawings compris (settings_for)
+  c.layers = settings.layers;                    // play.toml [interpolation] layers
   c.work = chain_work_size(settings, video.width, video.height);
   const bool span = take_upscaler(p, c, settings);
   if (span) {
@@ -736,6 +738,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     auto upscaled = load_span(p, init, c, settings);
     if (!upscaled) return std::unexpected(std::move(upscaled.error()));
     if (!*upscaled) return std::nullopt;
+    if (!load_plate(p, init, c, settings)) return std::nullopt;
   }
   c.rife_size = motion_size(video, c.work, settings, p.options.rife_image);
   InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);

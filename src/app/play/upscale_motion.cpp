@@ -137,26 +137,29 @@ std::expected<void, Refusal> UpscaleStage::measure_first_pair(const gpu::Motion&
 }
 
 std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu::Tensor& b,
-                                                 const gpu::Motion& motion, float t,
-                                                 const Target& out) const {
+                                                 const gpu::Motion& motion, float t, const Target& out) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   // Tri des paires (rife_triage.h) : le mouvement fondu là où la carte doute. Le masque du fondu : 1 − t pour
   // un mouvement lu à l'instant, 0,5 pour celui du milieu (kernels/spec/motion_doubt.h).
   gpu::Motion read = triage_.doubted(*setup_.backend, motion, motion.at_instant ? 1.0F - t : 0.5F);
   read.warp = setup_.warp;
   read.pan_lock = setup_.pan_lock;
-  return out.ring != nullptr ? ops.warp_blend_ring(a, b, read, t, *out.ring)
-                             : ops.warp_blend(a, b, read, t, *out.tensor);
+  if (out.ring != nullptr) return ops.warp_blend_ring(a, b, read, t, *out.ring);
+  if (auto ok = ops.warp_blend(a, b, read, t, *out.tensor); !ok) return ok;
+  // Calques (layer_stage.h) : le décor repris de a et b au seul mouvement de caméra ; sans carte, rien.
+  return layers_.compose_pair(ops, a, b, *out.tensor, t, setup_.warp == kernels::RifeWarp::CatmullRom);
 }
 
 std::expected<void, Refusal> UpscaleStage::blend_poses(const gpu::Tensor& a, const gpu::Tensor& b,
                                                        const gpu::Motion& motion, const gpu::Motion* previous,
-                                                       float t, const Target& out) const {
+                                                       float t, const Target& out) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   gpu::Motion read = triage_.doubted(*setup_.backend, motion, 0.5F);  // avec les poses : toujours du milieu
   read.warp = setup_.warp;
-  return out.ring != nullptr ? ops.warp_blend_poses_ring(a, b, read, previous, t, *out.ring)
-                             : ops.warp_blend_poses(a, b, read, previous, t, *out.tensor);
+  if (out.ring != nullptr) return ops.warp_blend_poses_ring(a, b, read, previous, t, *out.ring);
+  if (auto ok = ops.warp_blend_poses(a, b, read, previous, t, *out.tensor); !ok) return ok;
+  // Les poses gardent le rythme des dessins ; le décor suit la caméra à l'instant t (le rythme par calque).
+  return layers_.compose_pair(ops, a, b, *out.tensor, t, setup_.warp == kernels::RifeWarp::CatmullRom);
 }
 
 std::expected<void, Refusal> UpscaleStage::interpolate_direct(std::uint32_t output, float t,
