@@ -233,7 +233,9 @@ suivi.
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format
   échantillonnable pour sa texture), le journal le dit une fois et le grade reste celui d'aujourd'hui.
-  L'export et le grade avant le warp ne lisent pas le masque.
+  Le grade avant le warp (`source_grade.h`) suit son propre masque, nourri pour chaque source gradée par la
+  note la plus récente de son époque (`EffectBook::for_source`, au plus 250 ms avant la source : au-delà, la
+  carte s'est tue et le masque revient au neutre). L'export ne lit pas le masque.
 
 Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintillement de plus, le temps du
 grade ne monte pas de plus de 0,3 ms, et le test à l'aveugle est gagné sur des scènes d'explosion et de

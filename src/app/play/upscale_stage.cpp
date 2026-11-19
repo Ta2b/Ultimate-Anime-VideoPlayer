@@ -82,6 +82,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   use_lane(gpu::Lane::Measure);  // ingestion, mesures de la paire, suivante en avance
   next_source();
   frame_id_ = frame.id;
+  head_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
   rife_in_pair_ = false;  // les images de rife_in() sont celles de la paire d'avant
   half_.in_pair = false;
   gpu::IngestSpec spec{.reduce = setup_.live ? setup_.live->reduction() : gpu::Reduction{}};
