@@ -96,7 +96,10 @@ propre de chaque image : `fin vue − max(soumission, fin de l'image d'avant)`. 
 (avant la soumission) n'y compte pas, donc une file pleine ne gonfle pas le coût (l'écueil qu'avait déjà
 rencontré #123). Le coût de la paire (plus l'attente de ses mesures avant soumission) divisé par ses images
 donne le temps de service par image `s`, moyenne qui **monte vite** (×0,6 par mesure) et **descend lentement**
-(×0,12). Comptent les paires de 2 images ou plus, et la paire d'une seule image quand cette image est
+(×0,12). Pendant les 5 s qui suivent l'activation du mode (`FreeRate::kStartUs`, moteurs qui chauffent), elle
+suit chaque mesure à moitié dans les deux sens, une mesure bornée à 20 ms par image : une passe qui chauffe ne
+fige pas l'écart. Ces mesures étaient ignorées comme après un seek, et le pas restait 5 s à une demi-paire, soit
+48 i/s au plancher du VRR (165-932 : 5 s sur 60 à 48 i/s, la cadence en mouvement à 151,6 i/s). Comptent les paires de 2 images ou plus, et la paire d'une seule image quand cette image est
 interpolée. La source seule d'une coupe ou d'un dessin tenu ne dit rien du coût d'une image interpolée. Reste
 la paire que le pas a réduite à sa source (`FreeGrid::starved` : ni l'horloge prédite ni l'écart minimal
 n'empêchaient une image interpolée) : elle ne mesure rien, donc l'estimation redescend de 12 % par paire
