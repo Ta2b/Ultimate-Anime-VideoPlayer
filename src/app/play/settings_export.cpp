@@ -146,6 +146,11 @@ void encoding_section(ExportJob& job) {
 
 }  // namespace
 
+void export_experimental_note() {
+  note(i18n::tr("The export is not finished yet: a file can come out wrong or the export can stop."));
+  panel::badge(i18n::tr("Experimental"), panel::kExperimental);
+}
+
 void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsChoices& choices,
                 std::vector<Input>& actions) {
   if (choices.source_file.empty()) {  // l'écran d'accueil : aucune vidéo à exporter

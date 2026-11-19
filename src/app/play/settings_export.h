@@ -36,6 +36,8 @@ struct ExportDraft {
   } check;
 };
 
+// La pastille « Expérimental » en tête de l'onglet : l'export n'est pas encore au point (novembre 2026).
+void export_experimental_note();
 void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsChoices& choices,
                 std::vector<Input>& actions);
 

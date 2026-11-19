@@ -711,6 +711,7 @@ par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
   [Moteurs construits]
     · liste des moteurs en cache
 ## Export  (settings_export.cpp) : ~8 réglages, 12 notes
+  note en tête, avec la pastille Expérimental : l'export n'est pas encore au point (export_experimental_note)
   [Résolution]
     - liste : Taille
     - repliable : Agrandissement (chaîne de l'export)

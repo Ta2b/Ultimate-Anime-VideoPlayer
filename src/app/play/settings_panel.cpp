@@ -205,6 +205,7 @@ void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices
       break;
     }
     case Page::Export: {
+      export_experimental_note();
       export_tab(*export_, running, choices, actions);
       break;
     }

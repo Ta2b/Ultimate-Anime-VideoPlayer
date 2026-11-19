@@ -25,7 +25,8 @@ s'ouvre comme n'importe quel lecteur : double-clic sur une vidéo, et c'est tout
   SDR.
 - **Stabilisation temporelle** (TemporalFix, facultative) : retire le scintillement du grain et de la
   compression avant l'agrandissement.
-- **Export** : la même chaîne rejouée image par image vers un fichier MKV, MP4 ou MOV.
+- **Export** (expérimental, pas encore au point) : la même chaîne rejouée image par image vers un fichier MKV,
+  MP4 ou MOV.
 - Et ce qu'on attend d'un lecteur : sous-titres (libass), pistes par langue préférée, épisode suivant, passage du
   générique.
 

@@ -110,6 +110,8 @@ constexpr std::array kSettingsPages{
     Entry{"Engines", "Moteurs"},
     Entry{"Exact position", "Position exacte"},
     Entry{"Experimental", "Expérimental"},
+    Entry{"The export is not finished yet: a file can come out wrong or the export can stop.",
+          "L'export n'est pas encore au point : un fichier peut sortir faux ou l'export s'arrêter."},
     Entry{"Export", "Export"},
     Entry{"Replace the file and export", "Remplacer le fichier et exporter"},
     Entry{"Fast", "Rapide"},
