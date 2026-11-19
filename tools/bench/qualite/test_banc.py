@@ -342,7 +342,7 @@ class Scintillement(unittest.TestCase):
                         "    v = np.zeros((2, n, 2), np.int16)\n    v[0, :, 0], v[1, :, 0] = -3 * 32, 3 * 32\n"
                         "    v.tofile(o)\n    print('ok ' + o)\n")
             os.chmod(tool, 0o755)
-            pairs = scintillement.flux_nvof(tool)(refs[:4])
+            pairs = [make() for make in scintillement.flux_nvof(tool)(refs[:4])]
         for k, al in enumerate(pairs):
             ra, rb = al.pair(scintillement.luma(refs[k]), scintillement.luma(refs[k + 1]))
             self.assertLess(float(np.abs(ra - rb)[al.inside].max()), 1.0)
