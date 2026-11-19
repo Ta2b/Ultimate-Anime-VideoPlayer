@@ -1,5 +1,7 @@
 // Le grade avant le warp (source_grade.h) dans l'étage gpu, sur le banc sans GPU (upscale_rig.h) : un grade
-// par SPAN, aucun pour un dessin tenu, et les images marquées gradées pour l'écran (RingFrame::graded).
+// par SPAN, aucun pour un dessin tenu, les images marquées gradées pour l'écran (RingFrame::graded), et les
+// tuiles de SPAN (upscale_tiles.h) qui partent de la sortie d'avant le grade, ou sur place sans lui.
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -9,6 +11,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/source_grade.h"
+#include "core/clock.h"
+#include "kernels/spec/span_tiles.h"
 #include "upscale_rig.h"
 
 namespace kirari::app::play {
@@ -20,14 +24,16 @@ enum class Answer { Graded, Nothing, Refused };
 class CountingGrader final : public SourceGrader {
  public:
   explicit CountingGrader(Answer answer) : answer_(answer) {}
-  std::expected<bool, Refusal> grade(gpu::KernelOps& /*ops*/, const gpu::Tensor& /*rgb*/, bool /*debanded*/,
+  std::expected<bool, Refusal> grade(gpu::KernelOps& /*ops*/, const gpu::Tensor& rgb, bool /*debanded*/,
                                      const GradedSource& /*source*/) override {
     ++calls;
+    graded.push_back(rgb.handle);  // lu par le test une fois l'étage arrêté
     if (answer_ == Answer::Refused)
       return std::unexpected(Refusal{.code = RefusalCode::FeatureUnavailable, .detail = "essai"});
     return answer_ == Answer::Graded;
   }
   std::atomic<int> calls{0};
+  std::vector<std::uintptr_t> graded;  // les tenseurs gradés sur place
 
  private:
   Answer answer_;
@@ -53,6 +59,21 @@ std::vector<RingFrame> play(Rig& rig, std::shared_ptr<SourceGrader> grader, bool
   rig.stage.reset();
   return rig.sink.frames();
 }
+
+// Une horloge sans valeur : la lecture (les tuiles ne servent qu'en lecture), rien n'est en retard.
+struct IdleClock final : MasterClock {
+  ClockSnapshot snapshot() const override { return {}; }
+};
+
+// La grille du SPAN natif sur l'image de travail de 320 × 180 : tuiles de 64 × 16.
+constexpr kernels::SpanTileGrid kTileGrid{.tile_w = 64,
+                                          .tile_h = 16,
+                                          .cols = 5,
+                                          .rows = 12,
+                                          .reach_cols = 1,
+                                          .reach_rows = 1,
+                                          .shift_step = 2,
+                                          .scale = 2};
 
 }  // namespace
 
@@ -96,6 +117,60 @@ TEST_CASE("Étage gpu : grade avant le warp sans warp après SPAN, l'écran grad
   auto grader = std::make_shared<CountingGrader>(Answer::Graded);
   const std::vector<RingFrame> frames = play(rig, grader, false);
   for (const RingFrame& frame : frames) CHECK_FALSE(frame.graded);
+}
+
+// L'essai du PC du 19 novembre : SPAN natif en 4K, warp après SPAN, grade avant le warp, carte de la scène ;
+// aucune image par tuiles, le grade réécrivant sur place la sortie d'avant. Elle est maintenant copiée avant
+// le grade, et les tuiles partent de la copie : dès la troisième source (la première n'a pas d'avant, la
+// deuxième suit un grade sans copie), jamais d'un tampon gradé.
+TEST_CASE("Étage gpu : grade avant le warp, les tuiles de SPAN partent de la sortie d'avant le grade",
+          "[app][stage]") {
+  Rig rig;
+  IdleClock clock;
+  rig.span.offer_tiles(kTileGrid);
+  rig.backend.offer_still_scene(true);
+  auto grader = std::make_shared<CountingGrader>(Answer::Graded);
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.warp_after_span = true;
+  s.grader = grader;
+  s.scene_map = true;
+  s.clock = &clock;
+  rig.start(std::move(s), &clock);
+  rig.feed(1, 6);
+  REQUIRE(rig.collect(11));  // six sources et une image entre chaque paire
+  rig.stage.reset();
+  CHECK(grader->calls == 6);
+  // Sources 3 à 6 quand chaque carte arrive à l'heure ; une source poussée après l'arrivée de sa précédente
+  // (le banc ne tient pas l'étage) n'a pas de carte et se calcule entière.
+  const std::vector<std::uintptr_t>& from = rig.span.tiles_from();
+  REQUIRE_FALSE(from.empty());
+  CHECK(from.size() <= 4);
+  for (const std::uintptr_t handle : from) {
+    CHECK(handle != 0U);
+    CHECK(std::ranges::find(grader->graded, handle) == grader->graded.end());
+  }
+}
+
+// SPAN seul, sans interpolation : l'écran grade, et les tuiles se font sur place, dans la sortie qui tient
+// déjà celle d'avant (aucun tenseur d'avant donné au moteur).
+TEST_CASE("Étage gpu : SPAN seul, les tuiles se font sur place", "[app][stage]") {
+  Rig rig;
+  IdleClock clock;
+  rig.span.offer_tiles(kTileGrid);
+  rig.backend.offer_still_scene(true);
+  UpscaleSetup s = rig.setup(false);
+  s.grader = std::make_shared<CountingGrader>(Answer::Graded);
+  s.scene_map = true;
+  s.clock = &clock;
+  rig.start(std::move(s), &clock);
+  rig.feed(1, 6);
+  REQUIRE(rig.collect(6));
+  rig.stage.reset();
+  const std::vector<std::uintptr_t>& from = rig.span.tiles_from();
+  REQUIRE_FALSE(from.empty());
+  for (const std::uintptr_t handle : from) CHECK(handle == 0U);
 }
 
 }  // namespace kirari::app::play

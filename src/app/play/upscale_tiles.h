@@ -30,6 +30,7 @@
 // zéros de l'image.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -40,9 +41,20 @@
 
 namespace kirari::app::play {
 
+// Pourquoi la sortie de l'image d'avant ne se reprend pas par tuiles ; None : elle se reprend. Chaque image
+// entière compte sous une raison au bilan (SpanTiles::summary).
+enum class TileStale : std::uint8_t {
+  None,
+  Chain,        // la chaîne ne s'y prête pas : export, sortie YUV, TemporalFix, Smooth, plaque de décor
+  Graded,       // le grade avant le warp l'a réécrite sur place, sans copie d'avant le grade
+  Overwritten,  // ce n'est plus la sortie de la source d'avant : image créée par-dessus, source sautée
+  Restart,      // début de lecture, saut, image ou ancre abîmée, pas de sortie d'avant
+};
+inline constexpr std::size_t kTileStaleCount = 5;
+
 // Ce que l'étage sait de l'image quand elle n'est pas reprise entière.
 struct TileFacts {
-  bool fresh = false;      // même époque, image saine, sortie de l'image d'avant présente et à jour
+  TileStale stale = TileStale::Restart;  // None : même époque, image saine, sortie d'avant présente et à jour
   bool can_shift = false;  // la sortie d'avant est dans un autre tampon que la nouvelle (décalage possible)
   const kernels::SceneMotion* scene = nullptr;  // la carte de (précédente, image) ; nulle : pas de carte
   // Ce qu'un pixel de la source touche de l'entrée de SPAN, au-delà de lui-même : le rayon du débandage,
@@ -91,7 +103,8 @@ class SpanTiles {
   static constexpr std::uint64_t kCheckEvery = 24;
   bool check_due() const { return tiled_ > 0 && tiled_ % kCheckEvery == 1; }
   void checked(std::uint32_t worst_block, double mean_levels);
-  // « SPAN par tuiles : … » pour le journal de fin ; vide si rien n'a été fait par tuiles.
+  // « SPAN par tuiles : … » pour le journal de fin, même sans aucune image par tuiles : combien l'ont été, et
+  // chaque raison des images entières. Vide si les tuiles ne sont pas actives (le démarrage l'a dit).
   std::string summary() const;
 
  private:
@@ -112,9 +125,10 @@ class SpanTiles {
     return static_cast<std::size_t>(row) * static_cast<std::size_t>(grid_.cols) +
            static_cast<std::size_t>(col);
   }
-  // L'image se calcule entière : pas de carte, état inconnu, coupe, fondu, rafraîchissement, caméra qui bouge
-  // sans décalage entier.
-  bool whole_frame(const TileFacts& facts, bool shifting) const;
+  // L'image se calcule entière : le compteur de sa raison au bilan (sortie d'avant non reprise, état inconnu,
+  // recette, pas de carte, rafraîchissement, coupe ou fondu, caméra qui bouge sans décalage entier) ; nul :
+  // par tuiles si la région le permet.
+  std::uint64_t* whole_reason(const TileFacts& facts, bool shifting, bool new_recipe);
   // L'état d'avant de la tuile (col, row), décalée de (sx, sy) : la pire des tuiles d'où vient son contenu.
   Tile carried(int col, int row, int sx, int sy) const;
   // Le contenu de la tuile vient d'en dehors de la grille (bande qui entre) : à recalculer.
@@ -140,9 +154,15 @@ class SpanTiles {
   std::uint64_t tiles_done_ = 0;  // tuiles du cœur, sommées sur les images par tuiles
   std::uint64_t tiles_wide_ = 0;  // tuiles de la région dilatée
   std::uint64_t tiles_seen_ = 0;  // tuiles de la grille, sur les mêmes images
-  std::uint64_t too_wide_ = 0;    // images entières parce que la région dépassait kMaxShare
-  std::uint64_t no_map_ = 0;      // images entières faute de carte
-  std::uint64_t refused_ = 0;
+  // Les images entières, chacune sous une seule raison.
+  std::array<std::uint64_t, kTileStaleCount> stale_{};  // par TileStale (None jamais), et l'état inconnu
+  std::uint64_t recipe_ = 0;                            // l'entrée de SPAN a changé de recette
+  std::uint64_t no_map_ = 0;                            // faute de carte
+  std::uint64_t refresh_ = 0;                           // kFullEvery
+  std::uint64_t cut_ = 0;                               // coupe, fondu, carte sans tuiles
+  std::uint64_t camera_ = 0;                            // caméra qui bouge sans décalage entier
+  std::uint64_t too_wide_ = 0;                          // la région dépassait kMaxShare
+  std::uint64_t refused_ = 0;                           // le moteur a refusé le plan
   std::uint64_t checks_ = 0;
   std::uint32_t check_worst_ = 0;  // 1/256 de niveau
   double check_mean_ = 0.0;        // niveaux, le plus grand
