@@ -7,9 +7,11 @@ Aucun modèle nouveau : SPAN tel quel, la carte de la scène (`docs/carte-de-la-
 
 ## Ce qu'il faut pour que ça tourne
 
-- **SPAN FP16 natif** (`--span-native`, `docs/span-native16.md`) : nos noyaux savent sauter une tuile d'un bloc
-  entier. TensorRT (forme fixe) et le corps FP8 CUTLASS ne calculent que l'image entière : leur grille est vide
-  (`gpu::Engine::span_tile_grid`) et rien ne change pour eux.
+- **SPAN natif** (le défaut sur RTX 40 et 50, `docs/span-native16.md`) : nos noyaux savent sauter une tuile
+  d'un bloc entier, à sommes f16 (Équilibre, et repli du cran Performance) comme f32 (Qualité). TensorRT
+  (forme fixe) et le corps FP8 CUTLASS ne calculent que l'image entière : leur grille est vide
+  (`gpu::Engine::span_tile_grid`) et rien ne change pour eux. Avec la carte ou `--span-tiles-check` et un de
+  ces moteurs, le journal le dit au démarrage (« ce moteur ne calcule que l'image entière »).
 - **La carte de la scène** (`--scene-map`, RTX 30 et après) : sans elle, l'image entière se calcule, image pour
   image comme avant.
 - **SPAN avant le warp** (RIFE ou DistilDRBA en variante mouvement, `warp_after_span`) : la carte de la paire
