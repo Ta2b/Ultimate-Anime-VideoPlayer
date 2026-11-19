@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <format>
+#include <limits>
 #include <set>
 #include <string>
 #include <string_view>
@@ -41,6 +42,10 @@ struct FakeTransformer {
   std::int64_t softmax_axis = -1;
   bool unmasked = false;            // fenêtres décalées sans masque
   std::int64_t reshape_splits = 0;  // fenêtres du Reshape de split_feature (0 : celles de l'échelle)
+  bool mask_not_negated = false;    // -100 là où les régions sont égales (Where sans Not)
+  bool regions_swapped = false;     // la ligne de la région comptée par les comparaisons des colonnes
+  bool mask_unwindowed = false;     // la carte des régions comparée sans être découpée en fenêtres
+  std::int64_t norm1_stash = 1;     // statistiques de norm1 (1 : f32)
 };
 
 // Le poids ONNX [entrée][sortie] de la partie part (q, k, v, fusion) de la couche layer : exact en FP32.
@@ -145,8 +150,9 @@ struct Scale {
   std::string wh, ww, sh, sw, mask;
 };
 
-// Fenêtres, décalages d'une demi-fenêtre et masque : régions comptées au bord moins une fenêtre et au bord
-// moins un décalage, -100 entre deux régions.
+// Fenêtres, décalages d'une demi-fenêtre et masque, comme l'export : régions de chaque ligne et de chaque
+// colonne comptées au bord moins une fenêtre et au bord moins un décalage, carte ligne · 3 + colonne découpée
+// en fenêtres, différence de deux régions, -100 où elle n'est pas nulle, 0 où elle l'est.
 void geometry(Graph& g, Scale& s) {
   const FakeTransformer& f = g.fake();
   const std::string h = s.top + "height", w = s.top + "width";
@@ -155,16 +161,31 @@ void geometry(Graph& g, Scale& s) {
   s.sh = g.op(s.top + "Div_2", "Div", {s.wh, g.ints(f.half)});
   s.sw = g.op(s.top + "Div_3", "Div", {s.ww, g.ints(2)});
   const std::array<std::string, 4> edges{s.wh, f.edge_swapped ? s.wh : s.sh, s.ww, s.sw};
-  for (int i = 0; i < 4; ++i) {
-    const std::string sub = g.op("", "Sub", {i < 2 ? h : w, edges[static_cast<std::size_t>(i)]});
-    g.op(s.top + (i == 0 ? "GreaterOrEqual" : std::format("GreaterOrEqual_{}", i)), "GreaterOrEqual",
-         {"coords", sub});
+  std::array<std::string, 4> ge;
+  for (std::size_t i = 0; i < 4; ++i) {
+    const std::string sub = g.op("", "Sub", {i < 2 ? h : w, edges[i]});
+    ge[i] = g.op(s.top + (i == 0 ? "GreaterOrEqual" : std::format("GreaterOrEqual_{}", i)), "GreaterOrEqual",
+                 {i < 2 ? s.top + "rows" : s.top + "cols", sub});
   }
-  g.op(s.top + "Mul", "Mul", {"rows", g.ints(3)});
-  const std::string equal = g.op(s.top + "Equal", "Equal", {"diff", g.scalar(0.F)});
-  const std::string equal1 = g.op(s.top + "Equal_1", "Equal", {"diff", g.scalar(0.F)});
-  const std::string where = g.op(s.top + "Where", "Where", {equal1, g.scalar(f.fill), "zero"});
-  s.mask = g.op(s.top + "Where_1", "Where", {equal, g.scalar(0.F), where});
+  const auto count = [&](std::size_t a) {
+    const std::string sum = g.op("", "Add", {g.op("", "Cast", {ge[a]}), g.op("", "Cast", {ge[a + 1]})});
+    return g.op("", "Reshape", {sum, "shape"});
+  };
+  const std::string rows = g.op(s.top + "Mul", "Mul", {count(f.regions_swapped ? 2 : 0), g.ints(3)});
+  std::string map = g.op("", "Cast", {g.op("", "Add", {rows, count(f.regions_swapped ? 0 : 2)})});
+  if (!f.mask_unwindowed) {
+    map = g.op("", "Transpose", {g.op("", "Reshape", {map, "split"})},
+               {ints_attribute("perm", {0, 1, 3, 2, 4, 5})});
+  }
+  map = g.op("", "Reshape", {map, "flat"});
+  const std::string diff =
+      g.op("", "Sub", {g.op("", "Unsqueeze", {map, g.ints(1)}), g.op("", "Unsqueeze", {map, g.ints(2)})});
+  const std::string equal = g.op(s.top + "Equal", "Equal", {diff, g.scalar(0.F)});
+  const std::string equal1 = g.op(s.top + "Equal_1", "Equal", {diff, g.scalar(0.F)});
+  const std::string differs = f.mask_not_negated ? equal : g.op("", "Not", {equal});
+  const std::string where =
+      g.op(s.top + "Where", "Where", {g.op("", "Cast", {differs}), g.scalar(f.fill), diff});
+  s.mask = g.op(s.top + "Where_1", "Where", {g.op("", "Cast", {equal1}), g.scalar(0.F), where});
 }
 
 // torch.roll sur l'axe 1 ou 2 : Concat(Slice(x, a, a + reste), Slice(x, 0, 0 + a)), a = le décalage (aller)
@@ -229,7 +250,8 @@ std::string layer(Graph& g, const Scale& s, int block, bool cross, const std::st
   const float epsilon = index == kGmflowLayers - 1 ? f.last_epsilon : 1e-5F;
   const std::string ln = g.op(module + "norm1" + s.sfx + "/LayerNormalization", "LayerNormalization",
                               {merged, weights + "norm1.weight", weights + "norm1.bias"},
-                              {int_attribute("axis", -1), float_attribute("epsilon", epsilon)});
+                              {int_attribute("axis", -1), int_attribute("stash_type", f.norm1_stash),
+                               float_attribute("epsilon", epsilon)});
   if (cross) return g.op("", "Concat", {src, ln}, {int_attribute("axis", -1)});
   return g.op("", "Add", f.residual_swapped ? std::vector{ln, src} : std::vector{src, ln});
 }
@@ -325,6 +347,15 @@ TEST_CASE("GMFlow natif : les fautes du faux transformeur sont refusées", "[pre
   CHECK(refused({.softmax_axis = 1}));
   CHECK(refused({.unmasked = true}));
   CHECK(refused({.reshape_splits = 3}));
+  // Refusées pour ce qu'elles faussent, pas par un contrôle plus tôt.
+  const auto refused_for = [](const FakeTransformer& f, std::string_view why) {
+    const auto read = gmflow_attention(fake_transformer(f));
+    return !read && read.error().detail.find(why) != std::string::npos;
+  };
+  CHECK(refused_for({.mask_not_negated = true}, "conditions du masque"));
+  CHECK(refused_for({.regions_swapped = true}, "carte des régions"));
+  CHECK(refused_for({.mask_unwindowed = true}, "carte des régions"));
+  CHECK(refused_for({.norm1_stash = 0}, "norm1"));
   const FakeTransformer none;
   const auto empty = gmflow_attention(Graph(none).model());  // aucun transformeur
   REQUIRE_FALSE(empty);
@@ -355,6 +386,9 @@ TEST_CASE("GMFlow natif : le plan de l'attention se tient, ses fautes sont refus
   CHECK(broken([](GmflowAttention& a) { a.output = 5; }));
   CHECK(broken([](GmflowAttention& a) { a.splits[1] = 0; }));
   CHECK(broken([](GmflowAttention& a) { a.mask = 0.F; }));
+  CHECK(broken([](GmflowAttention& a) { a.layers[2].qkv[7] = 1e5F; }));  // hors du FP16 des noyaux
+  CHECK(broken([](GmflowAttention& a) { a.layers[9].merge[3] = std::numeric_limits<float>::infinity(); }));
+  CHECK(broken([](GmflowAttention& a) { a.layers[4].gamma[0] = std::numeric_limits<float>::quiet_NaN(); }));
 }
 
 }  // namespace kirari::prepare

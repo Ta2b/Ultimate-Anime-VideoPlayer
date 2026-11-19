@@ -11,7 +11,8 @@ cmake_minimum_required(VERSION 3.24)
 project(gmflow_attention LANGUAGES CXX)
 set(KIRARI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../../src")
 set(gmflow_attention_lecture "${KIRARI_SRC}/prepare/gmflow_attention_native.cpp"
-    "${KIRARI_SRC}/prepare/gmflow_attention_check.cpp" "${KIRARI_SRC}/prepare/gmflow_onnx_view.cpp"
+    "${KIRARI_SRC}/prepare/gmflow_attention_check.cpp" "${KIRARI_SRC}/prepare/gmflow_attention_mask.cpp"
+    "${KIRARI_SRC}/prepare/gmflow_onnx_view.cpp"
     "${KIRARI_SRC}/gpu/ir/onnx_reader.cpp" "${KIRARI_SRC}/gpu/ir/onnx_tensor.cpp" "${KIRARI_SRC}/gpu/ir/protobuf.cpp"
     "${KIRARI_SRC}/kernels/ref/half.cpp")
 add_executable(gmflow_attention_vide gmflow_attention_vide.cpp ${gmflow_attention_lecture})

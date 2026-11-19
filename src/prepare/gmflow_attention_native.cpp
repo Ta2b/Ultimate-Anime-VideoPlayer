@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "gpu/ir/onnx_model.h"
+#include "prepare/gmflow_attention_mask.h"
 #include "prepare/gmflow_onnx_view.h"
 
 namespace kirari::prepare {
@@ -50,35 +51,6 @@ bool ints_are(const OnnxView& g, std::string_view tensor, const std::vector<std:
   return t != nullptr && t->ints == want;
 }
 
-// Le masque : régions de l'image décalée (ligne · 3 + colonne, chacune comptée par deux comparaisons au bord
-// moins une fenêtre et au bord moins un décalage), différence de deux régions, value où elle n'est pas nulle,
-// 0 ailleurs.
-const char* mask_problem(const OnnxView& g, const Scale& s, std::array<std::string, 2> window, float& value) {
-  const Node* where = g.node(s.top + "Where", "Where");
-  const Node* where1 = g.node(s.top + "Where_1", "Where");
-  const Node* equal = g.node(s.top + "Equal", "Equal");
-  const Node* equal1 = g.node(s.top + "Equal_1", "Equal");
-  const Node* rows = g.node(s.top + "Mul", "Mul");
-  if (where == nullptr || where1 == nullptr || equal == nullptr || equal1 == nullptr || rows == nullptr ||
-      where->inputs.size() != 3 || where1->inputs.size() != 3 || where1->inputs[2] != where->outputs[0])
-    return "Where du masque";
-  const auto fill = g.scalar(where->inputs[1]);
-  if (!fill || !(*fill < 0.F) || !std::isfinite(*fill) || g.scalar(where1->inputs[1]) != 0.F ||
-      g.scalar(equal->inputs[1]) != 0.F || g.scalar(equal1->inputs[1]) != 0.F || operand(g, rows) != 3)
-    return "valeurs du masque (-100 entre régions, 0 dans une région, trois régions par ligne)";
-  for (int i = 0; i < 4; ++i) {
-    const std::string name = s.top + (i == 0 ? "GreaterOrEqual" : std::format("GreaterOrEqual_{}", i));
-    const Node* ge = g.node(name, "GreaterOrEqual");
-    const Node* edge = ge != nullptr && ge->inputs.size() == 2 ? g.made_by(ge->inputs[1], "Sub") : nullptr;
-    const std::string& want =
-        (i % 2 == 0) ? window[static_cast<std::size_t>(i / 2)] : s.shift[static_cast<std::size_t>(i / 2)];
-    if (edge == nullptr || edge->inputs.size() != 2 || g.base(edge->inputs[1]) != want)
-      return "régions du masque (bord moins une fenêtre, bord moins un décalage)";
-  }
-  value = *fill;
-  return nullptr;
-}
-
 std::expected<Scale, Refusal> read_scale(const OnnxView& g, int index, float& mask) {
   Scale s{.suffix = index == 0 ? "" : "_1",
           .top = index == 0 ? "/flownet/transformer/" : "/flownet/transformer_1/"};
@@ -96,7 +68,8 @@ std::expected<Scale, Refusal> read_scale(const OnnxView& g, int index, float& ma
     s.shift[axis] = half->outputs[0];
   }
   float value = 0.F;
-  if (const char* why = mask_problem(g, s, window, value); why != nullptr) return missing(s.top + why);
+  if (const char* why = gmflow_mask_problem(g, s.top, window, s.shift, value); why != nullptr)
+    return missing(s.top + why);
   if (index == 1 && value != mask) return missing(s.top + " : masque différent du huitième");
   mask = value;
   s.mask = g.node(s.top + "Where_1", "Where")->outputs[0];
@@ -255,19 +228,21 @@ const char* scores_problem(const OnnxView& g, const Scale& s, const Node& softma
   return nullptr;
 }
 
-// La LayerNorm norm1 qui lit la fusion : axe -1, ε, échelle et décalage de 128 par leurs noms.
+// La LayerNorm norm1 qui lit la fusion : axe -1, statistiques en f32 (stash_type 1, comme le noyau), ε,
+// échelle et décalage de 128 par leurs noms.
 const char* norm_problem(const OnnxView& g, const Node* ln, const std::string& merged,
                          const std::string& weights, GmflowAttentionLayer& layer, float& epsilon) {
   if (ln == nullptr || ln->inputs.size() != 3 || ln->outputs.empty() || ln->inputs[0] != merged ||
       ln->inputs[1] != weights + "norm1.weight" || ln->inputs[2] != weights + "norm1.bias")
     return "norm1 : LayerNormalization de la fusion, poids par leurs noms";
   const onnx::Attribute* axis = onnx_attribute(*ln, "axis");
+  const onnx::Attribute* stash = onnx_attribute(*ln, "stash_type");
   const onnx::Attribute* eps = onnx_attribute(*ln, "epsilon");
   const onnx::Tensor* gamma = g.constant(ln->inputs[1]);
   const onnx::Tensor* beta = g.constant(ln->inputs[2]);
-  if ((axis != nullptr && axis->i != -1) || gamma == nullptr || beta == nullptr ||
-      gamma->floats.size() != kD || beta->floats.size() != kD)
-    return "norm1 : axe -1, 128 canaux";
+  if ((axis != nullptr && axis->i != -1) || (stash != nullptr && stash->i != 1) || gamma == nullptr ||
+      beta == nullptr || gamma->floats.size() != kD || beta->floats.size() != kD)
+    return "norm1 : axe -1, statistiques en f32, 128 canaux";
   const float e = eps != nullptr ? eps->f : 1e-5F;
   if (!(e > 0.F) || (epsilon != 0.F && e != epsilon)) return "norm1 : ε différent des autres couches";
   epsilon = e;

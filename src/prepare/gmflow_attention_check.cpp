@@ -1,4 +1,5 @@
 // Le plan de l'attention de GMFlow natif revérifié contre ce que font les noyaux (gmflow_attention_native.h).
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <format>
@@ -12,15 +13,21 @@ namespace kirari::prepare {
 namespace {
 
 constexpr int kD = kGmflowModel;
+constexpr float kFp16Max = 65504.0F;
 
 std::unexpected<Refusal> missing(std::string detail) {
   return std::unexpected(
       Refusal{RefusalCode::FieldMissing, "GMFlow natif : plan de l'attention : " + std::move(detail)});
 }
 
+// Des poids à leur taille, que les noyaux rangent en FP16 sans les rendre infinis, et une LayerNorm finie.
 bool layer_fits(const GmflowAttentionLayer& l) {
+  const auto fp16 = [](float v) { return std::isfinite(v) && std::abs(v) <= kFp16Max; };
+  const auto finite = [](float v) { return std::isfinite(v); };
   return l.qkv.size() == static_cast<std::size_t>(kGmflowQkv) * kD &&
-         l.merge.size() == static_cast<std::size_t>(kD) * kD && l.gamma.size() == kD && l.beta.size() == kD;
+         l.merge.size() == static_cast<std::size_t>(kD) * kD && l.gamma.size() == kD && l.beta.size() == kD &&
+         std::ranges::all_of(l.qkv, fp16) && std::ranges::all_of(l.merge, fp16) &&
+         std::ranges::all_of(l.gamma, finite) && std::ranges::all_of(l.beta, finite);
 }
 
 // Une couche d'attention : la self lit q, k et v dans son entrée et garde le résiduel ; la cross lit q à la
@@ -32,7 +39,7 @@ const char* attention_problem(const GmflowAttention& a, std::size_t index) {
   const auto layer = static_cast<std::size_t>(op.layer);
   if (step == 2 || op.layer != static_cast<int>(index / 3 * 2 + step) || layer >= a.layers.size() ||
       a.layers[layer].cross != cross || !layer_fits(a.layers[layer]))
-    return "couche : une self puis une cross par bloc, poids de 128 canaux";
+    return "couche : une self puis une cross par bloc, poids de 128 canaux dans le FP16, LayerNorm finie";
   if (op.other_half != cross || op.residual == cross)
     return "la self garde le résiduel, la cross lit l'autre moitié du lot";
   const int block_input = cross ? a.ops[index - 1].query : op.query;

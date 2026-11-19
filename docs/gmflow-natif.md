@@ -333,15 +333,19 @@ l'appelle encore ; le MLP fondu (PR 3) et le reste de GMFlow restent dans la pai
   Runtime) ira à l'assemblage, dans le trident de pas 2 au huitième et dans le noyau de déformation au quart
   (PR 5).
 
-**Lecture** (`src/prepare/gmflow_attention_native.{h,cpp}`, plan revérifié par `gmflow_attention_check.cpp`, types
-sans `std::expected` dans `gmflow_attention.h` pour nvcc ; parcours du graphe dans `gmflow_onnx_view.{h,cpp}`).
+**Lecture** (`src/prepare/gmflow_attention_native.{h,cpp}`, masque dans `gmflow_attention_mask.{h,cpp}`, plan
+revérifié par `gmflow_attention_check.cpp`, types sans `std::expected` dans `gmflow_attention.h` pour nvcc ; parcours
+du graphe dans `gmflow_onnx_view.{h,cpp}`).
 `gmflow_attention(paire)` lit, aux deux échelles, les projections q, k, v et la fusion par le nom de leur `MatMul`
 (poids 128x128 constants, rangés [sortie][entrée]), la LayerNorm `norm1` par ses initialiseurs, et vérifie tout ce
 qui les relie : fenêtres de chaque `Reshape` à six axes et `Transpose` (0, 1, 3, 2, 4, 5), chemins de q, k, v jusqu'au
 `MatMul` des scores (une découpe en fenêtres, kᵀ, décalés sur les deux axes si la couche l'est, rien d'autre),
-`Softmax` sur le dernier axe, facteur, masque, chemin retour de la sortie, ε commun, résiduel `Add(source, norm1)`,
+`Softmax` sur le dernier axe, facteur, masque (les quatre comparaisons des régions, la carte ligne · 3 + colonne
+découpée en fenêtres, les deux `Where` : −100 où la différence de deux régions n'est pas nulle, 0 où elle l'est),
+chemin retour de la sortie, ε commun, statistiques de `norm1` en f32 (`stash_type` 1), résiduel `Add(source, norm1)`,
 `Concat(source, message)` du MLP, cible de la cross et sortie `Add(source, norm2)` de chaque bloc. Le quart doit
-avoir les mêmes poids et les mêmes décalages que le huitième. Tout écart est refusé (FieldMissing, avec le nœud).
+avoir les mêmes poids et les mêmes décalages que le huitième. Tout écart est refusé (FieldMissing, avec le nœud), comme un
+poids de projection ou de fusion hors du FP16 (les noyaux les rangent en FP16) ou une LayerNorm non finie.
 Elle rend 12 couches (self du bloc b en 2b, cross en 2b + 1, blocs impairs décalés) et un **plan** de 18 opérations
 sur 19 tenseurs (self, cross, MLP par bloc) que le banc, l'émulation et plus tard l'assemblage exécutent à la
 lettre. Elle lit la paire FP16 du lecteur, celle du demi-flot et la paire FP32.

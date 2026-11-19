@@ -22,7 +22,8 @@ namespace kirari::prepare {
 // son nom).
 std::expected<GmflowAttention, Refusal> gmflow_attention(std::span<const std::byte> pair);
 
-// Le plan se tient-il pour les noyaux ? Des poids de 128 canaux, une self puis une cross par bloc, chaque
+// Le plan se tient-il pour les noyaux ? Des poids de 128 canaux, finis et représentables en FP16 (les
+// noyaux les rangent en FP16), une LayerNorm finie, une self puis une cross par bloc, chaque
 // opération lit des tenseurs déjà écrits et écrit un tenseur neuf, la self garde le résiduel et lit q, k, v
 // dans le même tenseur, la cross lit k et v à l'entrée du bloc dans l'autre moitié du lot, le MLP ferme le
 // bloc. Refus FieldMissing.
