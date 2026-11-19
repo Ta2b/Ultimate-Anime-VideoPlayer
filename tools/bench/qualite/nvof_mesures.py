@@ -282,17 +282,50 @@ def refine_affine(a, b, affine, decor, grid, height):
     return list(p)
 
 
-def decor_of(flow, textured, affine, grid, height):
-    """Blocs de décor pour une affine donnée, au seuil de camera() (3 MAD, entre 0,75 et 2 px à 720p) : (masque, part)."""
+def block_edges(a, grid, ch, cw):
+    """Blocs texturés dans un seul sens (un bord, des rayures) : le vecteur NVOF n'y vaut qu'en travers du bord, le
+    long du bord il est indéterminé. Tenseur de structure de la luma de a (floutée en 3 × 3, comme photo_residual)
+    sur une fenêtre de 3 × 3 blocs ; un sens se mesure au-delà de 8 niveaux² par pixel. Rend (masque, c, s), (c, s)
+    la normale au bord."""
+    h, w = a.shape
+    f = box(a.astype(np.float32), 1).astype(np.float32)
+    gx, gy = np.zeros_like(f), np.zeros_like(f)
+    gx[:, 1:-1] = (f[:, 2:] - f[:, :-2]) / 2
+    gy[1:-1] = (f[2:] - f[:-2]) / 2
+
+    def per_block(m):
+        p = np.zeros((ch * grid, cw * grid), np.float32)
+        p[:h, :w] = m[: ch * grid, : cw * grid]
+        return box(p.reshape(ch, grid, cw, grid).mean((1, 3)), 1)  # moyenne par pixel sur 3 × 3 blocs
+
+    sxx, sxy, syy = per_block(gx * gx), per_block(gx * gy), per_block(gy * gy)
+    half, disc = (sxx + syy) / 2, np.sqrt(((sxx - syy) / 2) ** 2 + sxy * sxy)
+    theta = 0.5 * np.arctan2(2 * sxy, sxx - syy)
+    return (half + disc >= 8.0) & (half - disc < 8.0), np.cos(theta), np.sin(theta)
+
+
+def decor_of(flow, textured, affine, grid, height, edges=None, frame=None):
+    """Blocs de décor pour une affine donnée, au seuil de camera() (3 MAD, entre 0,75 et 2 px à 720p) : (masque, part).
+    edges (block_edges) : un bloc texturé dans un seul sens est aussi gardé si son vecteur suit le modèle en travers
+    de son bord (le seuil reste celui des vecteurs entiers : rien de ce qui était gardé ne sort). frame (h, w) : les
+    blocs que le modèle envoie hors de l'image b ne sont pas jugés (ni décor ni dessin : ils n'ont rien en face)."""
     _, ch, cw = flow.shape
     k = height / 720.0
     m = model_at_pixels(affine, grid, ch, cw, ch * grid, cw * grid)[:, grid // 2::grid, grid // 2::grid][:, :ch, :cw]
-    r = np.hypot(flow[0] - m[0], flow[1] - m[1])[textured]
-    near = r[r < 2 * k]
+    du, dv = flow[0] - m[0], flow[1] - m[1]
+    r = np.hypot(du, dv)
+    near = r[textured][r[textured] < 2 * k]
     thr = np.clip(3 * 1.4826 * np.median(near) if near.size else 2 * k, 0.75 * k, 2 * k)
-    decor = np.zeros((ch, cw), bool)
-    decor[textured] = r < thr
-    return decor, float((r < thr).mean()) if r.size else 0.0
+    keep = r < thr
+    if edges is not None:
+        one, c, s = edges
+        keep |= one & (np.abs(du * c + dv * s) < thr)
+    judged_blocks = textured.copy()
+    if frame is not None:
+        yy, xx = np.mgrid[0:ch, 0:cw].astype(np.float32) * grid + grid // 2
+        judged_blocks &= (xx + m[0] >= 0) & (xx + m[0] < frame[1]) & (yy + m[1] >= 0) & (yy + m[1] < frame[0])
+    decor = judged_blocks & keep
+    return decor, float(decor.sum() / judged_blocks.sum()) if judged_blocks.any() else 0.0
 
 
 def judged(a, b, flow, textured, affine, decor, grid, height):
@@ -312,7 +345,9 @@ def variants(a, b, flow, cost, cls, grid, height, fit):
     - traits : ajustée sur les blocs de traits seuls (sans le grain) ;
     - lk : l'affine NVOF affinée par Lucas-Kanade global sur son décor, décor repris avec elle sur les blocs
       texturés ;
-    - traits_lk : l'affine des traits affinée de même, décor repris sur les blocs de traits.
+    - traits_lk : l'affine des traits affinée de même, décor repris sur les blocs de traits ;
+    - lk_bords : l'affine de lk ; décor repris en jugeant un bloc texturé dans un seul sens en travers de son bord
+      (block_edges) et sans juger les blocs que la caméra sort de l'image.
     Rend {nom: {residu_px, part_decor, affine, tuiles_mesurees, mesure}}."""
     out = {}
     keep = ("residu_px", "part_decor", "affine", "tuiles_mesurees", "mesure")
@@ -328,6 +363,11 @@ def variants(a, b, flow, cost, cls, grid, height, fit):
         decor, share = decor_of(flow, textured, refined, grid, height)
         out[name] = {**judged(a, b, flow, textured, refined, decor, grid, height), "part_decor": share,
                      "affine": refined}
+    if "lk" in out:
+        refined = out["lk"]["affine"]
+        decor, share = decor_of(flow, cls != 0, refined, grid, height, block_edges(a, grid, *cls.shape), a.shape)
+        out["lk_bords"] = {**judged(a, b, flow, cls != 0, refined, decor, grid, height), "part_decor": share,
+                           "affine": refined}
     return out
 
 
