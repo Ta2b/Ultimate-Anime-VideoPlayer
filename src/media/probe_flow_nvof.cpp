@@ -199,6 +199,7 @@ std::expected<std::unique_ptr<ProbeFlow>, std::string> ProbeFlow::open(int devic
 }
 
 std::optional<ProbeMotion> ProbeFlow::push(const DecodedFrame& frame) {
+  if (session_ == nullptr) return std::nullopt;
   std::optional<ProbeLuma> current = probe_luma_of(frame);
   if (!current) {
     previous_.reset();

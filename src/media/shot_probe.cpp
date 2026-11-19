@@ -51,8 +51,10 @@ class Analysis {
     auto measured = measure_frame(frame);
     if (!measured || !flow_) return measured;
     measured->motion = flow_->push(frame);
-    if (auto failure = flow_->take_failure())
+    if (auto failure = flow_->take_failure()) {
       make_logger()->warn("pré-analyse des plans : flux optique NVIDIA arrêté ({})", *failure);
+      flow_.reset();
+    }
     return measured;
   }
   void push(const ShotFrame& frame) {

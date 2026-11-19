@@ -342,6 +342,14 @@ chaque plan, l'interpolation ses coupes (`--shot-cuts`, donc aussi sans grade).
   fondu au noir suivi d'un fondu d'ouverture fait deux plans. Un plan dure au moins 160 ms (quatre images à
   24 i/s) : d'une rafale de coupes à une ou deux images d'écart (un éclair qui s'ouvre, une explosion), seule la
   plus forte reste. Un plan fini attend donc ce délai avant de sortir.
+- **Flux optique de NVIDIA** (`media/probe_flow.h`, version 5 de l'analyse). Sur une carte NVIDIA, chaque image
+  de la pré-analyse passe par le flux optique matériel (NVOF) face à la précédente, sur sa luma en 256 × 144, et
+  donne la part de ses blocs texturés qui ne retrouvent pas leur contenu. Un saut de lumière dont presque tous
+  les blocs se retrouvent (15 % ou moins sans correspondance : un éclair sur le même dessin, un panoramique
+  fouetté) n'est pas une coupe. Un dessin que le flux ne retrouve pas (60 % ou plus), entre deux dessins
+  distincts qui se retrouvaient (30 % ou moins), ouvre un plan même sous le seuil de lumière : deux plans aux
+  mêmes couleurs. Un combat ou un fondu enchaîné, que le flux perd sur plusieurs dessins, ne coupent pas. Sans
+  carte NVIDIA, sans pilote ou sur une image sans détail, la découpe est celle d'avant.
 - **Flashs** (`media/flash_guard.h`, UIT-R BT.1702-2). Plus de trois flashs par seconde, chacun d'au moins 20 cd/m²
   sur un quart de l'écran, l'image sombre sous 160 cd/m², en lumière de sortie du grade : le pic du grade tombe à
   250 nits, jusqu'à une seconde après le dernier. La pré-analyse marque ces séquences d'avance, le plafond les
