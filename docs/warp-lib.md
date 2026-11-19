@@ -1,8 +1,11 @@
 # Bibliothèque de warp CUDA (lot E)
 
 Tout ce qui déplace une image par un flot s'écrit une fois, ici, et ses clients la reprennent : la colle de RIFE
-fusionné et TemporalFix fusionné (lot B, étape 2 : `tfix_fused.cuh`, `docs/temporalfix.md`) aujourd'hui ; la
-composition par calques, le décalage des tuiles et RIFE guidé par le flot NVOF demain.
+fusionné, TemporalFix fusionné (lot B, étape 2 : `tfix_fused.cuh`, `docs/temporalfix.md`) et les lectures de
+GMFSS (`gmfss_kernels.cu`, 19 novembre 2026 : mouvement sur une autre grille, splat tiré en Catmull-Rom,
+composition à la taille de travail, une prise par point pour tous ses plans) aujourd'hui ; la composition par
+calques, le décalage des tuiles et RIFE guidé par le flot NVOF demain. Le splat poussé de GMFSS reste à part :
+c'est une dispersion (chaque source ajoute à quatre cibles), pas une lecture.
 
 ## Les pièces
 
