@@ -1,5 +1,9 @@
 # Bilan du SPAN natif (CUDA, RTX 40 et 50)
 
+Mis à jour le 19 novembre 2026 au soir : `winograd_db.py` écrit et éprouvé (interprète à 161 dB de la
+référence, transformées F(2×2, 3×3) et F(4×4, 3×3) exactes contre la convolution directe) ; il attend les
+deux modèles d'AnimeJaNai dans le cloud pour donner les dB de Winograd.
+
 Mis à jour le 19 novembre 2026 en fin d'après-midi : banc PC de #963 (poids partagés −3,7 % au b5f48, +4,1 %
 au b8f64 ; b5f48 en bandes à 5,21 ms, sous AnimeJaNai) ; poids partagés par défaut à 48 canaux seulement ;
 l'hypothèse du L2 tombe à 64 canaux, le profil Nsight Compute passe en tête de ce qui reste.
@@ -49,7 +53,7 @@ les bords natifs du FP8 (`kirari play --debug --span-native-edges`, #854).
 | #941 | Sommes promues retirées ; bandes de 128 lignes par défaut quand le L2 les tient |
 | #951 | Le PC ne mesure que les temps ; EXPORT et `justesse_cpu.py` jugent la justesse sur processeur |
 | #963 | Poids partagés à l'essai, sortie au bit près ; la convolution passe dans `span_native_conv.cuh` |
-| suivante | Poids partagés par défaut à 48 canaux seulement, d'après le banc ; le banc mesure avec et sans |
+| #973 | Poids partagés par défaut à 48 canaux seulement, d'après le banc ; le banc mesure avec et sans |
 
 ### Mesures, dans l'ordre
 
@@ -205,10 +209,15 @@ profil montre que le L2 des activations limite.
 4. **Cloud** : le réglage par couche. Des variantes de tuile (lignes par warp, 8 warps par bloc qui partagent
    les mêmes poids, hauteur de bande) vérifiées sur l'émulateur, puis chronométrées au chargement comme
    l'admet le propriétaire (quelques millisecondes à l'ouverture pour une vraie optimisation). Temps au PC.
-5. **Cloud** : Winograd, les dB d'abord. Un script numpy (à écrire, `tools/bench/span_native/`) refait le SPAN
-   en f16 avec les transformées F(2×2, 3×3) et F(4×4, 3×3) et l'arrondi de chaque somme de 16 produits, sur
-   l'image exportée par le banc, contre ONNX Runtime FP32. Les noyaux seulement si la perte laisse de la marge
-   au-dessus de 55 dB.
+5. **Cloud** : Winograd, les dB d'abord. `tools/bench/span_native/winograd_db.py` refait le SPAN en numpy
+   avec les arrondis des noyaux (activations et poids f16, pas de 16 produits ajoutés à un accumulateur f16)
+   et les transformées F(2×2, 3×3) et F(4×4, 3×3) sur les 3×3 des blocs, contre ONNX Runtime FP32. Éprouvé
+   sur un SPAN de synthèse (l'interprète en f32 rend la référence à 161 dB ; les transformées sans arrondi
+   rendent la convolution directe à 1e-6 près). Il lui faut les vrais modèles, absents du cloud : les copier
+   du PC dans `/mnt/project-files/modeles/`, puis
+   `python3 -I tools/bench/span_native/winograd_db.py /mnt/project-files/modeles/<modèle>.onnx --taille 270 480`
+   (ou `--entree` sur un dossier d'EXPORT). Les noyaux seulement si la perte laisse de la marge au-dessus de
+   55 dB.
 6. **Cloud puis PC** : la fusion en bande de colonnes (partie 3), si le profil montre que le L2 des
    activations limite.
 7. **PC, en lecture** : les bords natifs du FP8 au cran Performance,
