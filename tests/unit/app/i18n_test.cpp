@@ -219,6 +219,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "upscale_stage.cpp",
                                         "upscale_start.cpp",
                                         "upscale_reuse.cpp",
+                                        "upscale_tiles.cpp",
                                         "vulkan_share.cpp",
                                         "default_player.cpp",
                                         "player.cpp",

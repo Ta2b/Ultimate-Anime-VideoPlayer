@@ -185,7 +185,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .temporal_encoder = temporal_encoder.get(),
       .temporal_features = temporal_features,
       .skip_held = skip_held && clock != nullptr,
-      .span_reuse = span_reuse,
+      .span_reuse = SpanReuseSetup{.whole = span_reuse, .tiles = span_tiles, .check = span_tiles_check},
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
       .rife_motion_calm = rife_motion_calm.get(),
@@ -379,6 +379,9 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.rife_at_slot = o.rife_at_slot;
   c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
+  c.span_reuse = o.span_reuse;
+  c.span_tiles = o.span_tiles;
+  c.span_tiles_check = o.span_tiles_check;
   c.shot_plan = o.shot_plan;
   c.pair_triage = o.pair_triage;
   c.span_reuse = o.span_reuse;

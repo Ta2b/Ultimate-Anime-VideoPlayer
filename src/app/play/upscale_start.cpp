@@ -36,7 +36,10 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
           smooth_extra_frames(setup.smooth_drawings) + temporal_extra_frames(setup.temporal_fix != nullptr)),
       setup_(std::move(setup)),
       scene_(setup_.scene_map) {
-  reuse_.enabled = setup_.span_reuse;
+  reuse_.enabled = setup_.span_reuse.whole;
+  reuse_.tiles.enabled = setup_.span_reuse.tiles;
+  reuse_.check = setup_.span_reuse.check;
+  if (setup_.engine != nullptr) reuse_.tiles.set_grid(setup_.engine->span_tile_grid());
 }
 
 UpscaleStage::~UpscaleStage() {
@@ -87,6 +90,7 @@ UpscaleStage::~UpscaleStage() {
         moving_.small_boxes);
   }
   if (const std::string reuse = reuse_.summary(); !reuse.empty()) log_channel("gpu")->info("{}", reuse);
+  if (const std::string tiles = reuse_.tiles.summary(); !tiles.empty()) log_channel("gpu")->info("{}", tiles);
   // Le travail d'une image ne s'enfile qu'avec un slot libre : ces attentes sont du temps où l'étage ne
   // nourrissait pas le GPU parce que l'écran n'avait pas encore rendu de slot.
   if (const SlotWaits& waits = slot_waits(); waits.count > 0)

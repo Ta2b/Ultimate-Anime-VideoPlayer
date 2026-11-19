@@ -7,6 +7,7 @@
 // cudaGraphLaunch et un lancement par image.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <cuda_runtime_api.h>
 #include <expected>
@@ -64,10 +65,17 @@ class SpanFp8Engine final : public Engine {
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
   // enqueue en deux temps (étape 3.4b) : enqueue_body vérifie les tenseurs, pose la zone et lance le corps ;
   // enqueue_tail lance to_pixel, qui écrit outputs[0] et, si ring porte une surface, l'emplacement de
-  // l'anneau. Entre les deux, l'appelant peut attendre l'emplacement sur stream.
+  // l'anneau. Entre les deux, l'appelant peut attendre l'emplacement sur stream. ring : la queue écrira
+  // l'anneau, les tuiles demandées (next_span_tiles) sont abandonnées et l'image se calcule entière.
   std::expected<void, Refusal> enqueue_body(cudaStream_t stream,
                                             const std::shared_ptr<SharedActivations>& arena,
-                                            std::span<const Tensor> inputs, std::span<const Tensor> outputs);
+                                            std::span<const Tensor> inputs, std::span<const Tensor> outputs,
+                                            bool ring = false);
+
+  // Tuiles qui bougent (gpu::Engine, span_fp8_tiles.cpp) : seul le SPAN FP16 natif les calcule.
+  kernels::SpanTileGrid span_tile_grid() const override;
+  bool next_span_tiles(std::span<const std::uint8_t> core, int shift_x, int shift_y,
+                       const Tensor* previous) override;
   std::expected<void, Refusal> enqueue_tail(cudaStream_t stream, std::span<const Tensor> outputs,
                                             const SpanFp8Ring& ring);
 
@@ -87,6 +95,25 @@ class SpanFp8Engine final : public Engine {
   // Le corps sur stream : rejoué, capturé ou lancé en direct selon le registre.
   std::expected<void, Refusal> body(cudaStream_t stream, const void* source);
   void drop_graphs();
+  // Tuiles qui bougent : la demande prise pour cet appel, décalage de la sortie d'avant et masques envoyés.
+  // Vrai : le corps se lance masqué, en direct (un graphe capturé est celui de l'image entière).
+  std::expected<bool, Refusal> start_tiles(cudaStream_t stream, std::uintptr_t output);
+  bool allocate_tiles();
+  void end_tiles();
+  void release_tiles();
+
+  struct TileJob {
+    std::vector<std::uint8_t> core;
+    int shift_x = 0;  // pixels d'entrée
+    int shift_y = 0;
+    std::uintptr_t previous = 0;  // adresse de la sortie d'avant ; 0 : déjà dans la sortie
+  };
+  static constexpr int kTileStages = 4;  // envois des masques en vol au plus
+  std::optional<TileJob> tile_job_;
+  std::uint32_t* tile_masks_ = nullptr;  // appareil : région puis cœur, kSpanTileMaskWords mots chacun
+  std::array<std::uint32_t*, kTileStages> tile_staging_{};  // hôte, épinglée
+  std::array<cudaEvent_t, kTileStages> tile_sent_{};
+  int tile_stage_ = 0;
 
   static constexpr std::size_t kMaxGraphs = 4;
   static constexpr int kCaptureAttempts = 3;

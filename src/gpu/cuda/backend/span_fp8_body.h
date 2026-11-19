@@ -10,6 +10,7 @@
 #include <string>
 
 #include "gpu/cuda/backend/span_fp8_net.h"
+#include "kernels/spec/span_tiles.h"
 
 namespace kirari::gpu::cuda {
 
@@ -29,6 +30,19 @@ class SpanFp8Body {
                            std::string& error) = 0;
   virtual SpanFp8AccChange poll_accumulator() = 0;  // SpanFp8Net::poll_accumulator
   virtual int overflow_frames() const = 0;
+  // Tuiles qui bougent (kernels/spec/span_tiles.h). Un corps qui ne sait calculer que l'image entière
+  // (CUTLASS) garde ces défauts.
+  virtual kernels::SpanTileGrid tile_grid() const { return {}; }
+  // Masques d'appareil (kSpanTileMaskWords mots chacun) des lancements suivants : region pour le corps, core
+  // pour la queue ; nuls : l'image entière. Sans appel CUDA.
+  virtual void set_tile_masks(const std::uint32_t* /*region*/, const std::uint32_t* /*core*/) {}
+  // La sortie FP16 NCHW (3 × 4fh × 4fw) from copiée dans to, décalée de (dx, dy) pixels de sortie : to(x, y)
+  // = from(x − dx, y − dy) là où ce point est dans l'image, rien ailleurs. from et to distincts.
+  virtual bool shift_output(cudaStream_t /*stream*/, const void* /*from*/, void* /*to*/, int /*dx*/,
+                            int /*dy*/, std::string& error) {
+    error = "ce corps ne décale pas sa sortie";
+    return false;
+  }
 };
 
 // height, width : l'image d'entrée, déjà jugée par span_fp8::size_refusal.

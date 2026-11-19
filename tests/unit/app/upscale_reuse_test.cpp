@@ -64,7 +64,7 @@ TEST_CASE("Reprise de SPAN : la règle contre l'ancre, et l'étage en SPAN seul"
     for (std::uint32_t k = 2; k <= 6; ++k) rig.backend.score(SourceId{1}, SourceId{k}, 0.0, 10);
     rig.backend.score(SourceId{8}, SourceId{9}, 0.0, 10);
     UpscaleSetup s = rig.setup(false);
-    s.span_reuse = reuse;
+    s.span_reuse.whole = reuse;
     rig.start(std::move(s));
     rig.feed(1, 5);
     REQUIRE(rig.collect(5));

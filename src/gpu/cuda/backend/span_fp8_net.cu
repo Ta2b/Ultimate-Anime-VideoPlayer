@@ -144,4 +144,17 @@ bool SpanFp8Net::launch_tail(cudaStream_t stream, void* output, const SpanFp8Rin
   return impl_->body->launch_tail(stream, output, ring, error);
 }
 
+kernels::SpanTileGrid SpanFp8Net::tile_grid() const {
+  return impl_->body->tile_grid();
+}
+
+void SpanFp8Net::set_tile_masks(const std::uint32_t* region, const std::uint32_t* core) {
+  impl_->body->set_tile_masks(region, core);
+}
+
+bool SpanFp8Net::shift_output(cudaStream_t stream, const void* from, void* to, int dx, int dy,
+                              std::string& error) {
+  return impl_->body->shift_output(stream, from, to, dx, dy, error);
+}
+
 }  // namespace kirari::gpu::cuda

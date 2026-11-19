@@ -95,21 +95,22 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
   role(Role::Upscale).begin(stream_);
   timing.begin(stream_);
   ImportedSlot* imported = nullptr;
-  auto queued =
-      engine.enqueue_body(stream_, zone, inputs, outputs).and_then([&]() -> std::expected<void, Refusal> {
-        if (ring != nullptr) {
-          // L'attente de l'emplacement vient après le corps : SPAN n'est pas retenu derrière un emplacement
-          // que l'affichage tient encore, seule la queue l'est.
-          auto begun = begin_slot(*ring->slot, ring->sync);
-          if (!begun) return std::unexpected(std::move(begun.error()));
-          imported = *begun;
-        }
-        const SpanFp8Ring surface = imported == nullptr ? SpanFp8Ring{}
-                                                        : SpanFp8Ring{.surface = imported->surface(),
-                                                                      .width = ring->slot->width,
-                                                                      .height = ring->slot->height};
-        return engine.enqueue_tail(stream_, outputs, surface);
-      });
+  auto queued = engine.enqueue_body(stream_, zone, inputs, outputs, ring != nullptr)
+                    .and_then([&]() -> std::expected<void, Refusal> {
+                      if (ring != nullptr) {
+                        // L'attente de l'emplacement vient après le corps : SPAN n'est pas retenu derrière un
+                        // emplacement que l'affichage tient encore, seule la queue l'est.
+                        auto begun = begin_slot(*ring->slot, ring->sync);
+                        if (!begun) return std::unexpected(std::move(begun.error()));
+                        imported = *begun;
+                      }
+                      const SpanFp8Ring surface = imported == nullptr
+                                                      ? SpanFp8Ring{}
+                                                      : SpanFp8Ring{.surface = imported->surface(),
+                                                                    .width = ring->slot->width,
+                                                                    .height = ring->slot->height};
+                      return engine.enqueue_tail(stream_, outputs, surface);
+                    });
   timing.end(stream_);
   role(Role::Upscale).end(stream_);
   if (!inputs.empty()) chain_span_->finish(inputs[0].handle, stream_);

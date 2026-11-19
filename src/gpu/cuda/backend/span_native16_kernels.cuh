@@ -56,6 +56,9 @@ struct Params {
   float inv_s8 = 1.F;
   RingSurface surface{};  // kPixel : emplacement de l'anneau, object 0 : aucun
   int surf_w = 0, surf_h = 0;
+  // Tuiles qui bougent (kernels/spec/span_tiles.h) : un bit par tuile kTH × kTW de la grille du lancement,
+  // ligne par ligne ; un bloc dont le bit est nul sort sans rien lire ni écrire. Nul : toutes les tuiles.
+  const std::uint32_t* mask = nullptr;
 };
 
 // Octets de mémoire partagée d'un noyau : la tuile d'entrée (halo compris) ou la sortie, la plus grande.
@@ -381,6 +384,10 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
   auto* s = reinterpret_cast<__half*>(smem_raw);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
   const int ty0 = static_cast<int>(blockIdx.y) * kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
+  if (p.mask != nullptr) {  // tout le bloc sort ensemble, avant la première barrière
+    const unsigned tile = blockIdx.y * gridDim.x + blockIdx.x;
+    if (((__ldg(p.mask + (tile >> 5U)) >> (tile & 31U)) & 1U) == 0U) return;
+  }
 
   Frag<Acc16> acc[kMF][Cout / 8];
 #pragma unroll

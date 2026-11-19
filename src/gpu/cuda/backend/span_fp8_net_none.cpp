@@ -56,4 +56,16 @@ int SpanFp8Net::overflow_frames() const {
   return 0;
 }
 
+kernels::SpanTileGrid SpanFp8Net::tile_grid() const {
+  return {};
+}
+
+void SpanFp8Net::set_tile_masks(const std::uint32_t* /*region*/, const std::uint32_t* /*core*/) {}
+
+bool SpanFp8Net::shift_output(cudaStream_t /*stream*/, const void* /*from*/, void* /*to*/, int /*dx*/,
+                              int /*dy*/, std::string& error) {
+  error = "noyaux absents";
+  return false;
+}
+
 }  // namespace kirari::gpu::cuda
