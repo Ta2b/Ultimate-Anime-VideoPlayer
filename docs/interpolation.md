@@ -527,9 +527,10 @@ Les seuils (`triage::` dans `rife_triage.h`) ne sont pas mesurés ; la porte : l
 les passages de rife-fantomes, sans hausse du scintillement (outil 0.1).
 
 **GMFSS** (19 novembre 2026). GMFSS seul garde le dessin tenu copié ; la paire impossible et le
-**panoramique pur** (la caméra ajustée bouge, aucun dessin ne bouge par rapport à elle, décor à moins d'un pixel
-du modèle, moins de 10 % de vecteurs sans correspondance, aucun effet : `flow_pan`) ne passent ni par la paire
-ni par la fusion. `KernelOps::motion_camera` (ABI 53, `kernels/spec/motion_camera.h`, référence
+**panoramique pur** (la caméra ajustée bouge, pas une seule tuile de dessin qui bouge hors d'elle ni d'effet,
+décor à moins d'un pixel du modèle, moins de 10 % de vecteurs sans correspondance : `flow_pan`) ne passent ni
+par la paire ni par la fusion. Un seul petit personnage qui marche suffit à laisser la paire à la fusion :
+décalé avec la caméra, il saccaderait, quand un vrai panoramique fusionné ne coûte que du calcul. `KernelOps::motion_camera` (ABI 53, `kernels/spec/motion_camera.h`, référence
 `kernels/ref/motion_camera.cpp`, noyau dans `doubt_kernels.cu`) écrit le mouvement de la caméra de la carte au
 format de RIFE (caméra identité pour le fondu), une fois par paire, et le warp de l'étage fait chaque instant.
 Pas de zone fondue par endroits : GMFSS y fait mieux que RIFE. Le mélange garde le tri de RIFE, sans clé GMFSS
