@@ -15,6 +15,7 @@
 //   kPixel : to_pixel, DepthToSpace(4) fondu, sortie NCHW FP16 et/ou emplacement de l'anneau.
 // Entrées : kNhwc (une ou plusieurs sources NHWC sommées sur K : conv_cat lit les quatre tenseurs sans
 // concaténation) ou kImage (conv_1 : l'image NCHW FP16 dégroupée au chargement, 12 canaux + 4 nuls).
+// Le noyau (conv_kernel) et sa boucle à poids partagés sont dans span_native_conv.cuh.
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
@@ -72,10 +73,33 @@ __host__ __device__ __forceinline__ int row_end(const Params& p) {
   return p.y1 > 0 && p.y1 < p.fh ? p.y1 : p.fh;
 }
 
-// Octets de mémoire partagée d'un noyau : la tuile d'entrée (halo compris) ou la sortie, la plus grande.
-constexpr int smem_bytes(int cin, int cout, int taps) {
+// La tuile d'entrée en mémoire partagée : Cin / 8 morceaux de 16 octets par pixel, au pas kPitch morceaux.
+// Les huit lignes d'une matrice de ldmatrix (huit pixels qui se suivent) doivent tomber sur des banques
+// distinctes : un pas impair le donne (un morceau de rembourrage par pixel, le rangement d'origine). Shared
+// (poids partagés, conv_kernel) : à 64 canaux, la tuile n'a pas la place du rembourrage à côté des poids ;
+// elle est rangée sans, le morceau c du pixel p à la place c ^ (p % 8).
+template <int Cin, bool Shared>
+struct Tile {
+  static constexpr int kChunks = Cin / 8;
+  static constexpr bool kSwizzle = Shared && kChunks % 8 == 0;
+  static constexpr int kPitch = kSwizzle ? kChunks : kChunks + 1;
+  // L'octet du morceau c du pixel p.
+  __host__ __device__ static constexpr int at(int p, int c) {
+    return (p * kPitch + (kSwizzle ? c ^ (p & 7) : c)) * 16;
+  }
+};
+
+// Les poids d'un pas k (Cout sorties × 16 entrées) des poids partagés, deux pas en mémoire partagée.
+constexpr int weight_stage_bytes(int cout) {
+  return cout * 16 * 2;
+}
+
+// Octets de mémoire partagée d'un noyau : la tuile d'entrée (halo compris), plus deux pas de poids s'ils sont
+// partagés, ou la sortie, la plus grande.
+constexpr int smem_bytes(int cin, int cout, int taps, bool shared = false) {
   const int halo = taps == 9 ? 2 : 0;
-  const int in = (kTH + halo) * (kTW + halo) * (cin + 8) * 2;
+  const int chunks = cin / 8, pitch = shared && chunks % 8 == 0 ? chunks : chunks + 1;  // Tile::kPitch
+  const int in = (kTH + halo) * (kTW + halo) * pitch * 16 + (shared ? 2 * weight_stage_bytes(cout) : 0);
   const int out = kTH * kTW * (cout + 8) * 2 + (cin == cout && taps == 9 ? cout * cout * 2 : 0);  // + 1×1
   return in > out ? in : out;
 }
@@ -181,19 +205,19 @@ __device__ __forceinline__ float tanh_approx(float x) {
   return y;
 }
 
-// La tuile NHWC de src en mémoire partagée, au pas Cin + 8 : (kTH + 2h) × (kTW + 2h) pixels dont l'origine
-// est (ty0 - h, tx0 - h) ; zéros hors de l'image.
-template <int Cin, int Halo>
+// La tuile NHWC de src en mémoire partagée, rangée selon Tile : (kTH + 2h) × (kTW + 2h) pixels dont
+// l'origine est (ty0 - h, tx0 - h) ; zéros hors de l'image.
+template <int Cin, int Halo, bool Shared = false>
 __device__ __forceinline__ void load_nhwc(__half* s, const __half* src, int ld, int fh, int fw, int ty0,
                                           int tx0) {
-  constexpr int kChunks = Cin / 8, kSW = kTW + 2 * Halo, kPix = (kTH + 2 * Halo) * kSW, kLds = Cin + 8;
+  constexpr int kChunks = Cin / 8, kSW = kTW + 2 * Halo, kPix = (kTH + 2 * Halo) * kSW;
   const std::uint32_t base = smem_u32(s);
   for (int i = static_cast<int>(threadIdx.x); i < kPix * kChunks; i += kThreads) {
     const int p = i / kChunks, c = i - p * kChunks;
     const int y = ty0 - Halo + p / kSW, x = tx0 - Halo + p % kSW;
     const bool ok = y >= 0 && y < fh && x >= 0 && x < fw;
     const __half* from = ok ? src + (static_cast<long>(y) * fw + x) * ld + c * 8 : src;
-    cp_async16(base + static_cast<std::uint32_t>((p * kLds + c * 8) * 2), from, ok);
+    cp_async16(base + static_cast<std::uint32_t>(Tile<Cin, Shared>::at(p, c)), from, ok);
   }
 }
 
@@ -410,66 +434,6 @@ __device__ __forceinline__ void plain(const Frag<A> (&acc)[kMF][Cout / 8], __hal
       }
     }
   }
-}
-
-// Une convolution entière. Sources : 1 (kImage, ou une NHWC), ou 4 (conv_cat, K = 4 · Cin).
-template <int Cin, int Cout, int Taps, int Sources, Src From, Mode M, bool Relu, Acc A>
-__global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
-  static_assert(Cin % 16 == 0 && Cout % 16 == 0, "canaux par 16");
-  static_assert(M != Mode::kGate || Cin == Cout, "la porte suit une conv carrée");
-  constexpr int kHalo = Taps == 9 ? 1 : 0;
-  extern __shared__ __align__(16) unsigned char smem_raw[];
-  auto* s = reinterpret_cast<__half*>(smem_raw);
-  const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
-  const int ty0 = p.y0 + static_cast<int>(blockIdx.y) * kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
-  if (p.mask != nullptr) {  // tout le bloc sort ensemble, avant la première barrière
-    const unsigned tile = blockIdx.y * gridDim.x + blockIdx.x;
-    if (((__ldg(p.mask + (tile >> 5U)) >> (tile & 31U)) & 1U) == 0U) return;
-  }
-
-  Frag<A> acc[kMF][Cout / 8];
-#pragma unroll
-  for (int f = 0; f < kMF; ++f)
-#pragma unroll
-    for (int nt = 0; nt < Cout / 8; ++nt) acc[f][nt].clear();
-
-#pragma unroll 1
-  for (int src = 0; src < Sources; ++src) {
-    if (src > 0) __syncthreads();  // la source d'avant n'est plus lue
-    if constexpr (From == Src::kImage) {
-      load_image(s, p.in[0], p.fh, p.fw, ty0, tx0);
-    } else {
-      // Pas p.in[src] : un indice inconnu à la compilation copie le tableau des paramètres sur la pile.
-      const __half* from = src == 0 ? p.in[0] : src == 1 ? p.in[1] : src == 2 ? p.in[2] : p.in[3];
-      load_nhwc<Cin, kHalo>(s, from, p.in_ld != 0 ? p.in_ld : Cin, p.fh, p.fw, ty0, tx0);
-      cp_async_wait_all();
-    }
-    __syncthreads();
-    accumulate<Cin, Cout, Taps, A>(acc, s, p.w, src * Taps * (Cin / 16), warp, lane);
-  }
-  __syncthreads();   // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
-  bool hit = false;  // une somme f16 débordée (sums)
-
-  if constexpr (M == Mode::kGate) {
-    // x de la tuile au pas Cout + 8, puis la 1×1 rangée (Cout² demi-flottants) juste après.
-    const std::uint32_t w1s = smem_u32(s) + static_cast<std::uint32_t>(kTH * kTW * (Cout + 8) * 2);
-    load_nhwc<Cout, 0>(s, p.skip, Cout, p.fh, p.fw, ty0, tx0);
-    for (int i = static_cast<int>(threadIdx.x); i < Cout * Cout / 8; i += kThreads)
-      cp_async16(w1s + static_cast<std::uint32_t>(i * 16), p.w1 + i, true);
-    cp_async_wait_all();
-    __syncthreads();
-    gate<Cout, A>(acc, s, w1s, p, warp, lane, hit);
-  } else {
-    plain<Cout, Relu, A>(acc, s, p.bias, warp, lane, hit);
-  }
-  // Rare : plusieurs fils écrivent la même valeur, sans atomique (note_overflow du FP8).
-  if constexpr (A == Acc::kF16)
-    if (hit && p.overflow != nullptr) *reinterpret_cast<volatile int*>(p.overflow) = 1;
-  __syncthreads();
-  if constexpr (M == Mode::kPixel)
-    store_pixel(s, p, ty0, tx0);
-  else
-    store_nhwc<Cout>(s, p, ty0, tx0);
 }
 
 // Poids FP16 [sortie][position][entrée] (le paquet) rangés dans l'ordre des fragments B de mma m16n8k16 :
