@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "render/effect_pass.h"
 #include "render/look_table.h"
 #include "render/output_tune.h"
 #include "render/shaders.h"
@@ -228,6 +229,11 @@ struct Grade::Impl {
   ParsedHook look;
   ParsedHook black;
   std::array<const pl_hook*, 3> hooks{};
+  // Les éclats sur les seuls effets (set_effect_mask) : la passe, créée au premier masque, devant les hooks.
+  std::unique_ptr<EffectPass> fx;
+  bool fx_refused = false;
+  bool fx_on = false;
+  mutable std::array<const pl_hook*, 4> listed{};
   GradeParams params;
   pl_gpu gpu = nullptr;
   // Les LUT du look (copies : celles de set_looks ne vivent que le temps de l'appel), une par contenu
@@ -476,7 +482,26 @@ std::uint64_t Grade::look_table_builds() const {
 }
 
 std::span<const pl_hook* const> Grade::hooks() const {
-  return std::span<const pl_hook* const>(impl_->hooks.data(), impl_->hooks.size());
+  if (!impl_->fx_on) return std::span<const pl_hook* const>(impl_->hooks.data(), impl_->hooks.size());
+  impl_->listed = {impl_->fx->hook(), impl_->hooks[0], impl_->hooks[1], impl_->hooks[2]};
+  return std::span<const pl_hook* const>(impl_->listed.data(), impl_->listed.size());
+}
+
+bool Grade::set_effect_mask(const EffectMask* mask) {
+  Impl& s = *impl_;
+  const bool wanted = mask != nullptr && !mask->neutral();
+  if (wanted && !s.fx && !s.fx_refused) {
+    auto made = EffectPass::create(s.gpu);
+    if (made) {
+      s.fx = std::move(*made);
+    } else {
+      s.fx_refused = true;
+    }
+  }
+  s.fx_on = wanted && s.fx;
+  if (s.fx_on) s.fx->set(mask->cols(), mask->rows(), mask->values(), mask->cover_x(), mask->cover_y());
+  if (pl_var_data* data = find_param(*s.grade.hook, "fx_on")) data->f = s.fx_on ? 1.0F : 0.0F;
+  return s.fx_on;
 }
 
 }  // namespace kirari::render

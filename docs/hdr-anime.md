@@ -206,6 +206,33 @@ lectures bilinéaires du warp mêlent deux couleurs voisines) : moins d'un code 
 sur ces pixels, qui sont déjà un défaut de l'interpolation. Le réglage reste éteint jusqu'à ce que Tatoub juge
 l'image à l'œil, sur une scène d'action en ×4 ou plus.
 
+## Éclats sur les seuls effets (19/11, cartes NVIDIA, à mesurer)
+
+Piste 6 du plan du flux optique NVIDIA : la marge des éclats ne va qu'aux vrais effets (explosions, magie,
+éclairs), pas à un ciel ni à une feuille blanche. Aucun modèle nouveau : la carte de la scène
+(`kernels/spec/scene_flow.h`, flux NVOF réduit par tuiles de 32 pixels en 1080p) dit, par tuile, décor,
+dessin, effet ou incertain. Un effet est clair, change vite et est mal suivi par le flux ; un fond blanc est
+suivi.
+
+- **Le masque** (`render/effect_mask.h`) : par tuile, 1 sur un effet, 1 − confiance sur un décor ou un
+  dessin, 0 sur un aplat qui ne change pas, sans verdict sur un aplat qui change (`app/play/effect_book.h`,
+  `effect_tiles_of`). Dilaté d'une tuile, lissé dans le temps (vers l'effet en 40 ms, vers le décor en
+  0,7 s : une tuile qui hésite reste haute), flouté en 3 × 3, lu en bilinéaire. Une paire tenue ou un fondu
+  n'apprennent rien (un effet animé en deux ne retombe pas une paire sur deux) ; une coupe pose le masque
+  d'un coup.
+- **Le grade** : une passe de plus sur OUTPUT, devant la passe anime (`render/effect_pass.h`), met le masque
+  dans l'alpha ; `3-anime.hook` (`fx_on`) multiplie la carte des émetteurs (lumière plus claire que son
+  voisinage) par `mix(fx_rest, 1, masque)`. `fx_rest` vaut 0,4 : hors effet, une lumière garde 40 % de sa
+  montée. Les étincelles (une étoile, un reflet de 1 à 4 px) gardent la leur. Les surfaces ne bougent pas.
+- **Sans carte** (AMD, Intel, NVOF refusé, `--no-effect-highlights`), le masque revient lentement au neutre
+  puis la passe s'ôte : le grade est celui d'aujourd'hui, octet pour octet
+  (`tests/unit/render/grade_gpu_effects_test.cpp`). L'export et le grade avant le warp ne lisent pas le
+  masque.
+
+Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintillement de plus, le temps du
+grade ne monte pas de plus de 0,3 ms, et le test à l'aveugle est gagné sur des scènes d'explosion et de
+magie. `fx_rest` et les deux constantes de temps se règlent au banc.
+
 ## A2 : décisions par plan
 La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
 relèvement fixe (1,15) dans tous les plans : l'exposition par plan est retirée (C41-01).

@@ -147,6 +147,9 @@ struct PlayOptions {
   // (anime_shots.h) ; --no-anime-shots garde le relèvement fixe. Sans effet en sortie HDR
   // (render::steady_hdr).
   bool anime_shots = true;  // par défaut (jugé à l'image)
+  // Éclats HDR sur les seuls effets (render/effect_mask.h), là où la carte de la scène existe (NVIDIA) ;
+  // --no-effect-highlights garde la marge des éclats sur toute lumière, comme sans carte.
+  bool effect_highlights = true;
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;

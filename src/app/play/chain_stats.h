@@ -74,6 +74,9 @@ class ChainStats final : public StatsSource {
   std::optional<PairVerdict> pair_verdict(std::uint32_t epoch, std::int64_t pts_us) const override {
     return live_.pair_marks().at(epoch, pts_us);
   }
+  std::optional<EffectNote> effect_note(std::uint32_t epoch, std::int64_t pts_us) const override {
+    return live_.effect_book().at(epoch, pts_us);
+  }
 
  private:
   const LiveSettings& live_;

@@ -15,6 +15,7 @@
 
 #include "core/types.h"
 #include "render/cube_lut.h"
+#include "render/effect_mask.h"
 #include "render/grade_params.h"
 #include "render/output_tune.h"
 
@@ -73,7 +74,13 @@ class Grade {
   // Les constructions de la table depuis sa création (tests).
   std::uint64_t look_table_builds() const;
 
-  // Dans l'ordre d'exécution : la passe du grade (ses trois passes dans un hook), le look, puis le vrai noir.
+  // Éclats sur les seuls effets (render/effect_mask.h) : le masque de la paire montrée. nullptr ou neutre :
+  // la passe du masque s'ôte et fx_on retombe à 0, le grade d'aujourd'hui image pour image. Vrai si le masque
+  // s'applique (faux aussi quand le GPU a refusé sa texture, dit une fois par le refus de la création).
+  bool set_effect_mask(const EffectMask* mask);
+
+  // Dans l'ordre d'exécution : la passe du masque des effets s'il s'applique, la passe du grade (ses trois
+  // passes dans un hook), le look, puis le vrai noir.
   std::span<const pl_hook* const> hooks() const;
   // La valeur posée d'un //!PARAM de la passe du grade (après set_params, set_video_fps, set_kwin_match),
   // nullopt s'il n'y est pas.
