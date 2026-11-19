@@ -59,15 +59,19 @@ class TemporalWindow {
   std::vector<Raw> raws_;
 };
 
-// Les tenseurs de la fenêtre, un par tampon, et ses compteurs pour le journal de fin.
+// Les tenseurs de la fenêtre, un par tampon : l'image brute et ses traits, encodés une fois à l'ingestion
+// (prepare/onnx_cache.h) ; et ses compteurs pour le journal de fin.
 struct TemporalBuffers {
   TemporalWindow window;
   std::vector<std::unique_ptr<gpu::TensorBuffer>> rgb;
-  std::array<std::size_t, kTemporalFixFrames>
-      inputs{};  // l'entrée k du moteur lit le tampon window[inputs[k]]
+  std::vector<std::unique_ptr<gpu::TensorBuffer>> features;
+  // L'entrée k du moteur lit l'image de rang inputs[k] de la fenêtre, ou les traits du rang
+  // inputs[k] - kTemporalFixFrames.
+  std::array<std::size_t, 2 * kTemporalFixFrames> inputs{};
+  std::vector<std::size_t> fresh;  // tampons ingérés pour la passe en cours, encodés juste avant elle
   std::uint64_t runs = 0;
   std::uint64_t mirrored = 0;  // passes dont la fenêtre s'est reflétée à un bord
-  std::uint64_t raws = 0;      // ingestions brutes
+  std::uint64_t raws = 0;      // ingestions brutes, chacune encodée une fois
 };
 
 }  // namespace kirari::app::play

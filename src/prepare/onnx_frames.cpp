@@ -12,6 +12,7 @@
 #include <format>
 #include <utility>
 
+#include "prepare/onnx_build.h"
 #include "prepare/onnx_scan.h"
 #include "prepare/onnx_split.h"
 #include "prepare/protobuf_fields.h"
@@ -19,6 +20,19 @@
 namespace kirari::prepare {
 namespace {
 
+using onnx_build::as_text;
+using onnx_build::int_attribute;
+using onnx_build::kNodeAttribute;
+using onnx_build::kNodeInput;
+using onnx_build::kNodeName;
+using onnx_build::kNodeOpType;
+using onnx_build::kNodeOutput;
+using onnx_build::kValueInfoName;
+using onnx_build::Message;
+using onnx_build::node;
+using onnx_build::pool_node;
+using onnx_build::text_attribute;
+using onnx_build::value_info;
 using protobuf::Bytes;
 using protobuf::Fields;
 using protobuf::RawField;
@@ -29,12 +43,6 @@ constexpr std::uint32_t kGraphInitializer = 5;
 constexpr std::uint32_t kGraphInput = 11;
 constexpr std::uint32_t kGraphOutput = 12;
 constexpr std::uint32_t kGraphValueInfo = 13;
-constexpr std::uint32_t kNodeInput = 1;
-constexpr std::uint32_t kNodeOutput = 2;
-constexpr std::uint32_t kNodeName = 3;
-constexpr std::uint32_t kNodeOpType = 4;
-constexpr std::uint32_t kNodeAttribute = 5;
-constexpr std::uint32_t kValueInfoName = 1;
 
 // Les noms que la demi-taille ajoute au graphe.
 constexpr std::string_view kFull = "kirari_frames_full";
@@ -43,91 +51,6 @@ constexpr std::string_view kCenterHalf = "kirari_frames_center_half";
 constexpr std::string_view kDeltaHalf = "kirari_frames_delta_half";
 constexpr std::string_view kDelta = "kirari_frames_delta";
 constexpr std::string_view kScales = "kirari_frames_scales";
-
-Bytes as_bytes(std::string_view text) {
-  return {reinterpret_cast<const std::byte*>(text.data()), text.size()};
-}
-
-std::string_view as_text(Bytes bytes) {
-  return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
-}
-
-class Message {
- public:
-  Message& varint(std::uint32_t number, std::uint64_t value) {
-    protobuf::put_varint(out_, std::uint64_t{number} << 3U);
-    protobuf::put_varint(out_, value);
-    return *this;
-  }
-  Message& bytes(std::uint32_t number, Bytes data) {
-    protobuf::put_delimited(out_, number, data);
-    return *this;
-  }
-  Message& text(std::uint32_t number, std::string_view value) { return bytes(number, as_bytes(value)); }
-  Message& message(std::uint32_t number, const Message& inner) { return bytes(number, inner.out_); }
-  Message& raw(Bytes field) {  // un champ recopié tel quel, son en-tête compris
-    out_.insert(out_.end(), field.begin(), field.end());
-    return *this;
-  }
-  const std::vector<std::byte>& data() const { return out_; }
-
- private:
-  std::vector<std::byte> out_;
-};
-
-// ValueInfoProto { name ; type { tensor_type { elem_type ; shape { dim… } } } } ; une dimension libre (-1)
-// prend un nom : les sept images partagent ainsi les leurs.
-Message value_info(std::string_view name, std::int32_t elem_type, std::span<const std::int64_t> dims) {
-  constexpr std::array<std::string_view, 4> kNames = {"batch", "channels", "height", "width"};
-  Message shape;
-  for (std::size_t i = 0; i < dims.size(); ++i) {
-    Message dim;
-    if (dims[i] >= 0) {
-      dim.varint(1, static_cast<std::uint64_t>(dims[i]));
-    } else {
-      dim.text(2, i < kNames.size() ? kNames[i] : std::string_view("dim"));
-    }
-    shape.message(1, dim);
-  }
-  Message tensor;
-  tensor.varint(1, static_cast<std::uint64_t>(static_cast<std::uint32_t>(elem_type))).message(2, shape);
-  Message info;
-  info.text(kValueInfoName, name).message(2, Message().message(1, tensor));
-  return info;
-}
-
-Message node(std::string_view op, std::string_view name, std::span<const std::string_view> inputs,
-             std::string_view output) {
-  Message n;
-  for (const std::string_view in : inputs) n.text(kNodeInput, in);
-  n.text(kNodeOutput, output).text(kNodeName, name).text(kNodeOpType, op);
-  return n;
-}
-
-Message int_attribute(std::string_view name, std::int64_t value) {
-  return std::move(Message().text(1, name).varint(3, static_cast<std::uint64_t>(value)).varint(20, 2));
-}
-
-Message ints_attribute(std::string_view name, std::span<const std::int64_t> values) {
-  Message a;
-  a.text(1, name);
-  for (const std::int64_t v : values) a.varint(8, static_cast<std::uint64_t>(v));
-  a.varint(20, 7);
-  return a;
-}
-
-Message text_attribute(std::string_view name, std::string_view value) {
-  return std::move(Message().text(1, name).text(4, value).varint(20, 3));
-}
-
-// AveragePool 2 × 2, pas de 2 : la moyenne de chaque bloc, exacte sur une taille paire.
-Message pool_node(std::string_view name, std::string_view input, std::string_view output) {
-  constexpr std::array<std::int64_t, 2> kTwo = {2, 2};
-  Message n = node("AveragePool", name, std::array{input}, output);
-  n.message(kNodeAttribute, ints_attribute("kernel_shape", kTwo))
-      .message(kNodeAttribute, ints_attribute("strides", kTwo));
-  return n;
-}
 
 // Les échelles du Resize, [1, 1, 2, 2] en float32 petit-boutiste.
 Message scales_initializer() {

@@ -180,6 +180,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .backend = backend.get(),
       .engine = engine.get(),
       .temporal_fix = temporal_fix.get(),
+      .temporal_encoder = temporal_encoder.get(),
+      .temporal_features = temporal_features,
       .skip_held = skip_held && clock != nullptr,
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
