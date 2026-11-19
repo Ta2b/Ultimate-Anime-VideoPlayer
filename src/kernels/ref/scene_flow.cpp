@@ -210,13 +210,20 @@ Classified classify(const TileView& v, const CameraFit& camera, double cx, doubl
     return {};
   }
   const float weight = v.matched * texture_weight(v);
-  if (v.texture < scene::kTextureFloor) return {.kind = SceneClass::Uncertain, .confidence = weight};
+  const Classified unsure{.kind = SceneClass::Uncertain, .confidence = weight};
+  // Un aplat : NVOF n'y voit rien (son vecteur vient des bords voisins), mais rien n'y bouge de visible tant
+  // qu'il ne change guère. Il devient décor s'il correspond et ne contredit pas la caméra : pleinement sûr
+  // sous kStillDiff d'écart |b − a|, plus du tout à kChangeDiff. Un vecteur qui la contredit n'y prouve pas
+  // un dessin.
+  const bool flat = v.texture < scene::kTextureFloor;
+  if (flat &&
+      (v.matched < scene::kFitMatched || v.change >= scene::kChangeDiff || v.spread > scene::kSpreadMax))
+    return unsure;
+  const float still =
+      std::clamp((scene::kChangeDiff - v.change) / (scene::kChangeDiff - scene::kStillDiff), 0.0F, 1.0F);
+  const Classified decor{.kind = SceneClass::Background, .confidence = flat ? v.matched * still : weight};
   if (v.spread > scene::kSpreadMax) return {.kind = SceneClass::Drawing, .confidence = 0.5F * weight};
-  if (!camera.fit) {
-    const float motion = std::hypot(v.mx, v.my);
-    if (motion < scene::kStillMotion) return {.kind = SceneClass::Background, .confidence = weight};
-    return {.kind = SceneClass::Uncertain, .confidence = weight};
-  }
+  if (!camera.fit) return std::hypot(v.mx, v.my) < scene::kStillMotion ? decor : unsure;
   const double x = (v.cx - cx) / scale;
   const double y = (v.cy - cy) / scale;
   const double cam_x = camera.model.dx(x, y);
@@ -224,7 +231,22 @@ Classified classify(const TileView& v, const CameraFit& camera, double cx, doubl
   const double off = std::hypot(v.mx - cam_x, v.my - cam_y);
   const double bound = std::max(static_cast<double>(scene::kBackgroundFloor),
                                 scene::kBackgroundShare * std::hypot(cam_x, cam_y));
-  return {.kind = off < bound ? SceneClass::Background : SceneClass::Drawing, .confidence = weight};
+  if (off < bound) return decor;
+  return flat ? unsure : Classified{.kind = SceneClass::Drawing, .confidence = weight};
+}
+
+// Le lissage d'une tuile (SceneHistory). La première paire part de sa classe brute. Une paire sans preuve
+// (idle : la tuile ne change pas sous une caméra tenue, où un dessin tenu se confond avec le décor, comme les
+// images doublées d'une animation en deux ou en trois) garde la classe tenue et ne compte pas. Sinon, une
+// classe nouvelle ne tient que vue deux paires de suite ; d'ici là, la classe tenue n'est plus sûre.
+Classified smoothed(SceneHistory& history, std::size_t i, const Classified& raw, bool fresh, bool idle) {
+  if (!fresh && idle) return {.kind = history.held[i], .confidence = raw.confidence};
+  Classified kept = raw;
+  if (!fresh && raw.kind != history.held[i] && raw.kind != history.seen[i])
+    kept = {.kind = history.held[i], .confidence = scene::kContradicted * raw.confidence};
+  history.held[i] = kept.kind;
+  history.seen[i] = raw.kind;
+  return kept;
 }
 
 // La tuile bouge hors de la caméra : un dessin, un effet ; sans caméra ajustée, toute tuile qui change (son
@@ -419,7 +441,12 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) 
   if (camera.fit) {
     out.camera = camera_of(camera.model, cx, cy, scale, tiles.divisor);
     out.residual = camera.residual * tiles.divisor;
+    const auto& c = out.camera;
+    out.background_held = std::hypot(c[0], c[3]) < scene::kHeldCamera &&
+                          std::abs(c[1] - 1.0) < scene::kHeldLinear && std::abs(c[2]) < scene::kHeldLinear &&
+                          std::abs(c[4]) < scene::kHeldLinear && std::abs(c[5] - 1.0) < scene::kHeldLinear;
   }
+  const bool camera_moves = camera.fit && !out.background_held;
 
   const bool same_grid =
       history.cols == tiles.cols && history.rows == tiles.rows && history.held.size() == count;
@@ -437,21 +464,9 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) 
     const Classified raw = classify(v, camera, cx, cy, scale);
     const bool changed = tile_changed(v);
     if (moves_off_camera(raw.kind, changed, camera.fit)) ++moving;
-    // Une classe nouvelle ne tient que vue deux paires de suite ; la première paire part de la sienne.
-    SceneClass kind = raw.kind;
-    float confidence = raw.confidence;
-    if (same_grid && raw.kind != history.held[i]) {
-      if (raw.kind == history.seen[i]) {
-        kind = raw.kind;
-      } else {
-        kind = history.held[i];
-        confidence *= 0.5F;
-      }
-    }
-    history.held[i] = kind;
-    history.seen[i] = raw.kind;
-    out.tiles[i] = SceneTile{.kind = kind,
-                             .confidence = confidence,
+    const Classified kept = smoothed(history, i, raw, !same_grid, !changed && !camera_moves);
+    out.tiles[i] = SceneTile{.kind = kept.kind,
+                             .confidence = kept.confidence,
                              .dx = v.mx * divisor,
                              .dy = v.my * divisor,
                              .change = v.change,
@@ -460,12 +475,6 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) 
   }
   out.drawing_held = !out.cut_likely && !out.fade &&
                      static_cast<float>(moving) <= scene::kDrawingHeldShare * static_cast<float>(count);
-  if (camera.fit) {
-    const auto& c = out.camera;
-    out.background_held = std::hypot(c[0], c[3]) < scene::kHeldCamera &&
-                          std::abs(c[1] - 1.0) < scene::kHeldLinear && std::abs(c[2]) < scene::kHeldLinear &&
-                          std::abs(c[4]) < scene::kHeldLinear && std::abs(c[5] - 1.0) < scene::kHeldLinear;
-  }
   if (out.cut_likely) history.clear();  // le plan suivant repart de ses propres classes
   return out;
 }
