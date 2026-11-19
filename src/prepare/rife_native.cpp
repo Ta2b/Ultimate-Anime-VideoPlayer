@@ -70,7 +70,7 @@ int conv_stride(const onnx::Node& node, bool transposed, int kernel, std::int64_
       (auto_pad != nullptr && auto_pad->s != "NOTSET"))
     return 0;
   const std::vector<std::int64_t> strides = ints_of(node, "strides", {1, 1});
-  if (!all_equal(ints_of(node, "pads", {}), kernel == 1 ? 0 : 1, 4) ||
+  if (!all_equal(ints_of(node, "pads", {0, 0, 0, 0}), kernel == 1 ? 0 : 1, 4) ||
       !all_equal(ints_of(node, "dilations", {1, 1}), 1, 2) || strides.size() != 2 || strides[0] != strides[1])
     return 0;
   const auto stride = static_cast<int>(strides[0]);
@@ -161,7 +161,11 @@ std::expected<int, Refusal> conv_shape(const onnx::Node& node, const onnx::Tenso
   const int kernel = pointwise ? 1 : layer.kernel;
   if (d[2] != kernel || d[3] != kernel)
     return unknown(node.name + std::format(" : poids constants {0}×{0} attendus", layer.kernel));
-  depthwise = !layer.transposed && !pointwise && d[1] == 1 && d[0] > 1;
+  // Par canal : une entrée par sortie, et autant de groupes que de sorties (sans group, une pleine à une
+  // entrée).
+  const onnx::Attribute* group = find_attribute(node, "group");
+  depthwise =
+      !layer.transposed && !pointwise && d[1] == 1 && d[0] > 1 && group != nullptr && group->i == d[0];
   layer.stride = conv_stride(node, layer.transposed, kernel, depthwise ? d[0] : 1);
   if (layer.stride == 0) return unknown(node.name + " : groupes, bords, dilatation ou pas");
   layer.cout = static_cast<int>(layer.transposed ? d[1] : d[0]);

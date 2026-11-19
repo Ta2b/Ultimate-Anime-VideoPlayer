@@ -60,11 +60,11 @@ class Buffer {
 // (la première couche de l'encodeur).
 enum class Kind : std::uint8_t { kSame, kHalf, kImage };
 
-using Launch = void (*)(dim3 grid, int smem, cudaStream_t stream, const rn::Params& p);
+using Launch = void (*)(dim3 grid, int smem, cudaStream_t stream, const rn::BatchParams& p);
 
 template <int Kc, int CT, int S, int Rows, rn::In I, bool Acc16>
-void launch_one(dim3 grid, int smem, cudaStream_t stream, const rn::Params& p) {
-  rn::conv_kernel<Kc, CT, 3, S, Rows, I, rn::Out::kNhwc, Acc16>
+void launch_one(dim3 grid, int smem, cudaStream_t stream, const rn::BatchParams& p) {
+  rn::conv_kernel<Kc, CT, 3, S, Rows, I, rn::Out::kNhwc, Acc16, true>
       <<<grid, rn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
 }
 
@@ -108,10 +108,10 @@ int stride_of(Kind kind) {
 
 // La fin d'une couche à K découpé (rife_native::reduce_kernel), une image du lot par blockIdx.y ; width :
 // canaux de la grille z d'une image.
-void launch_reduce(int width, int batch, cudaStream_t stream, const rn::Params& p) {
+void launch_reduce(int width, int batch, cudaStream_t stream, const rn::BatchParams& p) {
   const long count = static_cast<long>(p.oh) * p.ow * (width / 8);
   const dim3 grid(static_cast<unsigned>((count + 255) / 256), static_cast<unsigned>(batch));
-  rn::reduce_kernel<rn::Out::kNhwc><<<grid, 256, 0, stream>>>(p, width);
+  rn::reduce_kernel<rn::Out::kNhwc, true><<<grid, 256, 0, stream>>>(p, width);
 }
 
 // Les traits de l'encodeur : sa dernière convolution (par pixel au pas 8, 4 canaux, ih × iw) agrandie à
@@ -272,8 +272,8 @@ class Net final : public TfixNativeNet {
     layer.kc = layer.kind == Kind::kImage ? 16 : (cin % 64 == 0 && !half) ? 64 : cin % 32 == 0 ? 32 : 16;
     layer.ct = choose_tile(layer, cout, batch);
     layer.tiles = cout / layer.ct;
-    // La sortie du morceau au pas de 8 (kernels::tfix_out_ld), celle d'une couche intérieure au pas de 16.
-    layer.out_ld = last ? (conv.cout + 7) / 8 * 8 : cout;
+    // La sortie du morceau au pas que la colle lit, celle d'une couche intérieure au pas de 16.
+    layer.out_ld = last ? kernels::tfix_out_ld(conv.cout, true) : cout;
     if (layer.residual && layer.out_ld != layer.in_ld) {
       error = "résiduel entre deux pas différents";
       return false;
@@ -353,7 +353,7 @@ class Net final : public TfixNativeNet {
       const Layer& layer = piece.layers[i];
       const bool last = i + 1 == piece.layers.size();
       __half* to = last ? static_cast<__half*>(out) : buffers[i % 2];
-      rn::Params p;
+      rn::BatchParams p;
       p.in = from;
       p.in_ld = layer.in_ld;
       p.in_plane = static_cast<long>(layer.ih) * layer.iw;
@@ -426,6 +426,11 @@ std::unique_ptr<TfixNativeNet> TfixNativeNet::create(const std::vector<RifeNativ
       !net->plan(pieces.back(), half.height, half.width, kernels::tfix_in_ld(kernels::kTfixConf, true),
                  kernels::kTfixSupports, half.height, half.width, 1, error)) {
     error = "tête : " + error;
+    return nullptr;
+  }
+  // Les poids partent par cudaMemcpy, que les flux non bloquants des voies n'attendent pas.
+  if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) {
+    error = std::string("envoi des poids : ") + cudaGetErrorString(e);
     return nullptr;
   }
   return net;

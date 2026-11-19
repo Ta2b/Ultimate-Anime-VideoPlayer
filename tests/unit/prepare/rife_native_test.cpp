@@ -29,7 +29,7 @@ Bytes float_attribute(std::string_view name, float value) {
   delimited(out, 1, text(name));
   varint(out, (2U << 3U) | 5U);
   const auto bits = std::bit_cast<std::uint32_t>(value);
-  for (int i = 0; i < 4; ++i) out.push_back(static_cast<std::byte>((bits >> (8U * i)) & 0xffU));
+  for (unsigned i = 0; i < 4U; ++i) out.push_back(static_cast<std::byte>((bits >> (8U * i)) & 0xffU));
   return out;
 }
 Bytes int_attribute(std::string_view name, std::int64_t value) {
@@ -186,16 +186,16 @@ TEST_CASE("Une convolution séparable se replie en une seule 3 × 3", "[prepare]
   CHECK(l.slope.size() == 4);
   REQUIRE(l.weights.size() == 4U * 9U * 4U);
   // W'[o][t][c] = P[o][c] · D[c][t] ; b'[o] = Σ_c P[o][c] · d[c] + p[o].
-  for (int o = 0; o < 4; ++o) {
+  for (std::size_t o = 0; o < 4; ++o) {
     double b = pwb[o];
-    for (int c = 0; c < 4; ++c) {
-      b += static_cast<double>(pw[o * 4 + c]) * dwb[c];
-      for (int t = 0; t < 9; ++t) {
-        const double want = static_cast<double>(pw[o * 4 + c]) * dw[c * 9 + t];
-        CHECK(std::abs(l.weights[(o * 9 + t) * 4 + c] - want) < 1e-6);
+    for (std::size_t c = 0; c < 4; ++c) {
+      b += static_cast<double>(pw[o * 4 + c]) * static_cast<double>(dwb[c]);
+      for (std::size_t t = 0; t < 9; ++t) {
+        const double want = static_cast<double>(pw[o * 4 + c]) * static_cast<double>(dw[c * 9 + t]);
+        CHECK(std::abs(static_cast<double>(l.weights[(o * 9 + t) * 4 + c]) - want) < 1e-6);
       }
     }
-    CHECK(std::abs(l.bias[o] - b) < 1e-6);
+    CHECK(std::abs(static_cast<double>(l.bias[o]) - b) < 1e-6);
   }
   CHECK(conv_chain_check(*layers, 4, 4));
   CHECK(conv_chain_check(*layers, 4, 5).error().code == RefusalCode::FieldMissing);

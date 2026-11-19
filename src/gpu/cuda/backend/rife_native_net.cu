@@ -62,9 +62,9 @@ void launch_reduce(bool phase, int width, cudaStream_t stream, const rn::Params&
   const long count = static_cast<long>(p.oh) * p.ow * (width / 8);
   const auto blocks = static_cast<unsigned>((count + 255) / 256);
   if (phase)
-    rn::reduce_kernel<rn::Out::kPhase><<<blocks, 256, 0, stream>>>(p, width);
+    rn::reduce_kernel<rn::Out::kPhase, false><<<blocks, 256, 0, stream>>>(p, width);
   else
-    rn::reduce_kernel<rn::Out::kNhwc><<<blocks, 256, 0, stream>>>(p, width);
+    rn::reduce_kernel<rn::Out::kNhwc, false><<<blocks, 256, 0, stream>>>(p, width);
 }
 
 // Les façons de lancer une couche.
@@ -80,7 +80,7 @@ using Launch = void (*)(dim3 grid, int smem, cudaStream_t stream, const rn::Para
 
 template <int Kc, int CT, int KH, int S, int Rows, rn::In I, rn::Out O, bool Acc16>
 void launch_one(dim3 grid, int smem, cudaStream_t stream, const rn::Params& p) {
-  rn::conv_kernel<Kc, CT, KH, S, Rows, I, O, Acc16>
+  rn::conv_kernel<Kc, CT, KH, S, Rows, I, O, Acc16, false>
       <<<grid, rn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
 }
 

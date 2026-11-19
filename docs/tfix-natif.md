@@ -36,8 +36,9 @@ ResConv séparable est une convolution par canal 3 × 3 suivie d'une 1 × 1, san
   poids repliés en réels contre onnxruntime sur les morceaux de s2) : 69 à 85 dB, l'écart étant l'arrondi FP16
   d'onnxruntime. Si le profil montre les blocs 1 et 2 lents, un noyau par canal puis 1 × 1 fondu en mémoire
   partagée reste possible.
-- **Six appuis en un lot** (`Params::batch`, `rife_native_kernels.cuh`) : blockIdx.z = image · (grille z d'une
-  image) + reste, chaque image décalée de son pas. Les blocs grossiers remplissent ainsi la carte (bloc 0 :
+- **Six appuis en un lot** (`BatchParams`, `rife_native_kernels.cuh`) : blockIdx.z = image · (grille z d'une
+  image) + reste, chaque image décalée de son pas. Le lot est un paramètre de modèle des noyaux, et ses champs
+  sont hors de `Params` : les 49 noyaux de RIFE natif gardent exactement leurs registres d'avant. Les blocs grossiers remplissent ainsi la carte (bloc 0 :
   34 × 60 points au 1/32 de 1080p, six fois) ; le K découpé ne sert que s'il manque encore des blocs.
 - **Par pixel** (NHWC) : la colle écrit X0 au pas 16, X1, X2 et l'entrée de la tête au pas 32 (canaux en trop à
   zéro), et lit Y au pas 16 et la sortie de la tête au pas 8 (`kernels::tfix_in_ld`, `tfix_out_ld`,
@@ -57,11 +58,15 @@ Sous `--tfix-native`, les cinq moteurs TensorRT se construisent et se chargent c
   TensorRT, puis par les noyaux natifs ; les traits sont comparés ;
 - **fenêtre** : sept images de test qui glissent de (2, 1) pixels et scintillent, leurs traits de test et
   leurs pyramides, passent trois fois (directe, capture du graphe CUDA, rejeu) avec TensorRT puis avec le
-  natif. Sont comparés la sortie (pic 1), Y2 (flot, masque, attributs du dernier bloc) et la sortie de la tête
-  (pic : leur plus grand écart à zéro) : une sortie seule pourrait tenir le seuil même si le réseau
-  se trompait, le mélange restant prudent.
+  natif. Sont comparés, chacun à son pic (le plus grand écart à zéro, au moins 1) : la sortie, le flot de Y2
+  (canaux 0 et 1, en pixels), le reste de Y2 (masque et attributs du dernier bloc) et la sortie de la tête.
+  Une sortie seule pourrait tenir le seuil même si le réseau se trompait, le mélange restant prudent ; le flot
+  à part, son pic en pixels ne cache pas une erreur du masque.
 
-Gardé à 45 dB ou plus sur le pire des trois, sommes f16 d'abord, f32 ensuite ; sinon TensorRT garde l'étage,
+Les passes natives tournent sur une zone de travail à elles : la zone de la voie ne grandit que pour un natif
+retenu. Une valeur non finie, chez TensorRT ou chez nous, compte pour un échec.
+
+Gardé à 45 dB ou plus sur le pire des quatre, sommes f16 d'abord, f32 ensuite ; sinon TensorRT garde l'étage,
 chargé et intact. Le journal dit ce qui est retenu : « TemporalFix natif retenu pour la fenêtre (960×540,
 sommes f16 : 52,3 dB contre TensorRT, seuil 45 dB) ».
 
@@ -98,11 +103,17 @@ jamais lancé sur une carte : la justesse se juge à l'essai au chargement, la v
 
 ## Séance finale (sur le PC, binaire `linux-release` puis `windows-release`)
 
+Le code touche `src/gpu`, `src/kernels` et `src/prepare` : il demande un nouveau paquet TensorRT Linux
+(`tools/release/trt-fingerprint.sh`) avant d'arriver chez un utilisateur.
+
 Extrait : Re:Zero S4E18, `--start=960`, 60 s, 1080p ; stabilisation Normale, demi-taille (le défaut) puis
 pleine taille (`temporal_fix_full`), sans interpolation ni agrandissement d'abord. ABAB, trois tours.
 
 ```sh
-# 0. Première ouverture : les moteurs se construisent, les lignes « TemporalFix natif… » donnent les dB.
+# 0. Première ouverture sous compute-sanitizer (code jamais lancé sur une carte : un accès hors des tampons se
+#    voit ici, pas dans les dB), puis sans : les lignes « TemporalFix natif… » donnent les dB.
+compute-sanitizer --tool memcheck --target-processes all \
+  kirari --debug play --tfix-native --no-upscale --start=960 --seconds=5 extrait.mkv
 kirari --debug play --tfix-native --no-upscale --start=960 extrait.mkv 2>&1 | grep -i "temporalfix natif"
 
 # 1. Temps par image, ABAB (A = natif, B = TensorRT) : médianes « TemporalFix fusionné fenêtre » et

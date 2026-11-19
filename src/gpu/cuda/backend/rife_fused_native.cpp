@@ -22,10 +22,10 @@ std::vector<__half> test_pair(int h, int w) {
   const auto plane = static_cast<std::size_t>(h) * static_cast<std::size_t>(w);
   std::vector<__half> input(plane * kernels::kFusedInputPlanes);
   const auto drawing = [](float x, float y, int c) {
-    const float wave =
-        0.5F + 0.22F * std::sin(0.071F * x + 0.043F * y + c) + 0.12F * std::sin(0.017F * x - 0.029F * y);
+    const float wave = 0.5F + 0.22F * std::sin(0.071F * x + 0.043F * y + static_cast<float>(c)) +
+                       0.12F * std::sin(0.017F * x - 0.029F * y);
     const bool square = std::fmod(std::abs(x), 160.F) < 64.F && std::fmod(std::abs(y), 128.F) < 48.F;
-    return std::clamp(square ? 0.9F - 0.2F * c : wave, 0.F, 1.F);
+    return std::clamp(square ? 0.9F - 0.2F * static_cast<float>(c) : wave, 0.F, 1.F);
   };
   for (int y = 0; y < h; ++y)
     for (int x = 0; x < w; ++x) {
