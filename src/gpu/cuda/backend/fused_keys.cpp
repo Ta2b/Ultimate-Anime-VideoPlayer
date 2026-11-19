@@ -140,18 +140,21 @@ std::optional<TfixFusedKey> tfix_fused_artifact_key_parse(std::string_view text)
   return key;
 }
 
-constexpr std::string_view kGmfssPrefix = "gmfss-fused:";
+namespace {
 
-std::string gmfss_fused_artifact_key(const GmfssFusedKey& key) {
+constexpr std::string_view kGmfssPrefix = "gmfss-fused:";
+constexpr std::string_view kGmfssPairPrefix = "gmfss-pair:";
+
+std::string gmfss_key(std::string_view prefix, const GmfssFusedKey& key) {
   std::string engines;
   for (const std::string& engine : key.engines)
     engines += std::format("{}{}", engines.empty() ? "" : ",", engine);
-  return std::format("{}{}x{}:{}", kGmfssPrefix, key.height, key.width, engines);
+  return std::format("{}{}x{}:{}", prefix, key.height, key.width, engines);
 }
 
-std::optional<GmfssFusedKey> gmfss_fused_artifact_key_parse(std::string_view text) {
-  if (!text.starts_with(kGmfssPrefix)) return std::nullopt;
-  text.remove_prefix(kGmfssPrefix.size());
+std::optional<GmfssFusedKey> gmfss_key_parse(std::string_view prefix, std::string_view text) {
+  if (!text.starts_with(prefix)) return std::nullopt;
+  text.remove_prefix(prefix.size());
   const std::vector<std::string_view> fields = split(text, ':');
   if (fields.size() != 2) return std::nullopt;
   const std::vector<std::string_view> size = split(fields[0], 'x');
@@ -167,6 +170,24 @@ std::optional<GmfssFusedKey> gmfss_fused_artifact_key_parse(std::string_view tex
   }
   if (key.engines.size() != 2) return std::nullopt;
   return key;
+}
+
+}  // namespace
+
+std::string gmfss_fused_artifact_key(const GmfssFusedKey& key) {
+  return gmfss_key(kGmfssPrefix, key);
+}
+
+std::optional<GmfssFusedKey> gmfss_fused_artifact_key_parse(std::string_view text) {
+  return gmfss_key_parse(kGmfssPrefix, text);
+}
+
+std::string gmfss_pair_artifact_key(const GmfssFusedKey& key) {
+  return gmfss_key(kGmfssPairPrefix, key);
+}
+
+std::optional<GmfssFusedKey> gmfss_pair_artifact_key_parse(std::string_view text) {
+  return gmfss_key_parse(kGmfssPairPrefix, text);
 }
 
 }  // namespace kirari::gpu::cuda

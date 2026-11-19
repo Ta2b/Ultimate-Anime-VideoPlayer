@@ -52,4 +52,11 @@ inline constexpr std::string_view kGmfssFusedDerivation = "natif1";
 std::expected<std::filesystem::path, Refusal> derive_gmfss_fused(const std::filesystem::path& fusion,
                                                                  int height, int width);
 
+// Le morceau piece du dossier dir (un manifeste « .gmfssfused » ou « .gmfsspair »), relu s'il a encore
+// l'empreinte digest : le backend y lit les poids des réseaux natifs. Refus : ModelUnreadable (changé ou
+// illisible), ceux de read_onnx_bytes.
+std::expected<std::vector<std::byte>, Refusal> read_gmfss_piece(const std::filesystem::path& dir,
+                                                                const std::string& piece,
+                                                                const std::string& digest);
+
 }  // namespace kirari::prepare

@@ -161,4 +161,15 @@ std::expected<std::filesystem::path, Refusal> derive_gmfss_fused(const std::file
   return manifest_path;
 }
 
+std::expected<std::vector<std::byte>, Refusal> read_gmfss_piece(const std::filesystem::path& dir,
+                                                                const std::string& piece,
+                                                                const std::string& digest) {
+  const std::filesystem::path file = dir / core::path_from_utf8(piece);
+  auto sha = sha256_file_known(file);
+  if (!sha) return std::unexpected(std::move(sha.error()));
+  if (*sha != digest)
+    return refuse(RefusalCode::ModelUnreadable, std::format("GMFSS natif : {} a changé", piece));
+  return read_onnx_bytes(file);
+}
+
 }  // namespace kirari::prepare
