@@ -106,7 +106,11 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
    f16, 1/32 en mixte, 1/128 en f32 (un défaut de rangement ne passe pas : il se voit au journal, « formes
    écartées »), puis chronométrée en graphe (trois lancements, le meilleur de trois rejeux). Les poids partent
    sur la voie du banc, qui les attend. Une couche de mêmes sommes reprend la forme déjà réglée pour un réseau
-   d'avant ;
+   d'avant. Les ResConv (3 × 3 de pas 1, tranche de 32 ou 64, hors f32) ont en plus des formes « poids à
+   l'avance » : les fragments de poids de toute la prise suivante se chargent dès le début de la prise courante,
+   dans un second jeu de registres. Les poids d'une couche de 128 ou 192 canaux ne tiennent pas dans le L1 et
+   viennent du L2, dont la latence dépassait les mma d'un seul pas ; le réglage choisit, couche par couche, entre
+   cette distance et l'occupation que les registres en plus coûtent ;
 2. une paire de test (ondes et carrés, B décalée de (5, 3) pixels, instant 0,5) passe par la chaîne avec
    TensorRT : la référence ;
 3. **chaque morceau seul** (l'encodeur sur l'image A, chaque bloc sur le X_k que TensorRT a laissé dans la zone),
@@ -114,11 +118,17 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
    temps (un graphe de deux passes, cinq tours intercalés, la médiane ; ces passes lancées une à une si la
    capture est refusée, ce que le journal dit). Le profil couche par couche du réseau f16 va au journal ; un
    profil qui échoue n'y laisse qu'une ligne, l'essai continue ;
-4. **le mélange** (`rife_native_mix.cpp`) : chaque morceau prend son option la plus rapide (TensorRT compris).
-   Tant que la sortie de la chaîne ne tient pas 45 dB contre TensorRT (images au pic 1 ; flot au pic de son plus
-   grand écart, masque à part), le morceau natif le moins juste monte d'un cran ; un cran plus lent que TensorRT
-   pour ce morceau, ou au-delà du f32, le rend à TensorRT. Chaque pas monte un morceau sans jamais redescendre :
-   au pire, tout revient à TensorRT ;
+4. **le mélange** (`rife_native_mix.cpp`). Un morceau peut prendre TensorRT ou un réseau plus rapide que lui.
+   L'effet de chacune de ces options est mesuré sur la chaîne entière, ce morceau seul en natif : l'erreur
+   quadratique de la sortie contre TensorRT (images au pic 1 ; flot au pic de son plus grand écart, masque à
+   part), celle que les morceaux suivants font de l'erreur du morceau. Les erreurs de morceaux différents
+   s'ajoutent à peu près ; parmi toutes les combinaisons (au plus 5⁶), le mélange retenu est le plus rapide (la
+   somme des temps seuls) dont la somme prévue tient 45 dB. Il est vérifié sur la chaîne ; sous 45 dB, la barre
+   monte de l'écart à la prévision plus 0,5 dB, quatre fois au plus, puis tout revient à TensorRT. L'ancien
+   mélange montait d'un cran le morceau le moins juste jugé seul, sans jamais redescendre : jugés contre
+   TensorRT, les crans plus justes ne le sont pas toujours (le bloc 4 de 4.25 : 73,2 dB en f16, 69,3 en
+   mixtes), et la justesse d'un morceau seul ne dit pas son poids sur la chaîne (l'encodeur décidait des
+   45 dB). Le bloc 4, plus rapide en f16 que TensorRT, finissait ainsi à TensorRT ;
 5. le mélange est chronométré contre TensorRT seul comme le SPAN FP8 (`span_timing.h`) : une passe de lecture ×2
    (B encodée seule, graphes rejoués), onze tours intercalés d'une passe de chauffe et deux passes mesurées, la
    médiane. Il n'est gardé que s'il bat TensorRT d'au moins 2 %.
@@ -126,8 +136,10 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
 Le moteur aiguille chaque morceau vers son réseau ou vers son moteur TensorRT (`set_route`, l'aiguillage est
 dans la clé des graphes) ; les réseaux que le mélange n'emploie pas sont libérés. Le journal donne tout : le
 temps du réglage, une ligne par morceau (« RIFE natif, bloc 2 seul : TensorRT 0.412 ms ; f16 0.301 ms (52.3 dB)
-; … »), une ligne par couche du réseau f16 (temps, forme retenue), puis le verdict : « RIFE natif retenu
-(1920×1088, encodeur f16, bloc 0 f16, bloc 1 f16 et tête f32, … ; chaîne contre TensorRT 46.1 dB, seuil 45 dB ;
+; … »), une ligne par couche du réseau f16 (temps, forme retenue), l'effet de chaque option sur la chaîne
+(« RIFE natif, effet de chaque option sur la chaîne (le reste à TensorRT) ; encodeur f16 47.1 dB ; … »), puis le
+verdict : « RIFE natif retenu (1920×1088, encodeur f16, bloc 0 f16, bloc 1 f16 et tête f32, … ; chaîne contre
+TensorRT 46.1 dB (prévus 46.4), seuil 45 dB ;
 contre le natif f32 : chaîne 47.0 dB, TensorRT 49.3 dB ; passe de lecture ×2 : TensorRT 4.98 ms, mélange 4.40 ms ;
 essai 3.2 s) » (chiffres d'exemple). L'écart au natif f32, le calcul le plus juste, dit si un mélange refusé l'est
 pour une vraie perte ou pour un arrondi différent de celui de TensorRT.
@@ -143,6 +155,18 @@ Remesure avec les sommes mixtes et la mesure du temps (#897, même PC, même ext
 TensorRT 3,64 ms, f32 4,03 ms). Le natif était donc écarté, TensorRT gardait la chaîne à la même cadence (138,6 i/s).
 D'où ce travail : têtes en f32 et précision par morceau pour la justesse, réglage des formes pour la vitesse.
 
+Mesure de #919 (même PC, main 7b14e78) : **retenu en mélange, 9 % plus rapide**. Encodeur f32 (0,215 ms contre
+0,524 pour TensorRT), blocs 0 à 2 TensorRT, bloc 3 f16, bloc 4 TensorRT ; chaîne 49,1 dB contre TensorRT, 50,0 dB
+contre le natif f32 (TensorRT : 49,3) ; passe de lecture ×2 : TensorRT 3,40 ms, mélange 3,10 ms ; essai 2,7 s
+(réglage 1,1 s). ABAB sur Re:Zero, ×2 sans SPAN, `--one-lane`, 3 tours : 5,85 ms par passe en médiane contre
+6,42 ms, stable. Le mélange est donc plus proche du calcul exact que TensorRT. Trois défauts que le journal
+montrait, repris ensuite : le bloc 4, plus rapide en f16 (0,761 ms contre 0,870), laissé à TensorRT par
+l'ancien mélange (corrigé, point 4) ; les couches de 60 × 34 pixels des blocs 0 à 2 à 17 µs contre environ 13
+pour TensorRT (formes « poids à l'avance », point 1) ; la première convolution du bloc 4 relit X_4 en pleine
+taille (1920 × 1088 × 32 canaux, 134 Mo, 0,363 ms, environ 75 % de la bande passante), que la colle vient
+d'écrire : la calculer à la volée depuis les sources de la colle épargnerait les deux transferts, de l'ordre de
+0,4 ms par passe (le chantier suivant).
+
 Une valeur non finie d'un côté ou de l'autre (référence TensorRT comprise) écarte le natif. Un essai qui fait
 perdre le contexte CUDA (accès fautif d'un noyau) fait échouer le chargement au lieu de rendre une chaîne
 TensorRT morte ; tout autre refus laisse TensorRT, chargé et intact. La lecture des morceaux ONNX refuse ce que la
@@ -153,12 +177,18 @@ largeur), une transposée qui porte `output_shape`.
 
 Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`, aucun débordement de registres),
 relu, jamais lancé sur une carte : la justesse se juge à l'essai au chargement, la vitesse à la séance finale.
-Le réglage par couche et le mélange par morceau (novembre 2026) : les 96 noyaux instanciés (contre 66) passent
+Les formes « poids à l'avance » ajoutent 20 noyaux (118 en tout) : elles lisent les mêmes fragments dans le même
+ordre, plus tôt, et passent par le même contrôle au réglage. Le réglage par couche et le mélange par morceau
+(novembre 2026) : les 96 noyaux instanciés (contre 66) passent
 l'émulateur ci-dessous dans 216 cas (sommes f16 et f32 ; tranches, tuiles, lignes par warp, K découpé ou non ;
 grilles à bords incomplets et grilles de quelques blocs), à 1e-7 près ; le module grossit d'environ 3 Mo par
 architecture (9 Mo au lieu de 6 pour sm_89). Quand le réglage aura tourné sur le PC, les formes jamais retenues
 pourront quitter le module. L'essai dure plus longtemps (le journal donne la durée du réglage et de l'essai) :
 si c'est trop, garder les formes réglées d'un chargement à l'autre par carte et par taille.
+
+RIFE 4.22 lite passe par le même chemin : ses cinq morceaux (encodeur, blocs de 192, 128, 64 et 32 canaux aux
+réductions 8, 4, 2, 1) se lisent et passent la vérification des couches (contrôlé sur le modèle du catalogue,
+même empreinte que `tools/release/fetch-models.sh`) ; `--rife-native --rife-model=rife_v4.22_lite.onnx` l'essaie.
 
 Audit de novembre 2026 : un émulateur sur hôte des noyaux (ldmatrix et mma selon les tables PTX, chaque accès
 borné et aligné, mémoire partagée jamais lue avant écriture) a rejoué l'encodeur et les blocs de 4.25, 4.26,

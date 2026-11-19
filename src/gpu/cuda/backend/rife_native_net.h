@@ -48,6 +48,7 @@ struct RifeNativeTuned {
   int ct = 16;
   int rows = 2;
   int ksplit = 1;
+  bool ahead = false;  // poids une prise à l'avance (rife_native_kernels.cuh, accumulate)
 };
 
 class RifeNativeNet {
