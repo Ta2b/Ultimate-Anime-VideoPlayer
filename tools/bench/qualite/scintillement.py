@@ -29,115 +29,50 @@ meilleure. --porte F : sortie en erreur si la dernière sortie n'est pas devant 
 (la porte 0.1 du guide : SPAN sans TemporalFix, puis avec, --porte 0.9).
 
 Sans --source, le flux vient de la première sortie : à éviter, il la favorise.
-Il faut python3 avec numpy, ffmpeg et ffprobe ; onnx et onnxruntime pour --flux rife.
+Il faut python3 avec numpy, ffmpeg et ffprobe ; onnx et onnxruntime pour --flux rife. Le recalage est dans
+recalage.py ; les paires d'un lot se mesurent en parallèle (WORKERS fils), les vidéos se décodent d'avance.
 """
 import argparse
+import concurrent.futures
+import functools
 import json
 import os
+import queue
 import subprocess
 import sys
 import tempfile
+import threading
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from recalage import Aligned, Sampler, box, grid, luma, scale  # noqa: E402,F401  (box, scale : test_banc.py)
 
 CUT_SAFE = 0.30  # part sûre minimale d'une paire du même plan
 GRID = 4  # NVOF : un vecteur par bloc de 4 × 4 (nvof_dump)
+# Paires mesurées en parallèle, sur des fils : numpy lâche le GIL sur les grands tableaux. Au plus 8 (mémoire :
+# une centaine de Mo par paire en 1080p).
+WORKERS = max(1, min(8, os.cpu_count() or 1))
 
 
-def luma(rgb):
-    """Luminance BT.709 en niveaux 8 bits, d'une image H × W × 3 en uint8 ou uint16 ou 3 × H × W dans [0, 1]."""
-    if rgb.ndim == 3 and rgb.shape[-1] == 3:
-        y = rgb.astype(np.float32) @ np.array([0.2126, 0.7152, 0.0722], np.float32)
-        return y / 257.0 if rgb.dtype == np.uint16 else y
-    return 255.0 * (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2])
+# Les fournisseurs de flux : refs (liste d'images H × W × 3 uint8 de la source) → par paire, une fonction sans
+# argument qui rend son Aligned. Le gros du travail (les flux en pleine taille) se fait ainsi dans le fil qui mesure
+# la paire, et la mémoire d'une paire repart avec elle.
 
+def _nvof_aligned(v, w, h):
+    """L'Aligned d'une paire depuis le fichier de nvof_dump (int16 S10.5, l'aller puis le retour)."""
+    cw, ch = (w + GRID - 1) // GRID, (h + GRID - 1) // GRID
+    v = v.astype(np.float32) / 32.0
+    # nvof_dump : l'aller sur la grille de N, pointant dans N+1, puis le retour sur celle de N+1.
+    fwd = scale(v[:ch * cw * 2].reshape(ch, cw, 2).transpose(2, 0, 1), w, h, GRID)
+    bwd = scale(v[ch * cw * 2:].reshape(ch, cw, 2).transpose(2, 0, 1), w, h, GRID)
+    gx, gy = grid(h, w)
+    # Aller et retour : le vecteur arrière, suivi du vecteur aller là où il mène, revient au point.
+    at = Sampler(gx + bwd[0], gy + bwd[1], h, w)
+    err = np.hypot(bwd[0] + at(fwd[0]), bwd[1] + at(fwd[1]))
+    # Chaque image fait la moitié du chemin vers le milieu de la paire (même flou des deux côtés).
+    return Aligned(0.5 * bwd, -0.5 * bwd, err <= 1.0 + 0.05 * np.hypot(bwd[0], bwd[1]))
 
-def box(img, r=1):
-    """Moyenne (2r + 1) × (2r + 1), bords répétés."""
-    p = np.pad(img, r, mode="edge").astype(np.float64)
-    c = np.pad(p.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
-    n = 2 * r + 1
-    h, w = img.shape
-    return ((c[n:n + h, n:n + w] - c[:h, n:n + w] - c[n:n + h, :w] + c[:h, :w]) / (n * n)).astype(np.float32)
-
-
-def sample(img, x, y):
-    """Lecture bilinéaire de img (H × W) aux points (x, y), bords répétés."""
-    h, w = img.shape
-    x, y = np.clip(x, 0, w - 1), np.clip(y, 0, h - 1)
-    x0, y0 = np.minimum(np.floor(x).astype(np.int32), w - 2), np.minimum(np.floor(y).astype(np.int32), h - 2)
-    ax, ay = x - x0, y - y0
-    top = img[y0, x0] * (1 - ax) + img[y0, x0 + 1] * ax
-    return top * (1 - ay) + (img[y0 + 1, x0] * (1 - ax) + img[y0 + 1, x0 + 1] * ax) * ay
-
-
-def grid(h, w):
-    return np.mgrid[0:h, 0:w].astype(np.float32)[::-1]  # (x, y)
-
-
-def scale(field, w, h, step=None):
-    """Un champ C × h0 × w0 au bilinéaire en C × h × w (centres demi-pixel). Un flux garde ses unités : à multiplier.
-    step : un point du champ pour step × step pixels (la grille NVOF, dont le dernier bloc d'une taille qui n'en est
-    pas un multiple déborde de l'image) ; sinon le champ couvre l'image."""
-    _, h0, w0 = field.shape
-    x = (np.arange(w, dtype=np.float32) + 0.5) * (1.0 / step if step else w0 / w) - 0.5
-    y = (np.arange(h, dtype=np.float32) + 0.5) * (1.0 / step if step else h0 / h) - 0.5
-    xx, yy = np.broadcast_to(x[None, :], (h, w)), np.broadcast_to(y[:, None], (h, w))
-    return np.stack([sample(c, xx, yy) for c in field])
-
-
-class Aligned:
-    """Une paire recalée : warp(N, fa) face à warp(N + 1, fb) ; fb absent vaut l'identité."""
-
-    def __init__(self, fa, fb, coherent=None):
-        _, h, w = fa.shape
-        gx, gy = grid(h, w)
-        self.a = (gx + fa[0], gy + fa[1])
-        self.b = (gx + fb[0], gy + fb[1]) if fb is not None else None
-        self.coherent = coherent
-        self._bounds()
-
-    def _bounds(self):
-        h, w = self.a[0].shape
-        inside = np.ones((h, w), bool)
-        for x, y in (self.a, self.b) if self.b else (self.a,):
-            inside &= (x >= 0) & (x <= w - 1) & (y >= 0) & (y <= h - 1)
-        self.inside = inside if self.coherent is None else inside & self.coherent
-
-    def pair(self, ya, yb):
-        return sample(ya, *self.a), (sample(yb, *self.b) if self.b else yb)
-
-    def refine(self, ya, yb, steps=4, step=2):
-        """Corrige le flux d'une translation d'ensemble sous-pixel, par Lucas-Kanade global sur la source (un point sur
-        step × step), chaque image prenant la moitié de la correction. RIFE ignore les mouvements de moins d'un pixel
-        par image et NVOF est au quart de pixel : sur un panoramique lent, le reste du décalage compterait sinon comme
-        du scintillement. Rend la translation ajoutée (x, y)."""
-        total = np.zeros(2)
-        for _ in range(steps):
-            sub = (slice(None, None, step), slice(None, None, step))
-            ra = sample(ya, self.a[0][sub], self.a[1][sub])
-            rb = sample(yb, self.b[0][sub], self.b[1][sub]) if self.b else yb[sub]
-            r = ra - rb
-            gy, gx = np.gradient(0.5 * (ra + rb), step)
-            m = self.inside[sub] & (np.abs(r) < 30.0)  # les occlusions et les coupes ne tirent pas la solution
-            gx, gy, r = gx[m], gy[m], r[m]
-            mat = np.array([[gx @ gx, gx @ gy], [gx @ gy, gy @ gy]], np.float64)
-            if r.size < 64 or np.linalg.det(mat) < 1e-6 * max(1.0, np.trace(mat)) ** 2:
-                break  # image unie ou trait dans un seul sens : la translation n'est pas déterminée
-            d = np.clip(-np.linalg.solve(mat, np.array([gx @ r, gy @ r], np.float64)), -2.0, 2.0)
-            self.a = (self.a[0] + 0.5 * d[0], self.a[1] + 0.5 * d[1])
-            gxf, gyf = (self.b if self.b else grid(*ya.shape))
-            self.b = (gxf - 0.5 * d[0], gyf - 0.5 * d[1])
-            total += d
-            if np.hypot(*d) < 0.01:
-                break
-        self._bounds()
-        return tuple(total)
-
-
-# Les fournisseurs de flux : refs (liste d'images H × W × 3 uint8 de la source) → un Aligned par paire.
 
 def flux_nvof(tool):
     def run(refs):
@@ -158,16 +93,7 @@ def flux_nvof(tool):
             for o in outs:
                 if not os.path.exists(o) or os.path.getsize(o) != ch * cw * 8:
                     raise SystemExit(f"nvof_dump : flux absent ou tronqué pour la paire {len(result)} du lot")
-                v = np.fromfile(o, np.int16).astype(np.float32) / 32.0  # S10.5
-                # nvof_dump : l'aller sur la grille de N, pointant dans N+1, puis le retour sur celle de N+1.
-                fwd = scale(v[:ch * cw * 2].reshape(ch, cw, 2).transpose(2, 0, 1), w, h, GRID)
-                bwd = scale(v[ch * cw * 2:].reshape(ch, cw, 2).transpose(2, 0, 1), w, h, GRID)
-                gx, gy = grid(h, w)
-                # Aller et retour : le vecteur arrière, suivi du vecteur aller là où il mène, revient au point.
-                back = np.stack([sample(c, gx + bwd[0], gy + bwd[1]) for c in fwd])
-                err = np.hypot(bwd[0] + back[0], bwd[1] + back[1])
-                # Chaque image fait la moitié du chemin vers le milieu de la paire (même flou des deux côtés).
-                result.append(Aligned(0.5 * bwd, -0.5 * bwd, err <= 1.0 + 0.05 * np.hypot(bwd[0], bwd[1])))
+                result.append(functools.partial(_nvof_aligned, np.fromfile(o, np.int16), w, h))
             return result
 
     return run
@@ -189,39 +115,47 @@ def flux_rife(model, height):
         imgs = [r.transpose(2, 0, 1).astype(np.float32) / 255.0 for r in refs]
         if (fw, fh) != (w, h):
             imgs = [rife_taille.resize(i, fw, fh, rife_taille._area_axis) for i in imgs]
-        result = []
-        for a, b in zip(imgs, imgs[1:]):
-            _, flow, _ = rife_taille.estimate(sess, names, a, b, 2 * modeles.ALIGN)
+        def aligned(flow):
             flow = scale(flow, w, h)
             flow[0::2] *= w / fw
             flow[1::2] *= h / fh
-            result.append(Aligned(flow[0:2], flow[2:4]))
-        return result
+            return Aligned(flow[0:2], flow[2:4])
+
+        # ONNX Runtime a ses propres fils : les paires passent dans RIFE l'une après l'autre.
+        return [functools.partial(aligned, rife_taille.estimate(sess, names, a, b, 2 * modeles.ALIGN)[1])
+                for a, b in zip(imgs, imgs[1:])]
 
     return run
 
 
+@functools.lru_cache(maxsize=None)
+def _pool():
+    return concurrent.futures.ThreadPoolExecutor(WORKERS)
+
+
 def measure_pairs(refs, outs, flux, seuil, fondu):
-    """Les paires d'un lot : (« coupe » | « fondu » | « ok », {sortie : (moyen, 95e centile)})."""
-    rows = []
-    for k, al in enumerate(flux(refs)):
-        ya, yb = luma(refs[k]), luma(refs[k + 1])
-        al.refine(ya, yb)
-        ra, rb = al.pair(ya, yb)
+    """Les paires d'un lot, mesurées en parallèle : (« coupe » | « fondu » | « ok », {sortie : (moyen, 95e
+    centile)}). flux rend par paire un Aligned, ou une fonction qui le rend."""
+    pairs = flux(refs)
+    ys = list(_pool().map(luma, refs))
+
+    def one(k):
+        al = pairs[k]() if callable(pairs[k]) else pairs[k]
+        al.refine(ys[k], ys[k + 1])
+        ra, rb = al.pair(ys[k], ys[k + 1])
         safe = al.inside & (box(np.abs(ra - rb)) < seuil)
         if safe.mean() < CUT_SAFE:
-            rows.append(("coupe", {}))
-            continue
+            return ("coupe", {})
         if abs(float(ra[safe].mean()) - float(rb[safe].mean())) > fondu:
-            rows.append(("fondu", {}))
-            continue
+            return ("fondu", {})
         scores = {}
         for name, frames in outs.items():
             oa, ob = al.pair(frames[k], frames[k + 1])
             d = np.abs(oa - ob)[safe]
             scores[name] = (float(d.mean()), float(np.percentile(d, 95)))
-        rows.append(("ok", scores))
-    return rows
+        return ("ok", scores)
+
+    return list(_pool().map(one, range(len(pairs))))
 
 
 def shots(rows, names, min_pairs):
@@ -259,8 +193,9 @@ def offset(refs, frames, reach=2):
         return float((a * b).mean() / max(1e-6, np.sqrt((a * a).mean() * (b * b).mean())))
 
     n = min(len(refs), len(frames))
-    ys = [luma(r) for r in refs[:n]]
-    score = {o: np.mean([corr(ys[i], frames[i + o]) for i in range(max(0, -o), min(n, n - o))])
+    ys = [luma(r[::4, ::4]) for r in refs[:n]]  # un pixel sur seize suffit à reconnaître l'image
+    fs = [f[::4, ::4] for f in frames[:n]]
+    score = {o: np.mean([corr(ys[i], fs[i + o]) for i in range(max(0, -o), min(n, n - o))])
              for o in range(-reach, reach + 1) if n - abs(o) >= 4}
     if not score:
         return 0
@@ -356,15 +291,44 @@ def decode(video, size, rgb, start=None, limit=None):
             proc.wait()
 
 
+def prefetch(frames, depth):
+    """Les images d'un itérable, décodées d'avance dans un fil à part (au plus depth en attente) : ffmpeg et la
+    conversion en luminance travaillent pendant que les paires se mesurent."""
+    q, end = queue.Queue(depth), object()
+
+    def work():
+        try:
+            for frame in frames:
+                q.put(frame)
+            q.put(end)
+        except BaseException as e:  # noqa: B036 — l'erreur (ffmpeg, SystemExit) repart dans le fil principal
+            q.put(e)
+
+    threading.Thread(target=work, daemon=True).start()
+    while (item := q.get()) is not end:
+        if isinstance(item, BaseException):
+            raise item
+        yield item
+
+
 def rate(video):
-    """La cadence de la vidéo en images par seconde (ffprobe), ou une sortie en erreur si elle est illisible."""
-    done = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
-                           "-of", "csv=p=0", video], capture_output=True, text=True, check=False)
-    num, _, den = done.stdout.strip().partition("/")
-    try:
-        return float(num) / float(den or 1)
-    except (ValueError, ZeroDivisionError):
-        raise SystemExit(f"ffprobe, {os.path.basename(video)} : {done.stderr.strip() or 'pas de piste vidéo'}") from None
+    """La cadence de la vidéo en images par seconde (ffprobe : r_frame_rate, sinon avg_frame_rate), ou une sortie en
+    erreur si elle est illisible. La valeur seule, sans clé : selon la version, la sortie csv de ffprobe finit par une
+    virgule (« 24000/1001, »)."""
+    err = ""
+    for key in ("r_frame_rate", "avg_frame_rate"):
+        done = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", f"stream={key}",
+                               "-of", "default=noprint_wrappers=1:nokey=1", video],
+                              capture_output=True, text=True, check=False)
+        err = done.stderr.strip() or err
+        num, _, den = (done.stdout.strip().splitlines() or [""])[0].strip().rstrip(",").partition("/")
+        try:
+            value = float(num) / float(den or 1)
+        except (ValueError, ZeroDivisionError):
+            continue  # « 0/0 » : ffprobe ne sait pas
+        if value > 0:
+            return value
+    raise SystemExit(f"ffprobe, {os.path.basename(video)} : {err or 'pas de cadence lisible'}")
 
 
 def main():
@@ -410,8 +374,10 @@ def main():
     if a.source is None:
         print("sans --source : le flux vient de la première sortie, qu'il favorise", file=sys.stderr)
     flux = flux_nvof(a.nvof_dump) if a.flux == "nvof" else flux_rife(a.rife, a.hauteur_rife)
-    refs = decode(a.source or a.sorties[0], size, True, a.source_debut if a.source else None, a.images)
-    outs = {n: decode(s, size, False, None, a.images) for n, s in zip(names, a.sorties)}
+    depth = 40  # un lot et un peu plus
+    refs = prefetch(decode(a.source or a.sorties[0], size, True, a.source_debut if a.source else None, a.images),
+                    depth)
+    outs = {n: prefetch(decode(s, size, False, None, a.images), depth) for n, s in zip(names, a.sorties)}
     plans, count = run(refs, outs, flux, a.seuil, a.fondu, min_pairs=a.plan_min)
     if count["ok"] == 0:
         raise SystemExit("aucune paire mesurée : vidéos illisibles, trop courtes, ou que des coupes")

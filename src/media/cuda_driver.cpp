@@ -84,6 +84,7 @@ constexpr unsigned kMemoryTypeHost = 1;      // CU_MEMORYTYPE_HOST
 constexpr unsigned kMemoryTypeDevice = 2;    // CU_MEMORYTYPE_DEVICE
 constexpr unsigned kStreamNonBlocking = 1;   // CU_STREAM_NON_BLOCKING
 constexpr unsigned kEventDisableTiming = 2;  // CU_EVENT_DISABLE_TIMING
+constexpr unsigned kBlockingSync = 4;        // CU_CTX_SCHED_BLOCKING_SYNC
 #if defined(_WIN32)
 constexpr int kHandleOpaqueWin32 = 2;  // CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32
 #else
@@ -141,6 +142,8 @@ struct CudaDriver::Api {
   CUresult (*cuDeviceGetUuid)(CUuuid*, CUdevice) = nullptr;
   CUresult (*cuDevicePrimaryCtxRetain)(CUcontext*, CUdevice) = nullptr;
   CUresult (*cuDevicePrimaryCtxRelease)(CUdevice) = nullptr;
+  CUresult (*cuDevicePrimaryCtxGetState)(CUdevice, unsigned*, int*) = nullptr;
+  CUresult (*cuDevicePrimaryCtxSetFlags)(CUdevice, unsigned) = nullptr;
   CUresult (*cuCtxPushCurrent)(CUcontext) = nullptr;
   CUresult (*cuCtxPopCurrent)(CUcontext*) = nullptr;
   CUresult (*cuStreamCreate)(CUstream*, unsigned) = nullptr;
@@ -208,6 +211,8 @@ std::expected<std::shared_ptr<CudaDriver>, Refusal> CudaDriver::load() {
                      bind(library, "cuDeviceGetUuid", api->cuDeviceGetUuid) &&
                      bind(library, "cuDevicePrimaryCtxRetain", api->cuDevicePrimaryCtxRetain) &&
                      bind(library, "cuDevicePrimaryCtxRelease_v2", api->cuDevicePrimaryCtxRelease) &&
+                     bind(library, "cuDevicePrimaryCtxGetState", api->cuDevicePrimaryCtxGetState) &&
+                     bind(library, "cuDevicePrimaryCtxSetFlags_v2", api->cuDevicePrimaryCtxSetFlags) &&
                      bind(library, "cuCtxPushCurrent_v2", api->cuCtxPushCurrent) &&
                      bind(library, "cuCtxPopCurrent_v2", api->cuCtxPopCurrent) &&
                      bind(library, "cuStreamCreate", api->cuStreamCreate) &&
@@ -264,28 +269,30 @@ std::expected<int, Refusal> CudaDriver::ordinal_of(const CudaUuid& uuid) const {
 
 std::expected<std::uintptr_t, Refusal> CudaDriver::primary_context(int ordinal) const {
   CUdevice device = 0;
-  if (const CUresult result = api_->cuDeviceGet(&device, ordinal); result != kCudaSuccess) {
+  if (const CUresult result = api_->cuDeviceGet(&device, ordinal); result != kCudaSuccess)
     return refuse_cuda("cuDeviceGet", result);
-  }
   CUcontext context = nullptr;
-  if (const CUresult result = api_->cuDevicePrimaryCtxRetain(&context, device); result != kCudaSuccess) {
+  if (const CUresult result = api_->cuDevicePrimaryCtxRetain(&context, device); result != kCudaSuccess)
     return refuse_cuda("cuDevicePrimaryCtxRetain", result);
-  }
-  if (const CUresult result = api_->cuDevicePrimaryCtxRelease(device); result != kCudaSuccess) {
+  if (const CUresult result = api_->cuDevicePrimaryCtxRelease(device); result != kCudaSuccess)
     return refuse_cuda("cuDevicePrimaryCtxRelease", result);
-  }
   return std::bit_cast<std::uintptr_t>(context);
 }
 
 std::expected<PrimaryContext, Refusal> CudaDriver::retain_primary(int ordinal) const {
   CUdevice device = 0;
-  if (const CUresult result = api_->cuDeviceGet(&device, ordinal); result != kCudaSuccess) {
+  if (const CUresult result = api_->cuDeviceGet(&device, ordinal); result != kCudaSuccess)
     return refuse_cuda("cuDeviceGet", result);
-  }
+  // Inactif, il prend l'attente bloquante, que FFmpeg et TensorRT exigent d'un contexte déjà actif : le flux
+  // de la pré-analyse l'active parfois le premier (moteur Vulkan), avant NVENC ou TensorRT choisi en route.
+  unsigned flags = 0;
+  int active = 0;
+  if (api_->cuDevicePrimaryCtxGetState(device, &flags, &active) == kCudaSuccess && active == 0 &&
+      flags != kBlockingSync)
+    api_->cuDevicePrimaryCtxSetFlags(device, kBlockingSync);
   CUcontext context = nullptr;
-  if (const CUresult result = api_->cuDevicePrimaryCtxRetain(&context, device); result != kCudaSuccess) {
+  if (const CUresult result = api_->cuDevicePrimaryCtxRetain(&context, device); result != kCudaSuccess)
     return refuse_cuda("cuDevicePrimaryCtxRetain", result);
-  }
   std::shared_ptr<const CudaDriver> driver = shared_from_this();
   std::shared_ptr<const void> owner(
       context, [driver, device](CUctxOpaque*) { driver->api_->cuDevicePrimaryCtxRelease(device); });

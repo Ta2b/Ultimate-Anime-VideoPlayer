@@ -70,6 +70,11 @@ bool span_fp8_presumed(std::string_view gpu_name) {
   return cuda_arch_from_name(gpu_name) == "sm89";
 }
 
+bool span_native_presumed(std::string_view gpu_name) {
+  const std::string arch = cuda_arch_from_name(gpu_name);
+  return arch == "sm89" || arch == "sm120";
+}
+
 bool span_fp8_default(std::string_view gpu_name, bool tensorrt) {
 #if defined(__linux__)
   return tensorrt && span_fp8_presumed(gpu_name);

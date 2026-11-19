@@ -97,10 +97,12 @@ bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& 
     ImGui::EndCombo();
   }
   panel::tip(title,
-             i18n::tr("Quality computes in full precision (FP32) when the model has such a version; "
-                      "otherwise it runs like Balanced, as with the current SPAN models. Only useful to "
-                      "compare pictures. Speed: up to 2 to 3× slower, no change with the current SPAN "
-                      "models. Quality impact: imperceptible. Recommended: Balanced."),
+             i18n::tr("Quality sums in full precision (FP32) instead of FP16, with the same weights, so the "
+                      "picture stays closest to the model. Speed: on an RTX 40 or 50 (our own kernels), "
+                      "about 3 ms more per frame with AnimeJaNai Balanced and 0.3 ms with Performance "
+                      "(1080p to 4K, RTX 4070 Ti), still faster than TensorRT FP16; elsewhere it needs an "
+                      "FP32 version of the model, 2 to 3× slower. Quality impact: very slight. "
+                      "Recommended: Quality if the card keeps up, otherwise Balanced."),
              panel::Apply::Reload);
   return changed;
 }

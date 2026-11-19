@@ -78,6 +78,8 @@ nouveau paquet Linux.
 
 Écrit sans carte ni GPU (lavapipe ne fait pas tourner nos noyaux CUDA) ; jamais lancé. Audit du
 19 novembre : voisines d'une tuile changée, bord sortant d'un panoramique, lueur locale, recette de l'entrée,
-grade réellement passé, lecture déclarée aux voies, demande annulée après un refus. Le test
+grade réellement passé, lecture déclarée aux voies, demande annulée après un refus. Puis la mesure du
+contrôle (`scores_now`) qui, sous DistilDRBA après une image sautée, périmait le ticket du pont : `scores_now`
+a son propre emplacement, hors de l'anneau des tickets (`slice_ops_test.cpp`). Le test
 `tests/unit/app/upscale_tiles_test.cpp` couvre la dilatation, les masques et la décision sur des cartes
 synthétiques.

@@ -158,10 +158,33 @@ std::expected<void, Refusal> VulkanKernelOps::rife_time(const Tensor& input, flo
 }
 
 std::expected<PairScores, Refusal> VulkanKernelOps::scores_now(const Tensor& a, const Tensor& b) {
-  return scores_start(a, b).and_then([&](std::uint64_t ticket) { return scores_take(ticket); });
+  // Son propre emplacement, hors de l'anneau des tickets : une mesure immédiate ne périme aucune mesure en
+  // vol (les deux tickets de DistilDRBA après une image sautée, puis le contrôle des tuiles de SPAN).
+  PairRead& slot = pair_reads_[kPendingReadbacks];
+  if (auto ok = pair_launch(slot, a, b); !ok) return std::unexpected(std::move(ok.error()));
+  return pair_read(slot);
 }
 
 std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor& a, const Tensor& b) {
+  const std::uint64_t ticket = pair_tickets_ + 1;
+  PairRead& slot = pair_reads_[ticket % kPendingReadbacks];
+  if (auto ok = pair_launch(slot, a, b); !ok) return std::unexpected(std::move(ok.error()));
+  pair_tickets_ = ticket;
+  slot.ticket = ticket;
+  return ticket;
+}
+
+std::expected<PairScores, Refusal> VulkanKernelOps::scores_take(std::uint64_t ticket) {
+  PairRead& slot = pair_reads_[ticket % kPendingReadbacks];
+  if (ticket == 0 || slot.ticket != ticket || !slot.sums || !slot.worst) {
+    return refuse_slice(RefusalCode::SequenceOrder, std::format("scores_take : ticket {} périmé", ticket));
+  }
+  auto scores = pair_read(slot);
+  if (scores) slot.ticket = 0;
+  return scores;
+}
+
+std::expected<void, Refusal> VulkanKernelOps::pair_launch(PairRead& slot, const Tensor& a, const Tensor& b) {
   auto va = tensor_view(a, 3, "scores_start : image a");
   if (!va) return std::unexpected(va.error());
   auto vb = tensor_view(b, 3, "scores_start : image b");
@@ -169,8 +192,6 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
   if (va->width != vb->width || va->height != vb->height) {
     return refuse_slice(RefusalCode::ShapeInvalid, "scores_start : deux images RGB de même taille attendues");
   }
-  const std::uint64_t ticket = pair_tickets_ + 1;
-  PairRead& slot = pair_reads_[ticket % pair_reads_.size()];
   const std::uint32_t blocks = KernelRunner::block_count(va->width, va->height);
   auto sums_buffer = readback(slot.sums, VkDeviceSize{blocks} * sizeof(float), slot.value);
   if (!sums_buffer) return std::unexpected(sums_buffer.error());
@@ -193,27 +214,20 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
   if (auto ok = queue_.flush(); !ok) return std::unexpected(ok.error());
   const kernels::RifeGeometry g =
       kernels::rife_geometry(static_cast<int>(va->width), static_cast<int>(va->height));
-  pair_tickets_ = ticket;
-  slot.ticket = ticket;
   slot.value = queue_.ticket();
   slot.blocks = blocks;
   slot.levels = levels;
   slot.width = va->width;
   slot.height = va->height;
   slot.area = static_cast<double>(g.padded_width) * static_cast<double>(g.padded_height);
-  return ticket;
+  return {};
 }
 
-std::expected<PairScores, Refusal> VulkanKernelOps::scores_take(std::uint64_t ticket) {
-  PairRead& slot = pair_reads_[ticket % pair_reads_.size()];
-  if (ticket == 0 || slot.ticket != ticket || !slot.sums || !slot.worst) {
-    return refuse_slice(RefusalCode::SequenceOrder, std::format("scores_take : ticket {} périmé", ticket));
-  }
+std::expected<PairScores, Refusal> VulkanKernelOps::pair_read(const PairRead& slot) {
   // Attente hôte voulue : la décision de lancer RIFE dépend de cette paire (kernels/spec/detect.h).
   // Elle ne couvre que la mesure, pas ce que la file a reçu depuis.
   if (auto ok = context_.wait_on_host(queue_.at(slot.value), std::chrono::seconds(10), kQueryBeforeWait); !ok)
     return std::unexpected(ok.error());
-  slot.ticket = 0;
   std::vector<float> partials(slot.blocks);
   std::memcpy(partials.data(), slot.sums->mapped(), partials.size() * sizeof(float));
   double total = 0.0;
