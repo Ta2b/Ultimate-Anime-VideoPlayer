@@ -127,15 +127,27 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 39> kTrialOptions{
-    "--rife-image",      "--ring-rgb10a2",   "--no-ring-rgb10a2", "--hdr-metadata",   "--no-hdr-metadata",
-    "--probe-nvdec",     "--no-probe-nvdec", "--shot-cuts",       "--no-shot-cuts",   "--one-lane",
-    "--lanes",           "--skip-held",      "--anime-shots",     "--no-anime-shots", "--fast-steady",
-    "--smooth-drawings", "--ring-watcher",   "--no-ring-watcher", "--precise-wait",   "--no-precise-wait",
-    "--audio-pll",       "--no-audio-pll",   "--vsync-index",     "--no-vsync-index", "--present",
-    "--no-present",      "--no-vrr",         "--rife-calm-model", "--rife-warm",      "--profile-dispatches",
-    "--rife-encode-all", "--rife-at-slot",   "--filtered-warp",   "--warp-l2",        "--rife-hwc8",
-    "--no-rife-hwc8",    "--shot-plan",      "--no-tfix-cache",   "--scene-map"};
+constexpr std::array<std::string_view, 41> kTrialOptions{"--rife-image",      "--ring-rgb10a2",
+                                                         "--no-ring-rgb10a2", "--hdr-metadata",
+                                                         "--no-hdr-metadata", "--probe-nvdec",
+                                                         "--no-probe-nvdec",  "--shot-cuts",
+                                                         "--no-shot-cuts",    "--one-lane",
+                                                         "--lanes",           "--skip-held",
+                                                         "--anime-shots",     "--no-anime-shots",
+                                                         "--fast-steady",     "--smooth-drawings",
+                                                         "--ring-watcher",    "--no-ring-watcher",
+                                                         "--precise-wait",    "--no-precise-wait",
+                                                         "--audio-pll",       "--no-audio-pll",
+                                                         "--vsync-index",     "--no-vsync-index",
+                                                         "--present",         "--no-present",
+                                                         "--no-vrr",          "--rife-calm-model",
+                                                         "--rife-warm",       "--profile-dispatches",
+                                                         "--rife-encode-all", "--rife-at-slot",
+                                                         "--filtered-warp",   "--warp-l2",
+                                                         "--rife-hwc8",       "--no-rife-hwc8",
+                                                         "--no-tfix-cache",   "--scene-map",
+                                                         "--no-tfix-fused",   "--no-effect-highlights",
+                                                         "--shot-plan"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -157,7 +169,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 42> kFlags{{
+constexpr std::array<Flag, 44> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -176,6 +188,7 @@ constexpr std::array<Flag, 42> kFlags{{
     {"--anime-shots", &PlayOptions::anime_shots, true},
     // Le relèvement fixe, la lumière de la scène mesurée en direct.
     {"--no-anime-shots", &PlayOptions::anime_shots, false},
+    {"--no-effect-highlights", &PlayOptions::effect_highlights, false},
     {"--no-vrr", &PlayOptions::no_vrr, true},
     {"--one-lane", &PlayOptions::one_lane, true},
     {"--lanes", &PlayOptions::lanes, true},
@@ -186,6 +199,7 @@ constexpr std::array<Flag, 42> kFlags{{
     {"--rife-hwc8", &PlayOptions::rife_hwc8, true},
     {"--no-rife-hwc8", &PlayOptions::rife_hwc8, false},
     {"--span-native", &PlayOptions::span_native, true},
+    {"--no-tfix-fused", &PlayOptions::temporal_fix_fused, false},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},
     {"--rife-at-slot", &PlayOptions::rife_at_slot, true},
@@ -619,6 +633,8 @@ std::string play_usage(bool debug) {
          "                         Video menu option \"Smooth held drawings\" for this playback)\n"
          "  --no-tfix-cache        trial: temporal stabilization in one engine, each frame encoded at\n"
          "                         every pass, instead of the encoder cache (same output)\n"
+         "  --no-tfix-fused        trial: temporal stabilization by the encoder-cache graph instead of\n"
+         "                         the fused engines (TensorRT)\n"
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass instead of\n"
          "                         keeping the encoding of the pair and of the previous B (same output)\n"
@@ -626,6 +642,7 @@ std::string play_usage(bool debug) {
          "                         of its image instead of being queued when the pair arrives (same output)\n"
          "  --scene-map            trial: NVIDIA optical flow (RTX 30 and later) maps each pair: camera,\n"
          "                         tiles that move, cuts; same output until a feature reads it\n"
+         "  --no-effect-highlights with --scene-map: highlights on every light, not only on effects\n"
          "  --warp-l2              trial: TensorRT warp keeps the flow in persisting L2 (same output)\n"
          "  --no-rife-hwc8         trial: fused RIFE blocks built with planar inputs and outputs under\n"
          "                         TensorRT, with reformat copies (default: HWC8, same output)\n"

@@ -21,6 +21,7 @@
 #include <string_view>
 #include <utility>
 
+#include "app/play/effect_book.h"
 #include "app/play/pair_marks.h"
 #include "app/play/present_level.h"
 #include "core/inbox.h"
@@ -183,6 +184,8 @@ struct ShowRequest {
   // Débogage des paires (pair_marks.h) : l'image montrée vient d'une paire tenue ou coupée ; posée par-dessus
   // l'image comme l'OSD, hors de la composition gardée.
   std::optional<PairTint> tint;
+  // Éclats HDR sur les seuls effets (effect_book.h) : la carte de la paire de l'image ; rien sans carte.
+  std::optional<EffectNote> effects;
 };
 
 // L'image de l'interface pour ce tour (ui.h) : changed demande une présentation même sans image

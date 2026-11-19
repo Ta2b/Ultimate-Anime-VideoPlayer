@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "app/play/cut_book.h"
+#include "app/play/effect_book.h"
 #include "app/play/frame_latency.h"
 #include "app/play/motion_cut.h"
 #include "app/play/pair_marks.h"
@@ -364,6 +365,16 @@ class LiveSettings {
   PairMarks& pair_marks() { return pair_marks_; }
   const PairMarks& pair_marks() const { return pair_marks_; }
 
+  // Éclats HDR sur les seuls effets (effect_book.h), posé par main (--no-effect-highlights l'éteint) : gpu
+  // note alors la carte de la scène de chaque paire. Éteint, les notes passées s'effacent.
+  void set_effect_highlights(bool on) {
+    if (!on) effect_book_.clear();
+    effect_highlights_.store(on, std::memory_order_relaxed);
+  }
+  bool effect_highlights() const { return effect_highlights_.load(std::memory_order_relaxed); }
+  EffectBook& effect_book() { return effect_book_; }
+  const EffectBook& effect_book() const { return effect_book_; }
+
   // Garder les poses (kernels/spec/poses.h), lu par gpu au début de chaque paire.
   void set_keep_poses(bool keep) { keep_poses_.store(keep); }
   bool keep_poses() const { return keep_poses_.load(); }
@@ -436,6 +447,8 @@ class LiveSettings {
   std::atomic<bool> strong_middle_{false};
   std::atomic<bool> pair_marks_on_{false};
   PairMarks pair_marks_;
+  std::atomic<bool> effect_highlights_{true};
+  EffectBook effect_book_;
   std::atomic<bool> deband_source_{false};
   std::atomic<bool> hidden_{false};
   mutable std::mutex mutex_;

@@ -6,7 +6,7 @@ kirari_set_warnings(kirari_prepare_helper)
 kirari_add_unit_tests(prepare
   SOURCES
     builder_test.cpp cache_purge_test.cpp cache_test.cpp engine_cache_test.cpp drba_split_test.cpp identity_test.cpp onnx_dims_test.cpp onnx_frames_test.cpp onnx_outputs_test.cpp onnx_scan_test.cpp
-    onnx_permute_test.cpp rife_split_test.cpp rife_split_guards_test.cpp
+    onnx_permute_test.cpp rife_split_test.cpp rife_split_guards_test.cpp tfix_split_test.cpp
     process_test.cpp trtexec_command_test.cpp utf8_test.cpp)
 target_compile_definitions(kirari_prepare_tests PRIVATE KIRARI_PREPARE_HELPER="$<TARGET_FILE:kirari_prepare_helper>")
 add_dependencies(kirari_prepare_tests kirari_prepare_helper)

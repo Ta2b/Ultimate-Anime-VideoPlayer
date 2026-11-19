@@ -252,3 +252,17 @@
 //!MINIMUM 100.0
 //!MAXIMUM 10000.0
 1000.0
+
+//!PARAM fx_on
+//!DESC 1 = l'alpha de l'image porte le masque des effets (render/effect_mask.h) : la marge des eclats suit les effets
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM fx_rest
+//!DESC Masque des effets : la part de la montee qu'une lumiere hors effet garde (1 = toutes, le grade sans masque)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.4

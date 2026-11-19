@@ -1,8 +1,8 @@
 # Bibliothèque de warp CUDA (lot E)
 
 Tout ce qui déplace une image par un flot s'écrit une fois, ici, et ses clients la reprennent : la colle de RIFE
-fusionné aujourd'hui ; les warps de TemporalFix (lot B, étape 2), la composition par calques, le décalage des
-tuiles et RIFE guidé par le flot NVOF demain.
+fusionné et TemporalFix fusionné (lot B, étape 2 : `tfix_fused.cuh`, `docs/temporalfix.md`) aujourd'hui ; la
+composition par calques, le décalage des tuiles et RIFE guidé par le flot NVOF demain.
 
 ## Les pièces
 
