@@ -9,6 +9,7 @@ kirari_add_unit_tests(kernels
     gmfss_test.cpp
     drba_fused_test.cpp
     half_test.cpp
+    motion_camera_test.cpp
     motion_doubt_test.cpp
     layers_test.cpp
     parity_test.cpp

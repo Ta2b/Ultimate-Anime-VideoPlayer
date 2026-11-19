@@ -1,6 +1,8 @@
 // Noyau CUDA du fondu local du mouvement de RIFE (kernels/spec/motion_doubt.h, référence
 // kernels/ref/motion_doubt.cpp) : flot 1 × 4 et masque 1 × 1 FP16 lus, tirés vers le fondu selon une grille
-// de doute passée par valeur dans les paramètres du noyau (au plus 48 × 48 octets), écrits ailleurs.
+// de doute passée par valeur dans les paramètres du noyau (au plus 48 × 48 octets), écrits ailleurs. Et le
+// mouvement d'une caméra affine (kernels/spec/motion_camera.h, référence kernels/ref/motion_camera.cpp),
+// écrit aux mêmes formats.
 #pragma once
 
 #include <cstdint>
@@ -29,5 +31,20 @@ struct MotionDoubtParams {
 };
 
 cudaError_t launch_motion_doubt(const MotionDoubtParams& params, cudaStream_t stream);
+
+struct MotionCameraParams {
+  void* out_flow = nullptr;  // 1 × 4 × plane_height × plane_width, FP16
+  void* out_mask = nullptr;  // 1 × 1, même taille
+  int plane_width = 0;
+  int plane_height = 0;
+  int window_x = 0;
+  int window_y = 0;
+  int window_width = 0;
+  int window_height = 0;
+  float scale = 1.0F;  // pixels de la fenêtre par pixel de travail
+  float camera[6]{};   // NOLINT(*-avoid-c-arrays) : c0 à c5, pixels de travail
+};
+
+cudaError_t launch_motion_camera(const MotionCameraParams& params, cudaStream_t stream);
 
 }  // namespace kirari::gpu::cuda

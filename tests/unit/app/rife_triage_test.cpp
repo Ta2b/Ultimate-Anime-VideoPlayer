@@ -1,5 +1,6 @@
 // Tri des paires de RIFE par la carte de la scène (rife_triage.h) : un seul test pour le module, qui fait
-// passer les mêmes paires sans carte, sans le réglage, puis avec la carte (tenue, impossible, douteuse).
+// passer les mêmes paires sans carte, sans le réglage, puis avec la carte (tenue, impossible, douteuse), et
+// pour GMFSS seul (fondu et panoramique pur par la caméra, jamais par endroits).
 #include "app/play/rife_triage.h"
 
 #include <algorithm>
@@ -8,6 +9,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "kernels/spec/motion_camera.h"
 #include "kernels/spec/motion_doubt.h"
 
 namespace kirari::app::play {
@@ -110,6 +112,39 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
   CHECK(pooled.rows <= kernels::kDoubtMaxCells);
   CHECK(pooled.weights[static_cast<std::size_t>(pooled.cols - 1)] > 0);
   CHECK(std::ranges::count_if(pooled.weights, [](std::uint8_t w) { return w > 0; }) < 8);
+
+  // GMFSS seul : le dessin tenu copié comme pour RIFE ; l'effet dans un coin laisse la fusion ; la paire
+  // impossible fondue par la caméra identité ; le panoramique pur par la caméra de la carte.
+  RifeTriage gmfss;
+  gmfss.for_gmfss(true);
+  CHECK(gmfss.sort(by_flow, rife_runs(by_flow)) == PairSort::Held);
+  CHECK(gmfss.sort(moving(smoke, true), true) == PairSort::Today);
+  CHECK(gmfss.sort(moving(lost, true), true) == PairSort::Fade);
+  CHECK(gmfss.camera() == kernels::kCameraStill);
+  kernels::SceneMotion pan = calm_scene();
+  pan.drawing_held = true;
+  pan.camera = {12.0, 1.0, 0.0, -3.0, 0.0, 1.0};
+  pan.residual = 0.4;
+  pan.unmatched = 0.05;
+  CHECK(flow_pan(pan));
+  gmfss.reset();
+  CHECK(gmfss.sort(moving(pan, true), true) == PairSort::Pan);
+  CHECK(gmfss.camera()[0] == 12.0F);
+  CHECK(gmfss.camera()[3] == -3.0F);
+  CHECK(gmfss.counts().panned == 1);
+  CHECK(gmfss.counts().faded == 1);
+  // Un dessin qui bouge, un décor qui s'écarte de la caméra, ou un effet : pas un panoramique pur.
+  kernels::SceneMotion acting = pan;
+  acting.drawing_held = false;
+  CHECK_FALSE(flow_pan(acting));
+  kernels::SceneMotion loose = pan;
+  loose.residual = 3.0;
+  CHECK_FALSE(flow_pan(loose));
+  kernels::SceneMotion sparks = pan;
+  sparks.tiles[5] = {.kind = kernels::SceneClass::Effect, .confidence = 0.3F, .changed = true};
+  CHECK_FALSE(flow_pan(sparks));
+  // RIFE ne prend jamais le panoramique : la même carte y reste à RIFE tel quel.
+  CHECK(triage.sort(moving(pan, true), true) == PairSort::Today);
 }
 
 }  // namespace kirari::app::play

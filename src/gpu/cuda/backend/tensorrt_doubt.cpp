@@ -1,5 +1,8 @@
-// Fondu local du mouvement de RIFE (doubt_kernels.h, kernels/spec/motion_doubt.h) dans le backend TensorRT.
+// Fondu local du mouvement de RIFE (doubt_kernels.h, kernels/spec/motion_doubt.h) et mouvement d'une caméra
+// (kernels/spec/motion_camera.h) dans le backend TensorRT.
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -70,6 +73,33 @@ std::expected<void, Refusal> TensorRtBackend::motion_doubt(const Motion& motion,
   if (auto ok = order({motion.flow.handle, motion.mask.handle}, {out.flow.handle, out.mask.handle}); !ok)
     return ok;
   return cuda_check(launch_motion_doubt(params, stream_), "motion_doubt<<<>>>");
+}
+
+std::expected<void, Refusal> TensorRtBackend::motion_camera(const std::array<float, 6>& camera, float scale,
+                                                            const Motion& out) {
+  if (!(scale > 0.0F) || !std::isfinite(scale) ||
+      !std::ranges::all_of(camera, [](float c) { return std::isfinite(c); })) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("motion_camera : échelle {} ou caméra non finie", scale));
+  }
+  // Mêmes contrôles que le fondu, sur la seule sortie.
+  if (!same_motion_shapes(out, out)) {
+    return refuse(RefusalCode::ShapeInvalid,
+                  "motion_camera : flot FP16 1×4 et masque 1×1 de mêmes plans, fenêtre dedans, attendus");
+  }
+  if (auto ok = bind(); !ok) return ok;
+  MotionCameraParams params{.out_flow = const_cast<void*>(address(out.flow)),  // NOLINT : écrit
+                            .out_mask = const_cast<void*>(address(out.mask)),  // NOLINT : écrit
+                            .plane_width = static_cast<int>(out.flow.shape.dims[3]),
+                            .plane_height = static_cast<int>(out.flow.shape.dims[2]),
+                            .window_x = out.area.x,
+                            .window_y = out.area.y,
+                            .window_width = out.area.width,
+                            .window_height = out.area.height,
+                            .scale = scale};
+  std::copy(camera.begin(), camera.end(), params.camera);
+  if (auto ok = order({}, {out.flow.handle, out.mask.handle}); !ok) return ok;
+  return cuda_check(launch_motion_camera(params, stream_), "motion_camera<<<>>>");
 }
 
 }  // namespace kirari::gpu::cuda
