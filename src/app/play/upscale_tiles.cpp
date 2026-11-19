@@ -65,7 +65,8 @@ void SpanTiles::set_grid(const kernels::SpanTileGrid& grid) {
 
 template <class Visit>
 void SpanTiles::tiles_under(std::size_t b, Visit&& visit) const {
-  const auto col = static_cast<float>(b % block_cols_), row = static_cast<float>(b / block_cols_);
+  const std::size_t block_col = b % block_cols_, block_row = b / block_cols_;  // division entière voulue
+  const auto col = static_cast<float>(block_col), row = static_cast<float>(block_row);
   // Arrondi vers l'extérieur : un bloc à cheval touche les deux tuiles.
   for_tiles(grid_, static_cast<int>(std::floor(col * block_px_)),
             static_cast<int>(std::floor(row * block_px_)),
