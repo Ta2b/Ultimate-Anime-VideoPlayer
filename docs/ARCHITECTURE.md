@@ -21,7 +21,7 @@ tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 | `av` | Le texte d'un code AVERROR de FFmpeg (`av_error.h`), en-tête seul : `core` ne lie pas FFmpeg | celui de l'appelant |
 | `media` | Démultiplexage, décodage matériel, horodatage | source |
 | `gpu` | Ring de sortie, backends chargés à l'exécution (`backend.h`, `kernel_ops.h`) | thread du lecteur qui les appelle |
-| `gpu_ir` | Représentation interne des réseaux ONNX, commune aux moteurs Vulkan et Metal | celui de l'appelant |
+| `gpu_ir` | Représentation interne des réseaux ONNX, du moteur Vulkan (import ONNX, passes, interpréteur CPU de référence) | celui de l'appelant |
 | `gpu_span_fp8` | Paquet de poids du SPAN entier en FP8 (noyaux CUTLASS du backend TensorRT, `docs/span-fp8-cutlass.md`) | celui de l'appelant |
 | `prepare` | Construction des moteurs TensorRT (`trtexec`), cache des moteurs, découpe des ONNX | thread « install » ou celui de l'appelant |
 | `audio` | Décodage audio, sortie SDL3, horloge | audio |
@@ -288,11 +288,12 @@ spdlog en `SPDLOG_USE_STD_FORMAT`, par la cible `ajp::core_log` :
 
 ## Moteurs
 
-Seul notre moteur Vulkan est livré partout (Metal en plus sous macOS). Les autres
-sont des paquets facultatifs : l'écran « Moteurs » du premier lancement les
-présélectionne selon le GPU détecté (`core/engines.h`), avec des badges
-(Recommandé, NVIDIA uniquement, Compatibilité…). On y revient depuis les
-paramètres. Un moteur n'est retiré que s'il n'a plus d'intérêt nulle part.
+Seul notre moteur Vulkan est livré dans les paquets (Linux, Windows) ; Core ML
+se construit avec le lecteur sous macOS, qui n'est plus publié. TensorRT est un
+paquet facultatif : l'écran « Moteur » du premier lancement le propose sur une
+NVIDIA RTX (`core/engines.h`), et Vidéo > Général permet d'en changer. La
+stabilisation temporelle (TemporalFix, `docs/temporalfix.md`) ne tourne que sous
+TensorRT pour l'instant. Un moteur n'est retiré que s'il n'a plus d'intérêt nulle part.
 
 ## Moteur de réseaux Vulkan : copies
 

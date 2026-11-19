@@ -29,7 +29,7 @@ les mesures ont donné, sans arrondir en faveur de la demande.
 
 Par défaut, donc : **GMFSS passe au FP8 sur la paire** (gain réel, qualité tenue), sur une RTX 40 et après avec TensorRT, et
 retombe seul sur le FP16 si le graphe manque ou si le moteur ne calcule pas le FP8. **RIFE et DistilDRBA restent en FP16**,
-et le cran Performance de ces deux réseaux reste visible dans Réglages avancés > Fluidité avec une note honnête (voir
+et le cran Performance de ces deux réseaux ne se choisit plus que dans `play.toml` (`motion_precision`), le menu ne le montre plus (voir
 plus bas) : aucun graphe FP8 de RIFE n'est publié, celui de DistilDRBA l'est comme fichier facultatif.
 
 ## Méthode
@@ -142,9 +142,9 @@ Performance de RIFE le lecteur couperait de plus RIFE fusionné (1,3 ms contre 4
   reste Équilibre, et l'automatique ne le passe jamais en FP8.
   Conséquence : GMFSS fusionné (`gmfss_fused`, éteint par défaut, `gmfss-fusionne.md`) ne se découpe qu'au cran Équilibre ;
   pour l'essayer il faut passer GMFSS en Équilibre (le journal dit « cran de précision hors Équilibre » sinon).
-- **Réglages avancés > Fluidité** : le sélecteur de précision de RIFE et de DistilDRBA propose Performance quand le graphe
-  `_fp8` est là, avec une infobulle qui donne les chiffres de ce document (RIFE : −5 % à +27 %, qualité hors garde, coupe
-  RIFE fusionné ; DistilDRBA : −11 %, qualité tenue, coupe le fusionné).
+- **`motion_precision` de `play.toml`** (le menu à la manière de Dolphin ne montre plus ce sélecteur) : Performance sert
+  quand le graphe `_fp8` est là. Les chiffres de ce document : RIFE −5 % à +27 %, qualité hors garde, coupe RIFE
+  fusionné ; DistilDRBA −11 %, qualité tenue, coupe le fusionné.
 - Pas de dérivation native C++ à la façon du `.span8` : SPAN a un paquet FP8 parce que ses convolutions en
   pleine résolution y gagnent 34 à 37 % avec des noyaux CUTLASS dédiés (`span-fp8-cutlass.md`). Ici le gain de GMFSS vient d'un graphe ONNX que
   TensorRT fond déjà ; le reste n'a pas de gain à dériver. Le graphe FP8 de GMFSS est calibré hors ligne sur des images

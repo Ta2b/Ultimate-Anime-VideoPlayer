@@ -3,8 +3,8 @@
 Sous TensorRT, DistilDRBA v2 lite peut tourner coupé en quatre petits moteurs (l'encodeur, en lot de trois images, et les
 trois blocs, des convolutions à basse résolution) reliés par des noyaux CUDA maison pour tout le reste : réductions
 d'images, choix du côté de la paire selon tau, Resize, DepthToSpace, flot, grille, GridSample, Concat, masque sigmoïde,
-mélange. Par défaut quand la découpe est valide ; le DistilDRBA entier reprend sinon. Réglage : Réglages avancés >
-Fluidité > « DistilDRBA fusionné » (`interpolation.drba_fused` de `play.toml`).
+mélange. Par défaut quand la découpe est valide ; le DistilDRBA entier reprend sinon. Réglage :
+`interpolation.drba_fused` de `play.toml` (le menu ne le montre plus ; l'onglet Interpolation dit l'état du fusionné).
 
 Prototype et banc : `tools/bench/fp8/drba_fusion/` (même méthode que `rife_fusion` de la branche
 `worktree-agent-a68dd8d8bff2ff77e`). Ce document dit ce qui en est devenu produit. Les convolutions ne font que 28 % du

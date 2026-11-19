@@ -27,7 +27,7 @@ AJP.app) :
 | 4 | `skin fix.cube` | 1 |
 | 5 | `HDR-contrast-Enhancement-L.cube` | les 4/7 restants du contraste |
 
-Deux curseurs avancés (Vidéo > Couleurs : `look_contrast`, `look_highlight` de `play.toml`, de −100 à 100)
+Deux curseurs (Vidéo > Général, encadré Couleurs : `look_contrast`, `look_highlight` de `play.toml`, de −100 à 100)
 règlent l'intensité du contraste et des éclats : −100 retire la LUT, 100 double son intensité. Une intensité
 de plus de 1 devient des LUT entières, puis une partielle (`anime_look_mixes`).
 

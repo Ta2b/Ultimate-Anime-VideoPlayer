@@ -75,7 +75,9 @@ Voir l'interface sans écran : `xvfb-run ajp --software-gpu --mute --no-upscale 
 
 La CI ne se lance qu'à la main (en-tête de `.github/workflows/ci.yml`) : rien de ce workflow sur les pull requests, les poussées
 ni la nuit. Seules tournent seules les tâches de veille (`deps-watch.yml`, qui lance ci.yml sur sa branche de
-dépendances, `vendor-watch.yml`, `resign-manifest.yml`) et `release-linux.yml` sur la branche `release/linux`. Avant d'ouvrir une PR, lancer en local les étapes de `rules.yml` (les scripts de `tools/ci/`) et les
+dépendances, `vendor-watch.yml`, `resign-manifest.yml`) et `release-linux.yml` sur la branche `release/linux`. Dependabot (`.github/dependabot.yml`) ouvre chaque mois
+ses PR pour les actions épinglées par SHA et les requirements de `tools/ci/requirements` ; `vcpkg.json` garde sa
+`builtin-baseline`, que `deps-watch.yml` fait avancer. Avant d'ouvrir une PR, lancer en local les étapes de `rules.yml` (les scripts de `tools/ci/`) et les
 tests des modules touchés ; une PR risquée (Windows, CUDA, CMake) se vérifie par un lancement de ci.yml sur sa
 branche. Après un lot de PR fusionnées, un lancement sur main ; avant chaque étiquette, un lancement vert sur son
 commit, que la garde de release exige (`docs/signature-des-releases.md`).

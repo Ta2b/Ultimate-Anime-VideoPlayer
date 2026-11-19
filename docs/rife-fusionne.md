@@ -4,8 +4,8 @@ Sous TensorRT, RIFE 4.26, 4.25, 4.22 lite et 4.25 lite ([`rife-candidats.md`](ri
 peuvent tourner coupés en six petits moteurs (l'encodeur et les blocs, des
 convolutions à basse résolution) reliés par des noyaux CUDA maison pour tout ce qui travaille en pleine résolution
 (DepthToSpace, Resize, flot, grille, GridSample, Concat, mélange à masque). Par défaut quand la découpe est valide ;
-le RIFE entier reprend sinon. Réglage : Réglages avancés > Fluidité > « RIFE fusionné » (`interpolation.rife_fused`
-de `play.toml`).
+le RIFE entier reprend sinon. Réglage : `interpolation.rife_fused` de `play.toml`
+(le menu ne le montre plus ; l'onglet Interpolation dit seulement quand la découpe est refusée).
 
 Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent-a68dd8d8bff2ff77e` (768×1280 fixe,
 4.25 seul : 2,20 ms contre 6,46 ms pour le réseau entier). Ce document dit ce qui en est devenu produit.

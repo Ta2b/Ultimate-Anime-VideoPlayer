@@ -234,11 +234,12 @@ vers TensorRT n'y changerait rien, et rien de ce qui est dans le chemin chaud n'
 
 ## Dérivation native, dans le lecteur
 
-Réglages avancés > Vidéo > Post-traitement : **« Préparer le mode Performance (SPAN FP8) »** (`src/app/play/span_derive.h`).
-Visible quand le moteur annonce `span_fp8_cutlass` (sm 8.9) et qu'une vidéo est ouverte ; sinon une note dit pourquoi.
-Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « Évaluer ma machine ». La case
-« Préparer en tâche de fond » (éteinte par défaut, `[span_prepare] background` de `play.toml`) lance la même tâche à la fin de
-« Évaluer ma machine » quand une vidéo est ouverte, que rien n'est déjà prêt et que le niveau gardé est Rapide ou plus.
+Avec la précision Performance de SPAN, le lecteur prépare ce mode seul pour la vidéo ouverte (environ une minute, FP16
+en attendant). Vidéo > Agrandissement > Avancé, encadré **« Mode Performance de SPAN (FP8) »** : « Préparer de nouveau
+pour cette vidéo » le refait à la main (`src/app/play/span_derive.h`, `span_prepare_section`), grisé hors FP8. Visible
+quand le moteur annonce `span_fp8_cutlass` (sm 8.9) et qu'une vidéo est ouverte ; sinon une note dit pourquoi. Tâche de
+fond (`std::async`, barre de progression, bouton Annuler). L'ancienne case « Préparer en tâche de fond »
+(`[span_prepare] background`) est retirée ; un ancien `play.toml` qui la porte se lit sans elle.
 
 | Étape | Où | Définition |
 |---|---|---|

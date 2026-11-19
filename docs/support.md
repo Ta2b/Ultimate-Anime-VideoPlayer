@@ -1,6 +1,6 @@
 # Support : où sont le journal et les plantages
 
-Le bouton « Signaler un problème » (Général > À propos) copie un rapport nettoyé (chemins réduits au nom du
+Le bouton « Signaler un problème » (Général > Application) copie un rapport nettoyé (chemins réduits au nom du
 fichier, dossier personnel remplacé) : version, système, carte, pilote, moteur, **réglages changés** par rapport au
 défaut, dernière séance et fin du journal. Quand le lecteur ne s'ouvre plus, les fichiers se prennent à la main.
 
