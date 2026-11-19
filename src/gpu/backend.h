@@ -108,7 +108,9 @@ namespace kirari::gpu {
 // 50 : Engine::span_tile_grid et next_span_tiles (les tuiles qui bougent : SPAN sur les seules tuiles
 // changées, la sortie d'avant reprise ou décalée ; kernels/spec/span_tiles.h).
 // 51 : KernelOps::compose_layers (l'interpolation par calques et la plaque de décor, kernels/spec/layers.h).
-inline constexpr int kBackendAbi = 51;
+// 52 : kTrialRifeNative (le RIFE fusionné par nos noyaux, docs/rife-natif.md) : un module d'avant ignorerait
+// le bit sans le dire.
+inline constexpr int kBackendAbi = 52;
 
 using DeviceUuid = kirari::DeviceUuid;
 
