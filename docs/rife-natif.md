@@ -135,6 +135,11 @@ f32 natif somme presque exactement : ses 49,3 dB contre TensorRT disent surtout 
 qui arrondissent à des endroits différents. Aucune variante native ne passera nettement au-dessus contre
 TensorRT ; les 50 dB de la cible se jugent contre le natif f32 (la ligne du verdict les donne).
 
+Remesure avec les sommes mixtes et la mesure du temps (#897, même PC, même extrait) : f16 41,8 dB, mixtes
+43,8 dB, f32 49,3 dB contre TensorRT ; seul le f32 tenait les 45 dB, et il restait plus lent (passe de lecture ×2 :
+TensorRT 3,64 ms, f32 4,03 ms). Le natif était donc écarté, TensorRT gardait la chaîne à la même cadence (138,6 i/s).
+D'où ce travail : têtes en f32 et précision par morceau pour la justesse, réglage des formes pour la vitesse.
+
 Une valeur non finie d'un côté ou de l'autre (référence TensorRT comprise) écarte le natif. Un essai qui fait
 perdre le contexte CUDA (accès fautif d'un noyau) fait échouer le chargement au lieu de rendre une chaîne
 TensorRT morte ; tout autre refus laisse TensorRT, chargé et intact. La lecture des morceaux ONNX refuse ce que la
