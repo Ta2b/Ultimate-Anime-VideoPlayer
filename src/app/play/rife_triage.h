@@ -54,12 +54,12 @@ inline constexpr double kPanUnmatched = 0.1;
 // change.
 bool flow_held(const kernels::SceneMotion& scene);
 
-// Le doute brut de chaque tuile de la carte, dans [0, 1] : 1 pour un effet qui change, 1 − confiance / seuil
-// pour une tuile qui change avec une confiance basse, 0 sinon.
 // Vrai si la carte dit un panoramique pur : la caméra ajustée bouge, aucun dessin ne bouge par rapport à
 // elle, ni fondu ni coupe, peu de vecteurs sans correspondance et un décor qui suit le modèle.
 bool flow_pan(const kernels::SceneMotion& scene);
 
+// Le doute brut de chaque tuile de la carte, dans [0, 1] : 1 pour un effet qui change, 1 − confiance / seuil
+// pour une tuile qui change avec une confiance basse, 0 sinon.
 std::vector<float> tile_doubt(const kernels::SceneMotion& scene);
 
 // La grille de doute d'un champ de doutes cols × rows (tuiles) : dilatée d'une tuile puis adoucie (3 × 3),
