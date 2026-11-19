@@ -162,27 +162,42 @@ l'ordonnancement (chaque ligne marquée de la couche qui l'a écrite) l'a vérif
 hauteurs de 1 à 540 lignes et des bandes de 1 à 1000. Les tuiles qui bougent, qui veulent la grille de
 l'image entière, se passent des bandes.
 
-Le banc balaie la hauteur (`BANDS`, 0, 64, 192 et 270 en plus du défaut) et juge la justesse avec et sans
-bandes : les deux écarts à la référence doivent être égaux, l'ordre des bandes ne change aucune somme.
+Le banc balaie la hauteur (`BANDS`, 0, 64, 192 et 270 en plus du défaut). Avec EXPORT, il dépose aussi la
+sortie sans bandes, que `justesse_cpu.py` compare au bit près à celle du défaut : l'ordre des bandes ne change
+aucune somme.
 
 ## Mesurer
 
-Un seul banc, sur CachyOS, binaire `linux-release` :
+Le PC ne mesure que les temps ; la justesse se juge sur processeur, dans le cloud. Un seul banc, sur CachyOS,
+binaire `linux-release` :
 
 ```sh
 cmake --build --preset linux-release --target kirari_span_fp8_run
-flock ~/kirari-reports/gpu-bench.lock tools/bench/span_native/banc.sh build/linux-release \
+EXPORT=/mnt/project-files/span-native/$(date +%Y%m%d-%H%M) \
+  flock ~/kirari-reports/gpu-bench.lock tools/bench/span_native/banc.sh build/linux-release \
     ~/modeles/2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx \
     ~/modeles/…_Performance_…_b5f48_….onnx -- extrait.mkv
 ```
 
 Il construit le moteur TensorRT FP16 de chaque modèle, puis donne en ABAB 3 tours la médiane de TensorRT et
-des noyaux natifs (graphe CUDA tous deux, bandes par défaut), les natifs à d'autres hauteurs de bande et en
-f32, et l'écart de la sortie native à la référence FP16 à sommes f32 (PSNR, plus grand écart, valeurs non
-finies), avec et sans bandes. L'essai C0 (E/S HWC8 de TensorRT) n'y est plus : il a perdu. Dans le
-lecteur : `kirari play --stats` ; le journal dit « SPAN FP16 natif chargé : …, sommes f16 » au cran Équilibre,
-« …, sommes f32 » au cran Qualité, « SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran Performance
-avec `--span-native-edges` ; le profil de fin coupe le SPAN en corps, attente de l'emplacement et queue
+des noyaux natifs (graphe CUDA tous deux, bandes par défaut), et les natifs à d'autres hauteurs de bande et en
+f32. EXPORT est à donner seulement quand les noyaux ont changé : après les temps, le banc dépose pour chaque
+modèle le modèle, l'entrée et une sortie de chaque mode (f16 aux bandes du lecteur, f16 sans bandes, f32), en
+demi-flottants, un plan par fichier (16,6 Mo en 4K). Dans le cloud :
+
+```sh
+python3 -I tools/bench/span_native/justesse_cpu.py /mnt/project-files/span-native/<date>/<modèle>
+```
+
+refait le modèle en FP32 par ONNX Runtime sur processeur (quelques secondes en 1080p), donne l'écart de
+chaque sortie (PSNR, plus grand écart, valeurs non finies) et dit si la sortie sans bandes est la même au bit
+près. La référence n'est plus celle du GPU (FP16 à sommes f32, `--compare`) mais le FP32 entier : les dB
+ne se comparent pas un à un à ceux de l'État ci-dessous. L'essai C0 (E/S HWC8 de TensorRT) n'y est plus : il
+a perdu.
+
+Dans le lecteur : `kirari play --stats` ; le journal dit « SPAN FP16 natif chargé : …, sommes f16 » au cran
+Équilibre, « …, sommes f32 » au cran Qualité, « SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran
+Performance avec `--span-native-edges` ; le profil de fin coupe le SPAN en corps, attente de l'emplacement et queue
 (« Lecture contre banc »).
 
 ## Décision
