@@ -18,6 +18,7 @@
 
 #include "core/cadence.h"
 #include "gpu/kernel_ops.h"
+#include "kernels/spec/scene_flow.h"
 
 namespace kirari::app::play {
 
@@ -37,6 +38,10 @@ struct PairFacts {
   double useful_area = 1.0;
   // Une coupe mesurée par RIFE moins de kCutBurstUs avant la paire (CutBurst).
   bool cut_burst = false;
+  // La carte de la scène de la paire (kernels/spec/scene_flow.h, scene_map.h) ; absente (AMD, Intel, Turing
+  // sans coût, NVOF refusé, --scene-map éteint, pas encore relue) : chaque client se comporte exactement
+  // comme sans elle. Aucune fonction de ce fichier ne la lit encore.
+  std::optional<kernels::SceneMotion> scene;
 };
 
 // Coupes de RIFE en rafale. Une vraie coupe que la pré-analyse manque est une paire isolée ; un mouvement
