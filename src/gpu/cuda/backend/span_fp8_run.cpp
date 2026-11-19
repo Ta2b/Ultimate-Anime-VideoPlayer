@@ -3,8 +3,8 @@
 // (PSNR et SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
 //   kirari_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
-//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--band N] [--shared-weights]
-//                    [--compare]
+//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--band N]
+//                    [--shared-weights | --no-shared-weights] [--compare]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
@@ -15,8 +15,9 @@
 // mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. --acc16 :
 // accumulateur f16, comme le drapeau du paquet. --acc32 : le FP16 natif somme en f32, en f16 sans l'option.
 // --band N : le FP16 natif en bandes de N lignes de demi-résolution (0 : chaque couche sur l'image entière ;
-// sans l'option, SpanFp8Weights::band, celle du lecteur). --shared-weights : le FP16 natif prend les poids de
-// chaque pas en mémoire partagée (SpanFp8Weights::shared_weights), à l'essai.
+// sans l'option, SpanFp8Weights::band, celle du lecteur). --shared-weights, --no-shared-weights : le FP16
+// natif prend ou non les poids de chaque pas en mémoire partagée ; sans l'option, le choix du lecteur
+// (SpanFp8Weights::shared_weights).
 // --compare : la sortie est aussi calculée par la référence FP16 (sommes f32) et l'écart dit sur la sortie
 // standard (PSNR, plus grand écart, valeurs non finies) : un seul lancement juge la vitesse et la justesse.
 // À lancer sous le
@@ -75,7 +76,7 @@ struct Options {
   kirari::gpu::cuda::SpanNativeSums sums = kirari::gpu::cuda::SpanNativeSums::F16;
   bool compare = false;
   int band = -1;  // --band ; négatif : celle du lecteur
-  bool shared_weights = false;
+  kirari::gpu::cuda::SpanSharedWeights shared_weights = kirari::gpu::cuda::SpanSharedWeights::Auto;
 };
 
 // Les options après les cinq arguments ; vide si toutes se lisent, sinon la première qui ne se lit pas.
@@ -93,7 +94,9 @@ std::string read_options(int argc, char* const* argv, Options& options) {
     } else if (option == "--acc32") {
       options.sums = kirari::gpu::cuda::SpanNativeSums::F32;
     } else if (option == "--shared-weights") {
-      options.shared_weights = true;
+      options.shared_weights = kirari::gpu::cuda::SpanSharedWeights::On;
+    } else if (option == "--no-shared-weights") {
+      options.shared_weights = kirari::gpu::cuda::SpanSharedWeights::Off;
     } else if (option == "--compare") {
       options.compare = true;
     } else if (option == "--per-tap") {

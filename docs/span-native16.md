@@ -167,7 +167,7 @@ Le banc balaie la hauteur (`BANDS`, 0, 64, 192 et 270 en plus du défaut). Avec 
 sortie sans bandes, que `justesse_cpu.py` compare au bit près à celle du défaut : l'ordre des bandes ne change
 aucune somme.
 
-## Poids partagés (à l'essai)
+## Poids partagés (à 48 canaux)
 
 Le plafond du b8f64 en f16 est de 6,3 ms (1,006 TFLOP par image à 160 TFLOPS, sommes f16) ; le natif en fait
 10,64, soit 59 % du plafond, quand le f32 tient 85 % du sien (14,74 contre 12,6 ms) avec les mêmes noyaux. Ce
@@ -196,10 +196,13 @@ mémoire partagée remplie de NaN à chaque bloc et ses bornes vérifiées) pour
 f32, avec et sans bandes ; sur GPU, par le test « les poids partagés rendent la même sortie au bit près ».
 Aucun débordement de registres sur sm 8.9 et 12.0.
 
-Le banc les passe dans les mêmes tours que le défaut (colonne « Poids partagés ») ; avec EXPORT,
-`justesse_cpu.py` vérifie le bit près sur l'image réelle. Gagnant, la variante devient le défaut et
-l'option disparaît ; perdante, elle part. Si elle gagne sans approcher le plafond, la suite est de fondre les
-couches d'un bloc SPAB, puis un réglage par couche ; Winograd en dernier, après une mesure de ses dB.
+Au banc (3 tours ABAB, bandes par défaut) : 5,21 → 5,02 ms au b5f48 (−3,7 %), mais 10,64 → 11,07 ms au
+b8f64 (+4,1 %). L'hypothèse ne tient donc pas à 64 canaux : les poids relus n'y étaient pas la limite, et la
+barrière par pas (36 par 3×3, deux blocs de quatre warps par SM) coûte plus que le L2 épargné. Pourquoi
+48 canaux gagnent (27 pas, tuile au pas impair inchangée) n'est pas établi ; un profil Nsight Compute le
+dirait (`span-bilan.md`). Le défaut (`SpanSharedWeights::Auto`) les prend à 48 canaux seulement ;
+`kirari_span_fp8_run --shared-weights` ou `--no-shared-weights` force le choix, et le banc mesure les deux
+dans les mêmes tours que le défaut.
 
 ## Mesurer
 
@@ -262,3 +265,8 @@ Dans le lecteur (Spy×Family, 30 s, SPAN seul, b8f64) : 66,6 dB et 15,0 ms au cr
 Banc de #933 (b8f64, 1080p → 4K, bandes) : TensorRT FP16 14,76 ms, natif f16 10,98 ms à 64 lignes (0,74×),
 10,64 ms à 128 lignes, sous les 11,2 ms d'AnimeJaNai, à 62,66 dB ; natif f32 14,74 ms à 77,90 dB ; sommes
 promues 14,39 ms à 71,51 dB (retirées).
+
+Banc de #963 (mêmes conditions, 3 tours ABAB) : b8f64 TensorRT FP16 14,76 ms, natif f16 10,64 ms (0,72×),
+bandes 0, 64, 192 et 270 à 10,98, 10,98, 10,78 et 11,60 ms, f32 14,44 ms, poids partagés 11,07 ms ; b5f48
+TensorRT 8,80 ms, natif f16 5,21 ms (0,59×), bandes 5,83, 5,22, 5,30 et 5,59 ms, f32 5,95 ms, poids partagés
+5,02 ms, sous les 5,8 ms d'AnimeJaNai.

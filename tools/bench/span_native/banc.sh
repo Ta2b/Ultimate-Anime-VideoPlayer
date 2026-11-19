@@ -3,8 +3,9 @@
 # TensorRT FP16 (trtexec, graphe CUDA) contre nos noyaux FP16 natifs (kirari_span_fp8_run, graphe CUDA), en
 # ABAB, les natifs en f32, et le balayage des bandes (docs/span-native16.md, « Bandes ») : le défaut du
 # lecteur (128 lignes, ou 64 si le L2 ne les tient pas) en ABAB, puis sans bandes et à d'autres hauteurs
-# ($BANDS). Les poids partagés (« Poids partagés », --shared-weights) passent dans les mêmes tours que le
-# défaut, dans l'ordre inverse un tour sur deux. Le tableau des temps finit dans $OUT/resume.md.
+# ($BANDS). Les poids partagés forcés, avec et sans (« Poids partagés », --shared-weights et
+# --no-shared-weights ; le défaut les prend à 48 canaux), passent dans les mêmes tours que le défaut, dans
+# l'ordre inverse un tour sur deux. Le tableau des temps finit dans $OUT/resume.md.
 #
 # Le PC ne fait que les temps : la justesse se juge sur processeur, dans le cloud. Avec EXPORT=DOSSIER, le banc
 # écrit pour chaque modèle, dans DOSSIER/<modèle>/, le modèle, l'entrée et une sortie de chaque mode (f16 aux
@@ -61,9 +62,9 @@ native_ms() { # modèle [options] -> médiane en ms
 }
 
 {
-  printf '| Modèle | TensorRT FP16 (ms) | Natif f16 (ms) | Natif/TRT | Poids partagés (ms) |'
+  printf '| Modèle | TensorRT FP16 (ms) | Natif f16 (ms) | Natif/TRT | Poids partagés (ms) | Sans (ms) |'
   for b in $BANDS; do printf ' Bandes %s (ms) |' "$b"; done
-  printf ' Natif f32 (ms) |\n|---|---:|---:|---:|---:|'
+  printf ' Natif f32 (ms) |\n|---|---:|---:|---:|---:|---:|'
   for b in $BANDS; do printf -- '---:|'; done
   printf -- '---:|\n'
 } >"$OUT/resume.md"
@@ -77,20 +78,22 @@ for model in "${MODELS[@]}"; do
     --builderOptimizationLevel=5 --saveEngine="$engine" >"$OUT/$name.build.log" 2>&1 ||
     "$TRTEXEC" --onnx="$model" --builderOptimizationLevel=5 --saveEngine="$engine" >"$OUT/$name.build.log" 2>&1 ||
     { echo "construction TensorRT de $name échouée ($OUT/$name.build.log)" >&2; exit 1; }
-  t=(); n=(); s=(); for r in $(seq 1 "$ROUNDS"); do  # ABAB : une dérive d'horloge ne pèse pas d'un seul côté
+  t=(); n=(); s=(); o=(); for r in $(seq 1 "$ROUNDS"); do  # ABAB : une dérive d'horloge ne pèse pas d'un seul côté
     if ((r % 2)); then
-      t+=("$(trt_ms "$engine")"); n+=("$(native_ms "$model")"); s+=("$(native_ms "$model" --shared-weights)")
+      t+=("$(trt_ms "$engine")"); n+=("$(native_ms "$model")")
+      s+=("$(native_ms "$model" --shared-weights)"); o+=("$(native_ms "$model" --no-shared-weights)")
     else
-      s+=("$(native_ms "$model" --shared-weights)"); n+=("$(native_ms "$model")"); t+=("$(trt_ms "$engine")")
+      o+=("$(native_ms "$model" --no-shared-weights)"); s+=("$(native_ms "$model" --shared-weights)")
+      n+=("$(native_ms "$model")"); t+=("$(trt_ms "$engine")")
     fi
-    echo "$name tour $r : TensorRT ${t[-1]} ms, natif ${n[-1]} ms, poids partagés ${s[-1]} ms"
+    echo "$name tour $r : TensorRT ${t[-1]} ms, natif ${n[-1]} ms, poids partagés ${s[-1]} ms, sans ${o[-1]} ms"
   done
   n32="$(native_ms "$model" --acc32)"
   sweep=""; for b in $BANDS; do sweep+=" $(native_ms "$model" --band "$b") |"; done
   med() { printf '%s\n' "$@" | sort -g | sed -n "$((($# + 1) / 2))p"; }
-  mt="$(med "${t[@]}")"; mn="$(med "${n[@]}")"; ms="$(med "${s[@]}")"
-  printf '| %s | %s | %s | %s | %s |%s %s |\n' "$name" "$mt" "$mn" \
-    "$(awk -v a="$mn" -v b="$mt" 'BEGIN{printf "%.2f", a/b}')" "$ms" "$sweep" "$n32" >>"$OUT/resume.md"
+  mt="$(med "${t[@]}")"; mn="$(med "${n[@]}")"; ms="$(med "${s[@]}")"; mo="$(med "${o[@]}")"
+  printf '| %s | %s | %s | %s | %s | %s |%s %s |\n' "$name" "$mt" "$mn" \
+    "$(awk -v a="$mn" -v b="$mt" 'BEGIN{printf "%.2f", a/b}')" "$ms" "$mo" "$sweep" "$n32" >>"$OUT/resume.md"
 done
 
 # Les données de la justesse, après tous les temps : une sortie par mode, en demi-flottants (les noyaux
