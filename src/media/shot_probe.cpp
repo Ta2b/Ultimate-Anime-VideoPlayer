@@ -34,13 +34,25 @@ class Analysis {
  public:
   // flow : le flux optique de NVIDIA (media/probe_flow.h) ; sans carte NVIDIA, l'analyse comme avant.
   Analysis(ShotTimeline& timeline, double flash_gain, bool starts_at_cut, bool flow)
-      : timeline_(timeline), cutter_(starts_at_cut), flow_(flow ? ProbeFlow::open() : nullptr) {
+      : timeline_(timeline), cutter_(starts_at_cut) {
     flashes_.set_gain(flash_gain);
+    if (!flow) return;
+    auto opened = ProbeFlow::open();
+    if (opened) {
+      flow_ = std::move(*opened);
+      make_logger()->info("pré-analyse des plans : flux optique NVIDIA en {}x{}", kProbeFlowWidth,
+                          kProbeFlowHeight);
+    } else {
+      make_logger()->info("pré-analyse des plans : sans flux optique NVIDIA ({})", opened.error());
+    }
   }
   // La mesure de l'image décodée frame, avec son mouvement face à la précédente.
   std::expected<ShotFrame, Refusal> measure(const DecodedFrame& frame) {
     auto measured = measure_frame(frame);
-    if (measured && flow_) measured->motion = flow_->push(frame);
+    if (!measured || !flow_) return measured;
+    measured->motion = flow_->push(frame);
+    if (auto failure = flow_->take_failure())
+      make_logger()->warn("pré-analyse des plans : flux optique NVIDIA arrêté ({})", *failure);
     return measured;
   }
   void push(const ShotFrame& frame) {

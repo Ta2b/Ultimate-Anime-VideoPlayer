@@ -457,24 +457,16 @@ std::expected<void, Refusal> CudaDriver::copy_host_2d(std::uintptr_t context, st
                                                       std::size_t height) const {
   const ContextScope scope(*api_, context);
   if (!scope.ok()) return refuse_cuda("cuCtxPushCurrent", -1);
-  Memcpy2D copy{};
-  if (to_device) {
-    copy.src_memory_type = kMemoryTypeHost;
+  Memcpy2D copy{.width_bytes = width_bytes, .height = height};
+  copy.src_memory_type = to_device ? kMemoryTypeHost : kMemoryTypeDevice;
+  copy.dst_memory_type = to_device ? kMemoryTypeDevice : kMemoryTypeHost;
+  copy.src_pitch = to_device ? host_pitch : device_pitch;
+  copy.dst_pitch = to_device ? device_pitch : host_pitch;
+  (to_device ? copy.dst_device : copy.src_device) = static_cast<CUdeviceptr>(device);
+  if (to_device)
     copy.src_host = host;
-    copy.src_pitch = host_pitch;
-    copy.dst_memory_type = kMemoryTypeDevice;
-    copy.dst_device = static_cast<CUdeviceptr>(device);
-    copy.dst_pitch = device_pitch;
-  } else {
-    copy.src_memory_type = kMemoryTypeDevice;
-    copy.src_device = static_cast<CUdeviceptr>(device);
-    copy.src_pitch = device_pitch;
-    copy.dst_memory_type = kMemoryTypeHost;
+  else
     copy.dst_host = host;
-    copy.dst_pitch = host_pitch;
-  }
-  copy.width_bytes = width_bytes;
-  copy.height = height;
   if (const CUresult result = api_->cuMemcpy2DAsync(&copy, std::bit_cast<CUstream>(stream));
       result != kCudaSuccess)
     return refuse_cuda("cuMemcpy2DAsync", result);
