@@ -30,9 +30,9 @@ class RifeNativeTrial {
   int pieces() const { return engine_.plan_.blocks + 1; }
   static std::string piece_name(int piece);
 
-  // La justesse de chaque réseau, morceau par morceau : [morceau][réseau], en dB contre TensorRT (pic : la
-  // plus grande valeur absolue de la sortie de TensorRT, au moins 1 ; -infini sur une valeur non finie), avec
-  // la colle que chaque réseau garde au moment de l'appel.
+  // La justesse de chaque réseau, morceau par morceau : [morceau][réseau], en dB contre TensorRT sur la même
+  // entrée, le rôle le plus bas (flot, masque, traits ; rife_mix::piece_db), -infini sur une valeur non
+  // finie, avec la colle que chaque réseau garde au moment de l'appel.
   std::expected<std::vector<std::vector<double>>, Refusal> quality(
       std::span<const RifeNativeNet* const> nets);
   // Le temps seul de chaque morceau, en millisecondes : [morceau][option], l'option 0 TensorRT, puis nets.

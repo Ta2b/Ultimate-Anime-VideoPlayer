@@ -117,12 +117,13 @@ TEST_CASE("RIFE natif : un TensorRT bruité laisse passer un natif juste contre 
 TEST_CASE("RIFE natif : un natif faux ne devient jamais sa propre référence", "[rife_mix]") {
   Fake fake;
   fake.wrong_piece = 1;  // le bloc 0, f16 comme f32
-  fake.wrong_bias = sigma_of(43.0);
+  fake.trt_sigma = sigma_of(46.0) / std::sqrt(3.0);
+  fake.wrong_bias = sigma_of(50.0);
   // La chaîne de TensorRT reste à plus de kChainFloorDb du natif f32 (le biais s'y noie dans son bruit) :
   // seul le plancher des morceaux voit le défaut, sur la même entrée.
   REQUIRE(mix::worst_psnr(fake.run(mix::Options(kPieces, kF32)), fake.run(mix::Options(kPieces, 0)), kPlane,
                           false) >= mix::kChainFloorDb);
-  const Outcome now = choose(fake, {65.0, 43.0, 72.0});
+  const Outcome now = choose(fake, {65.0, 50.0, 72.0});
   CHECK_FALSE(now.reference.native);
   CHECK(now.reference.bar_db == std::vector<double>{45.0});
   CHECK(now.mix.options[1] == 0);
@@ -175,4 +176,63 @@ TEST_CASE("RIFE natif : un natif qui rend des NaN n'est jamais retenu", "[rife_m
   fake.nan_native = true;
   const Outcome now = choose(fake, kGoodPieces);
   for (const int o : now.mix.options) CHECK(o != kF16);
+}
+
+TEST_CASE("RIFE natif : le rôle le plus bas d'un morceau", "[rife_mix]") {
+  // Y d'un bloc : 52 canaux par pixel. Un défaut sur le seul masque (canaux 16 à 19) se lit à sa taille.
+  constexpr int kChannels = 52;
+  std::vector<float> want(static_cast<std::size_t>(kChannels) * 256);
+  for (std::size_t i = 0; i < want.size(); ++i) want[i] = 0.5F + 0.4F * static_cast<float>(i % 13) / 13.0F;
+  std::vector<float> got = want;
+  for (std::size_t i = 0; i < got.size(); ++i)
+    if (const std::size_t c = i % kChannels; c >= 16 && c < 20) got[i] += 0.01F;  // 40 dB sur le masque
+  const double whole = mix::piece_db(want, got, 0);
+  const double by_role = mix::piece_db(want, got, kChannels);
+  CHECK(by_role < 40.5);
+  CHECK(whole > by_role + 10.0);
+  CHECK(mix::piece_db(want, want, kChannels) == 200.0);
+  got[3] = std::numeric_limits<float>::quiet_NaN();
+  CHECK(mix::piece_db(want, got, kChannels) == -std::numeric_limits<double>::infinity());
+  CHECK(mix::piece_db(want, std::vector<float>(3), kChannels) == -std::numeric_limits<double>::infinity());
+}
+
+TEST_CASE("RIFE natif : variante mouvement, une barre par groupe", "[rife_mix]") {
+  // Deux groupes (flot, masque), barres différentes : le choix les tient chacun.
+  std::vector<float> want(5 * kPlane, 0.5F);
+  const auto chain = [&](const mix::Options& o) -> std::expected<std::vector<float>, kirari::Refusal> {
+    std::vector<float> out = want;
+    std::mt19937 rng(static_cast<std::uint32_t>(o[0] * 3 + o[1]));
+    for (std::size_t p = 0; p < o.size(); ++p) {
+      // Le natif f16 du morceau 1 abîme le masque (39 dB), celui du morceau 0 reste à 50 dB partout.
+      const double flow = o[p] == kF16 ? sigma_of(50.0) : 0.0;
+      const double mask = o[p] == kF16 ? sigma_of(p == 1 ? 39.0 : 50.0) : 0.0;
+      std::normal_distribution<double> nf(0.0, flow);
+      std::normal_distribution<double> nm(0.0, mask);
+      for (std::size_t i = 0; i < 4 * kPlane && flow > 0.0; ++i) out[i] += static_cast<float>(nf(rng));
+      for (std::size_t i = 4 * kPlane; i < 5 * kPlane && mask > 0.0; ++i)
+        out[i] += static_cast<float>(nm(rng));
+    }
+    return out;
+  };
+  const mix::Grid t(2, std::vector<double>{1.0, 0.8, 1.2});
+  const mix::Judge judge{.want = &want, .plane = kPlane, .motion = true, .bar_db = {45.0, 43.6}, .base = 0};
+  auto got = mix::choose_mix(t, judge, chain);
+  REQUIRE(got.has_value());
+  CHECK(got->options == mix::Options{kF16, 0});
+}
+
+TEST_CASE("RIFE natif : des tailles incohérentes sont refusées", "[rife_mix]") {
+  const std::vector<float> want(3 * kPlane, 0.5F);
+  const auto chain = [&](const mix::Options&) -> std::expected<std::vector<float>, kirari::Refusal> {
+    return want;
+  };
+  const mix::Grid t = times();
+  CHECK_FALSE(mix::choose_mix(t, {.want = &want, .plane = kPlane, .bar_db = {45.0}, .base = 3}, chain));
+  CHECK_FALSE(mix::choose_mix(t, {.want = &want, .plane = kPlane, .bar_db = {45.0, 45.0}, .base = 0}, chain));
+  CHECK_FALSE(mix::choose_mix(t, {.want = &want, .plane = kPlane + 1, .bar_db = {45.0}, .base = 0}, chain));
+  CHECK_FALSE(mix::choose_mix({}, {.want = &want, .plane = kPlane, .bar_db = {45.0}, .base = 0}, chain));
+  const auto short_chain = [](const mix::Options&) -> std::expected<std::vector<float>, kirari::Refusal> {
+    return std::vector<float>(7);
+  };
+  CHECK_FALSE(mix::choose_mix(t, {.want = &want, .plane = kPlane, .bar_db = {45.0}, .base = 0}, short_chain));
 }

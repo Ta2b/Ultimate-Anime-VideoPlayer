@@ -29,19 +29,6 @@ std::unexpected<Refusal> failed(cudaError_t error, const char* step) {
   return std::unexpected(cuda_refusal(error, std::format("RIFE natif : essai par morceau ({})", step)));
 }
 
-double psnr(const std::vector<float>& want, const std::vector<float>& got) {
-  double peak = 1.0;
-  double sum = 0.0;
-  for (std::size_t i = 0; i < want.size(); ++i) {
-    if (!std::isfinite(got[i]) || !std::isfinite(want[i])) return -std::numeric_limits<double>::infinity();
-    peak = std::max(peak, static_cast<double>(std::abs(want[i])));
-    const double d = static_cast<double>(got[i]) - static_cast<double>(want[i]);
-    sum += d * d;
-  }
-  const double mse = sum / static_cast<double>(std::max<std::size_t>(want.size(), 1));
-  return mse == 0.0 ? 200.0 : 10.0 * std::log10(peak * peak / mse);
-}
-
 double median(std::vector<double> of) {
   std::ranges::sort(of);
   return of.empty() ? 0.0 : of[of.size() / 2];
@@ -119,10 +106,12 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::qualit
   for (int p = 0; p < pieces(); ++p) {
     auto want = output(p, nullptr);
     if (!want) return std::unexpected(std::move(want.error()));
+    const int channels =
+        p == 0 ? 0 : kernels::rife_fused_y(engine_.plan_, p - 1, engine_.height_, engine_.width_).channels;
     for (const RifeNativeNet* net : nets) {
       auto got = output(p, net);
       if (!got) return std::unexpected(std::move(got.error()));
-      db[static_cast<std::size_t>(p)].push_back(psnr(*want, *got));
+      db[static_cast<std::size_t>(p)].push_back(rife_mix::piece_db(*want, *got, channels));
     }
     // La sortie de TensorRT reprend sa place : la colle d'un bloc suivant mesuré colle comprise la lit.
     if (auto ok = engine_.run_piece(stream_, shared_, input_, p, nullptr); !ok)

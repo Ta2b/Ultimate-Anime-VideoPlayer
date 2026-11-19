@@ -47,6 +47,12 @@ std::vector<double> group_db(const std::vector<float>& want, const std::vector<f
 double worst_psnr(const std::vector<float>& want, const std::vector<float>& got, std::size_t plane,
                   bool motion);
 
+// Un morceau contre celui de TensorRT sur la même entrée : le PSNR du rôle le plus bas, chacun à son pic
+// (max(1, |want|)). channels : 0 pour l'encodage (4 plans, un seul rôle) ; sinon Y d'un bloc, par pixel, dont
+// les canaux 4c + parité sont le flot (c < 4) puis le masque (c = 4), le reste les traits. Un défaut du seul
+// masque (4 canaux sur 52) se lit ainsi à sa taille, sans la dilution d'un PSNR sur tout le tenseur.
+double piece_db(const std::vector<float>& want, const std::vector<float>& got, int channels);
+
 // Les options qu'un morceau peut prendre (times : [morceau][option]) : TensorRT, et chaque réseau plus rapide
 // que lui (un réseau plus lent ne gagne rien sur TensorRT).
 std::vector<std::vector<int>> candidates(const Grid& times);
@@ -55,12 +61,16 @@ bool all_trt(const Options& options);
 Options fastest_options(const Grid& times);
 
 // La garde de la référence native. Chaque morceau du réseau f32 sort, sur la même entrée, à kPieceFloorDb au
-// moins de celui de TensorRT : une comparaison sans le bruit des blocs suivants (61,9 à 79,6 dB mesurés), qui
-// voit un défaut du natif plus gros que les arrondis de TensorRT. Et la chaîne de TensorRT est à
-// kChainFloorDb au moins de la chaîne native f32. Sinon la référence reste TensorRT : un natif faux ne
-// devient jamais sa propre référence, et un refus à tort ne fait que revenir à l'ancienne règle.
+// moins de celui de TensorRT, rôle par rôle (piece_db) : une comparaison sans le bruit des blocs suivants
+// (61,9 à 79,6 dB mesurés sur tout le tenseur), qui voit un défaut du natif plus gros que les arrondis de
+// TensorRT. Et la chaîne de TensorRT est à kChainFloorDb au moins de la chaîne native f32 (43,6 dB sur le
+// 4.22 lite, 49,3 sur le 4.25) : la barre d'un mélange ne descend jamais sous elle. Sinon la référence
+// reste TensorRT : un natif faux ne devient jamais sa propre référence, et un refus à tort ne fait que
+// revenir à l'ancienne règle. La garde suppose le natif f32 proche du calcul exact, ce que seuls les
+// morceaux attestent ; un mélange qui tient la barre contre lui peut s'écarter de la sortie de TensorRT un
+// peu plus que la barre (les deux écarts s'ajoutent).
 inline constexpr double kPieceFloorDb = 60.0;
-inline constexpr double kChainFloorDb = 40.0;
+inline constexpr double kChainFloorDb = 42.0;
 
 struct Reference {
   bool native = false;         // vrai : la chaîne native f32 ; faux : celle de TensorRT
@@ -113,7 +123,7 @@ struct Judge {
 // selon une corrélation qui part de 0 et que chaque vérification manquée recale, avec une marge de plus pour
 // les mélanges de plusieurs morceaux hors de base. Le dernier essai ne prend qu'un mélange d'au plus un tel
 // morceau, mesuré tel quel ; sans mélange qui tienne, ou si le plus rapide est tout à TensorRT, tout à
-// TensorRT.
+// TensorRT. Refusé si les tailles ne s'accordent pas (temps, base, barre, sortie de want).
 std::expected<Mix, Refusal> choose_mix(const Grid& times, const Judge& judge, const Chain& chain);
 
 }  // namespace kirari::gpu::cuda::rife_mix

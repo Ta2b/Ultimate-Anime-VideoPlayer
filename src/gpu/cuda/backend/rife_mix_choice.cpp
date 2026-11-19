@@ -2,6 +2,7 @@
 #include "gpu/cuda/backend/rife_mix_choice.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <limits>
@@ -180,6 +181,30 @@ double worst_psnr(const std::vector<float>& want, const std::vector<float>& got,
   return worst_db(group_peak(want, plane, motion), group_mse(want, got, plane, motion));
 }
 
+double piece_db(const std::vector<float>& want, const std::vector<float>& got, int channels) {
+  if (want.size() != got.size() || want.empty()) return -std::numeric_limits<double>::infinity();
+  const auto per_pixel = static_cast<std::size_t>(std::max(channels, 1));
+  if (want.size() % per_pixel != 0) return -std::numeric_limits<double>::infinity();
+  // Le rôle de chaque canal : 0 le flot, 1 le masque, 2 les traits ; un seul rôle sans canaux.
+  const auto role = [channels](std::size_t c) { return channels <= 0 ? 0 : c < 16 ? 0 : c < 20 ? 1 : 2; };
+  std::array<double, 3> peak{1.0, 1.0, 1.0};
+  std::array<double, 3> sum{};
+  std::array<std::size_t, 3> count{};
+  for (std::size_t i = 0; i < want.size(); ++i) {
+    if (!std::isfinite(got[i]) || !std::isfinite(want[i])) return -std::numeric_limits<double>::infinity();
+    const int r = role(i % per_pixel);
+    const auto at = static_cast<std::size_t>(r);
+    peak[at] = std::max(peak[at], static_cast<double>(std::abs(want[i])));
+    const double d = static_cast<double>(got[i]) - static_cast<double>(want[i]);
+    sum[at] += d * d;
+    ++count[at];
+  }
+  double worst = std::numeric_limits<double>::infinity();
+  for (std::size_t r = 0; r < 3; ++r)
+    if (count[r] > 0) worst = std::min(worst, db_of(peak[r], sum[r] / static_cast<double>(count[r])));
+  return worst;
+}
+
 std::vector<std::vector<int>> candidates(const Grid& times) {
   std::vector<std::vector<int>> out(times.size());
   for (std::size_t p = 0; p < times.size(); ++p) {
@@ -231,10 +256,26 @@ Reference reference_of(const std::vector<double>& pieces_db, const std::vector<d
 std::expected<Mix, Refusal> choose_mix(const Grid& times, const Judge& judge, const Chain& chain) {
   constexpr int kAttempts = 4;
   constexpr double kSlack = 0.5;
+  const std::size_t groups = groups_of(judge.motion).size();
+  const std::size_t planes = groups_of(judge.motion).back().second;
+  const std::size_t options = times.empty() ? 0 : times.front().size();
+  const bool consistent =
+      judge.want != nullptr && options > 0 && judge.base >= 0 &&
+      static_cast<std::size_t>(judge.base) < options && judge.bar_db.size() == groups &&
+      judge.want->size() == planes * judge.plane &&
+      std::ranges::all_of(times, [options](const std::vector<double>& t) { return t.size() == options; });
+  if (!consistent)
+    return refuse(RefusalCode::ShapeInvalid, "RIFE natif : choix du mélange sur des tailles incohérentes");
   const std::vector<float>& want = *judge.want;
+  const auto run = [&](const Options& o) -> std::expected<std::vector<float>, Refusal> {
+    auto got = chain(o);
+    if (got && got->size() != want.size())
+      return refuse(RefusalCode::ShapeInvalid, "RIFE natif : sortie de la chaîne d'une autre taille");
+    return got;
+  };
   const auto cands = candidates(times);
   const std::vector<double> peak = group_peak(want, judge.plane, judge.motion);
-  Effects effects(times.size(), std::vector<std::vector<double>>(times.front().size()));
+  Effects effects(times.size(), std::vector<std::vector<double>>(options));
   Mix mix{.options = Options(times.size(), 0)};
   for (std::size_t p = 0; p < times.size(); ++p) {
     effects[p][static_cast<std::size_t>(judge.base)].assign(peak.size(), 0.0);
@@ -242,7 +283,7 @@ std::expected<Mix, Refusal> choose_mix(const Grid& times, const Judge& judge, co
       if (o == judge.base) continue;
       Options alone(times.size(), judge.base);
       alone[p] = o;
-      auto got = chain(alone);
+      auto got = run(alone);
       if (!got) return std::unexpected(std::move(got.error()));
       auto& effect = effects[p][static_cast<std::size_t>(o)];
       effect = group_mse(want, *got, judge.plane, judge.motion);
@@ -254,7 +295,7 @@ std::expected<Mix, Refusal> choose_mix(const Grid& times, const Judge& judge, co
     if (attempt + 1 == kAttempts) bar.multi = std::numeric_limits<double>::infinity();
     auto pick = fastest_within(times, cands, effects, peak, bar, judge.base);
     if (!pick || all_trt(pick->first)) break;
-    auto got = chain(pick->first);
+    auto got = run(pick->first);
     if (!got) return std::unexpected(std::move(got.error()));
     const std::vector<double> mse = group_mse(want, *got, judge.plane, judge.motion);
     std::vector<double> db(peak.size());
