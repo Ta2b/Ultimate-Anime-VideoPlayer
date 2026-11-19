@@ -53,10 +53,11 @@ nouveau paquet Linux.
 
 ## Porte (plan : 48 dB ou plus d'un calcul complet, et l'outil 0.1 sans hausse)
 
-À mesurer sur CachyOS, binaire `linux-release`, au groupe 2 (après la carte de la scène et le SPAN natif) :
+À mesurer sur CachyOS, binaire `linux-release`, à la séance de test commune de la fin (consigne de Tatoub du 19 novembre : pas de banc par fonction), avec la carte de la scène et le SPAN natif :
 
-1. **Justesse** : la même lecture enregistrée deux fois (`--no-span-tiles` contre défaut), PSNR image par
-   image ≥ 48 dB sur trois épisodes, aucune image sous 45 dB.
+1. **Justesse** : `--debug --span-native --scene-map --span-tiles-check` sur trois épisodes ; la ligne « SPAN
+   par tuiles » du journal donne le pire bloc 16 × 16 et le plus grand écart moyen contre un calcul complet.
+   Porte : pire bloc sous 1 niveau 8 bits (environ 48 dB), écart moyen sous 0,05 niveau.
 2. **Stabilité** : `tools/bench/qualite/scintillement.py` sur les deux sorties, pas plus de scintillement avec
    les tuiles (porte `--porte`).
 3. **Gain** : la ligne « SPAN par tuiles » et le temps GPU de SPAN (`--stats`) sur un épisode de dialogue.

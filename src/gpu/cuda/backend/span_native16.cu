@@ -79,7 +79,7 @@ constexpr std::int64_t align_up(std::int64_t bytes) {
   return (bytes + kAlign - 1) / kAlign * kAlign;
 }
 
-// Le décalage de la sortie (SpanFp8Body::shift_output) : un fil par paire de pixels d'une ligne, trois plans.
+// Le décalage de la sortie (SpanFp8Body::shift_output) : un fil par pixel d'une ligne, ses trois plans.
 __global__ void shift_planes(const __half* from, __half* to, int height, int width, int dx, int dy) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y);
