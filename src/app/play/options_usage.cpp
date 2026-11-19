@@ -136,6 +136,7 @@ std::string trial_usage() {
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass (same output)\n"
          "  --no-span-reuse        measurement: SPAN on every frame, held drawings included\n"
          "  --rife-native, --gmfss-native  trial: fused RIFE, GMFSS small nets by our CUDA kernels\n"
+         "  --tfix-native          trial: fused stabilization by our CUDA kernels instead of TensorRT\n"
          "  --no-span-tiles        measurement: whole-frame SPAN only (--span-tiles-check: 1 in 24 tiled\n"
          "                         frames also computed whole and compared)\n"
          "  --rife-at-slot         measurement: each RIFE pass of a strong pair waits for the ring slot\n"

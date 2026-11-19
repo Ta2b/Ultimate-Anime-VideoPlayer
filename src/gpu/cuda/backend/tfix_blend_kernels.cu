@@ -18,8 +18,8 @@ __constant__ float kTimes[kernels::kTfixSupports] = {-1.0F,           -0.6665039
 // Le bloc 2 d'un appui au point (qy, qx) du niveau 2 : son flot de sortie (flot d'entrée + Y2 agrandi) et
 // son masque.
 struct Last {
-  const __half* y;     // Y2 de l'appui
-  const __half* flow;  // X2 de l'appui, canaux 24 et 25
+  tfix::View y;     // Y2 de l'appui
+  tfix::View flow;  // X2 de l'appui (canaux 24 et 25)
   int yh, yw, h2, w2;
 };
 
@@ -29,9 +29,8 @@ __device__ Last last_of(const TfixShape& s, int k) {
   l.yw = s.yw[2];
   l.h2 = s.lh[2];
   l.w2 = s.lw[2];
-  const long long plane = static_cast<long long>(l.h2) * l.w2;
-  l.y = half_ptr(s.zone, s.y[2]) + static_cast<long long>(k) * kernels::kTfixY * l.yh * l.yw;
-  l.flow = half_ptr(s.zone, s.x[2]) + (k * kernels::kTfixX + 24) * plane;
+  l.y = tfix::view(s, s.y[2], s.yld, static_cast<long long>(l.yh) * l.yw, k);
+  l.flow = tfix::view(s, s.x[2], s.xld[2], static_cast<long long>(l.h2) * l.w2, k);
   return l;
 }
 
@@ -39,11 +38,10 @@ __device__ Last last_of(const TfixShape& s, int k) {
 __device__ void last_at(const Last& l, int qy, int qx, float (&v)[3]) {
   const Axis bx = tfix::resize_axis(qx, l.yw, l.w2);
   const Axis by = tfix::resize_axis(qy, l.yh, l.h2);
-  const long long yplane = static_cast<long long>(l.yh) * l.yw;
-  const long long plane = static_cast<long long>(l.h2) * l.w2;
-  for (int c = 0; c < 3; ++c) v[c] = tfix::resized(l.y + c * yplane, l.yw, bx, by);
-  v[0] += tfix::at(l.flow, qy, qx, l.w2);
-  v[1] += tfix::at(l.flow + plane, qy, qx, l.w2);
+  for (int c = 0; c < 3; ++c) v[c] = tfix::resized(l.y, c, l.yw, bx, by);
+  const long long at = static_cast<long long>(qy) * l.w2 + qx;
+  v[0] += l.flow.get(24, at);
+  v[1] += l.flow.get(25, at);
 }
 
 // La tête de confiance : une tuile de 16 × 16 points du niveau 2 par bloc, un appui par blockIdx.z.
@@ -125,13 +123,13 @@ __global__ void __launch_bounds__(kConfTile* kConfTile) conf_kernel(TfixShape s)
   const long long at = static_cast<long long>(y) * l.w2 + x;
   const __half* center = tfix::pyramid(s, kernels::kTfixCenter, 2);
   const __half* support = tfix::pyramid(s, kFrame[k], 2);
-  __half* out = half_ptr(s.zone, s.conf_in) + static_cast<long long>(k) * kernels::kTfixConf * lplane;
+  const tfix::View out = tfix::view(s, s.conf_in, s.conf_ld, lplane, k);
   for (int c = 0; c < kernels::kTfixImage; ++c) {
     const float ci = __half2float(center[c * lplane + at]);
     const float wi = warp::rounded(down[3 + c]);
-    out[c * lplane + at] = center[c * lplane + at];
-    out[(3 + c) * lplane + at] = __float2half_rn(wi);
-    out[(6 + c) * lplane + at] = __float2half_rn(fabsf(wi - ci));
+    out(c, at) = center[c * lplane + at];
+    out(3 + c, at) = __float2half_rn(wi);
+    out(6 + c, at) = __float2half_rn(fabsf(wi - ci));
   }
   const tfix::ZeroTap tap =
       tfix::zero_tap(static_cast<float>(x) + hx, static_cast<float>(y) + hy, l.h2, l.w2);
@@ -139,14 +137,15 @@ __global__ void __launch_bounds__(kConfTile* kConfTile) conf_kernel(TfixShape s)
     const long long from = (kernels::kTfixImage + c) * lplane;
     const float cf = __half2float(center[from + at]);
     const float wf = warp::rounded(tfix::zero_sample(support + from, tap));
-    out[(9 + c) * lplane + at] = center[from + at];
-    out[(13 + c) * lplane + at] = __float2half_rn(wf);
-    out[(17 + c) * lplane + at] = __float2half_rn(fabsf(wf - cf));
+    out(9 + c, at) = center[from + at];
+    out(13 + c, at) = __float2half_rn(wf);
+    out(17 + c, at) = __float2half_rn(fabsf(wf - cf));
   }
-  out[21 * lplane + at] = __float2half_rn(hx);
-  out[22 * lplane + at] = __float2half_rn(hy);
-  out[23 * lplane + at] = __float2half_rn(sqrtf(hx * hx + hy * hy));
-  out[24 * lplane + at] = __float2half_rn(kTimes[k]);
+  out(21, at) = __float2half_rn(hx);
+  out(22, at) = __float2half_rn(hy);
+  out(23, at) = __float2half_rn(sqrtf(hx * hx + hy * hy));
+  out(24, at) = __float2half_rn(kTimes[k]);
+  tfix::zero_pad(s, out, kernels::kTfixConf, s.conf_ld, at);
   half_ptr(s.zone, s.mask_half)[k * lplane + at] = __float2half_rn(down[2]);
 }
 
@@ -169,7 +168,6 @@ __global__ void __launch_bounds__(kBlendW* kBlendH, 1) blend_kernel(TfixShape s,
   const long long lplane = static_cast<long long>(h2) * w2;
   const int tid = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
   const int threads = static_cast<int>(blockDim.x * blockDim.y);
-  const __half* conf = half_ptr(s.zone, s.conf_out);
   const __half* mask = half_ptr(s.zone, s.mask_half);
   for (int i = tid; i < kernels::kTfixSupports * kBlendLowH * kBlendLowW; i += threads) {
     const int k = i / (kBlendLowH * kBlendLowW);
@@ -180,10 +178,11 @@ __global__ void __launch_bounds__(kBlendW* kBlendH, 1) blend_kernel(TfixShape s,
     if (qy < 0 || qy >= h2 || qx < 0 || qx >= w2) continue;
     float v[3];
     last_at(last_of(s, k), qy, qx, v);
-    const long long at = k * lplane + static_cast<long long>(qy) * w2 + qx;
+    const long long point = static_cast<long long>(qy) * w2 + qx;
+    const tfix::View conf = tfix::view(s, s.conf_out, s.conf_out_ld, lplane, k);
     low[k][r][c][0] = v[0];
     low[k][r][c][1] = v[1];
-    low[k][r][c][2] = __half2float(conf[at]) + __half2float(mask[at]);
+    low[k][r][c][2] = conf.get(0, point) + __half2float(mask[k * lplane + point]);
   }
   __syncthreads();
   const int x = px0 + static_cast<int>(threadIdx.x);
