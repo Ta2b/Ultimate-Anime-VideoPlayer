@@ -138,6 +138,17 @@ constexpr std::array kImageTabs{
           "RTX.",
           "Le RIFE le plus précis, pour environ 15 % de calcul en plus que RIFE 4.22 lite. Conseillé sur "
           "NVIDIA RTX."},
+    Entry{"RIFE 4.25 for most frames, GMFSS union for the middle of fast motion: holds fast pans and "
+          "rotations better. Heavier than RIFE. NVIDIA RTX (TensorRT) only; a trial.",
+          "RIFE 4.25 pour la plupart des images, GMFSS union pour le milieu des mouvements rapides : tient "
+          "mieux "
+          "les panoramiques et les rotations rapides. Plus lourd que RIFE. NVIDIA RTX (TensorRT) seulement ; "
+          "un essai."},
+    Entry{
+        "GMFSS union for every frame: the steadiest on fast pans and rotations, and the heaviest. NVIDIA "
+        "RTX (TensorRT) only; a trial.",
+        "GMFSS union pour chaque image : le plus stable sur les panoramiques et les rotations rapides, et le "
+        "plus lourd. NVIDIA RTX (TensorRT) seulement ; un essai."},
     Entry{
         "Adds frames between the video's own frames for smoother motion, as many as the display and the "
         "graphics card allow. DistilDRBA v2 lite keeps the rhythm of the animation; RIFE 4.22 lite is the "

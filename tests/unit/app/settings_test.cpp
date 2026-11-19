@@ -308,7 +308,16 @@ TEST_CASE(
   CHECK(
       settings_to_save(settings_for(rife_file, *chosen), rife_file, settings_for(rife_file, *chosen), *chosen)
           .motion_engine == MotionEngine::Rife);
-  const std::array<std::string_view, 2> wrong{"film.mkv", "--motion=gmfss"};
+  // --motion=gmfss : GMFSS union seul pour cette lecture, avec ou sans --gmfss-native ; play.toml n'en
+  // garde rien.
+  const std::array<std::string_view, 2> gmfss{"film.mkv", "--motion=gmfss"};
+  const auto union_only = parse_play_options(gmfss);
+  REQUIRE(union_only);
+  CHECK(settings_for(rife_file, *union_only).motion_engine == MotionEngine::Gmfss);
+  CHECK(settings_to_save(settings_for(rife_file, *union_only), rife_file,
+                         settings_for(rife_file, *union_only), *union_only)
+            .motion_engine == MotionEngine::Rife);
+  const std::array<std::string_view, 2> wrong{"film.mkv", "--motion=dain"};
   CHECK_FALSE(parse_play_options(wrong));
 }
 

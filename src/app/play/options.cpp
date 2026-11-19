@@ -78,15 +78,14 @@ std::optional<PathMember> path_option(std::string_view name) {
   return std::nullopt;
 }
 
+// Dans l'ordre de MotionChoice.
 std::expected<void, Refusal> motion(std::string_view text, PlayOptions& options) {
-  if (text == "rife") {
-    options.motion = MotionChoice::Rife;
-  } else if (text == "drba") {
-    options.motion = MotionChoice::DistilDrba;
-  } else {
+  constexpr std::array<std::string_view, 3> kNames{"rife", "drba", "gmfss"};
+  const auto found = std::ranges::find(kNames, text);
+  if (found == kNames.end())
     return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("--motion: \"{}\" is neither rife nor drba", text));
-  }
+                  std::format("--motion: \"{}\" is not rife, drba or gmfss", text));
+  options.motion = static_cast<MotionChoice>(found - kNames.begin());
   return {};
 }
 
@@ -605,7 +604,7 @@ std::string play_usage(bool debug) {
       "  --work-height=N        shrinks the source to N lines before SPAN (default: the preset's; 0 never)\n"
       "  --rife=N               ×N interpolation (0 none, 1, 1.5 to 9.5 by halves, 10; default: preset's)\n"
       "  --rife-model=FILE      RIFE model (default: the preset's, {} without one)\n"
-      "  --motion=rife|drba     interpolation engine, RIFE or DistilDRBA (default: the preset's)\n"
+      "  --motion=rife|drba|gmfss  RIFE, DistilDRBA or GMFSS union alone (default: the preset's)\n"
       "  --truehdr-peak=NITS    peak aimed at by the HDR grade, {} to {} (0 or default: the screen's,\n"
       "                         else 1000)\n"
       "kirari --register           registers the player with the system (\"Open with\", default\n"
