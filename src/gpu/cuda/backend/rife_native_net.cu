@@ -129,7 +129,8 @@ class Net final : public RifeNativeNet {
            std::to_string(l.cout) + " sur " + std::to_string(l.ow) + "×" + std::to_string(l.oh) +
            ", tranche " + std::to_string(l.cfg.kc) + ", tuile " + std::to_string(l.cfg.ct) + ", " +
            std::to_string(l.cfg.rows) + (l.cfg.rows > 1 ? " lignes" : " ligne") + " par warp, K en " +
-           std::to_string(l.cfg.ksplit) + ", sommes " + rn::sums_name(l.sums) +
+           std::to_string(l.cfg.ksplit) + (l.cfg.ahead ? ", poids à l'avance" : "") + ", sommes " +
+           rn::sums_name(l.sums) +
            (l.rejected > 0 ? ", " + std::to_string(l.rejected) + " formes écartées (sortie différente)" : "");
   }
 
@@ -173,6 +174,10 @@ class Net final : public RifeNativeNet {
     return sent(to.upload(packed.data(), packed.size() * sizeof(std::uint32_t), loading_), error);
   }
 
+  static bool same_shape(const Config& a, const Config& b) {
+    return a.kc == b.kc && a.ct == b.ct && a.rows == b.rows && a.ksplit == b.ksplit && a.ahead == b.ahead;
+  }
+
   struct Tuning {
     int piece = 0, layer = 0;
     rn::Bench& bench;
@@ -187,8 +192,11 @@ class Net final : public RifeNativeNet {
     const auto known = std::ranges::find_if(at.tuned, [&](const RifeNativeTuned& t) {
       return t.piece == at.piece && t.layer == at.layer && t.sums == layer.sums;
     });
-    if (known != at.tuned.end() &&
-        shape(layer, Config{.kc = known->kc, .ct = known->ct, .rows = known->rows, .ksplit = known->ksplit}))
+    if (known != at.tuned.end() && shape(layer, Config{.kc = known->kc,
+                                                       .ct = known->ct,
+                                                       .rows = known->rows,
+                                                       .ksplit = known->ksplit,
+                                                       .ahead = known->ahead}))
       return upload_weights(layer.w, dense, layer.cfg.ct, error);
     std::array<rn::Buffer, 3> packs;  // tuiles de 16, 32 et 64
     const auto packed = [&](int ct) -> const void* {
@@ -209,7 +217,7 @@ class Net final : public RifeNativeNet {
     float fastest = std::numeric_limits<float>::infinity();
     layer.rejected = 0;
     for (const Config& cfg : rn::configs(layer.sums, layer.kind, extent, sms_)) {
-      const bool simplest = cfg.kc == 16 && cfg.ct == 16 && cfg.rows == reference.rows && cfg.ksplit == 1;
+      const bool simplest = same_shape(cfg, reference);
       if (!shape(layer, cfg)) continue;
       w = packed(cfg.ct);
       if (w == nullptr) return false;
@@ -234,7 +242,8 @@ class Net final : public RifeNativeNet {
                         .kc = best.kc,
                         .ct = best.ct,
                         .rows = best.rows,
-                        .ksplit = best.ksplit});
+                        .ksplit = best.ksplit,
+                        .ahead = best.ahead});
     return upload_weights(layer.w, dense, best.ct, error);
   }
 
