@@ -3,6 +3,7 @@
 // trtexec sur la paire entière (le même moteur que sans le natif, repris du cache) et sur son flot ;
 // « charger » les charge ensemble et, sous --gmfss-native, essaie les réseaux natifs contre la paire entière.
 // Tout refus du natif laisse la paire à TensorRT.
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -37,7 +38,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_gmfss_pair(const ModelSp
   const int h = manifest->height;
   const int w = manifest->width;
   // L'étage demande la forme de frames : les deux images au double de la fusion.
-  const Shape expected{.dims = {1, 6, 2 * h, 2 * w}};
+  const Shape expected{.dims = {1, 6, 2 * std::int64_t{h}, 2 * std::int64_t{w}}};
   if (!(shapes.min == expected) || !(shapes.opt == expected) || !(shapes.max == expected))
     return refuse(RefusalCode::ShapeInvalid,
                   std::format("GMFSS natif : forme fixe 1×6×{}×{} attendue, demandée {}", 2 * h, 2 * w,

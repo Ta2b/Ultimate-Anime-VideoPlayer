@@ -1,6 +1,7 @@
 #include "gpu/cuda/backend/gmfss_fused_engine.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <format>
 #include <string_view>
 #include <utility>
@@ -91,7 +92,9 @@ std::expected<std::unique_ptr<GmfssFusedEngine>, Refusal> GmfssFusedEngine::load
     engine->ifnet_from_[j] = input;
     if (!(r.input_shape(j) == expected_shape(input, key.height, key.width))) return bad("IFNet (entrées)");
   }
-  if (!(f.output_shape(0) == Shape{.dims = {1, 3, 2 * key.height, 2 * key.width}})) return bad("sortie");
+  if (!(f.output_shape(0) ==
+        Shape{.dims = {1, 3, 2 * std::int64_t{key.height}, 2 * std::int64_t{key.width}}}))
+    return bad("sortie");
   if (!(r.output_shape(0) == Shape{.dims = {1, 3, key.height, key.width}})) return bad("IFNet (sortie)");
   const auto bytes =
       std::size_t{3} * static_cast<std::size_t>(key.height) * static_cast<std::size_t>(key.width) * 2;

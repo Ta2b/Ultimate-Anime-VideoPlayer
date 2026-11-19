@@ -10,6 +10,9 @@
 namespace kirari::app::play {
 
 RingStage::Fate UpscaleStage::fate(const DecodedFrame& frame, std::uint32_t output) {
+  // À chaque sortie, écrite ou non : la carte de la paire lancée en avance avance d'un temps (tuiles relues,
+  // caméra affinée), sans attente (scene_map.h).
+  scene_.advance(*setup_.backend->kernels());
   if (held_same_) return Fate::Same;
   // A09-07 : DistilDRBA aussi laisse un instant déjà passé, avant de juger son côté tenu ; une passe jetée
   // ne s'amortit sur aucun autre instant.

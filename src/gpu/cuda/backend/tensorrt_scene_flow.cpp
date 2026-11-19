@@ -93,4 +93,19 @@ std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> TensorRtBackend::
   return scene_flow_->take(ticket);
 }
 
+std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_camera_start(
+    std::uint64_t flow_ticket, const kernels::SceneCameraRequest& request) {
+  if (!scene_flow_) return std::uint64_t{0};  // aucune paire lancée : rien à affiner
+  if (auto ok = bind(); !ok) return std::unexpected(std::move(ok.error()));
+  // Sur la file de NVOF, sur les SM : un coût par paire, mesuré à part.
+  return scene_flow_->refine(flow_ticket, request, stage("carte de la scène : caméra"));
+}
+
+std::expected<std::optional<kernels::SceneCameraRefined>, Refusal> TensorRtBackend::scene_camera_take(
+    std::uint64_t ticket) {
+  if (!scene_flow_)
+    return refuse(RefusalCode::SequenceOrder, std::format("scene_camera_take : ticket {} périmé", ticket));
+  return scene_flow_->refined(ticket);
+}
+
 }  // namespace kirari::gpu::cuda

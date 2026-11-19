@@ -3,7 +3,7 @@
 # lié aux binaires livrés (C50-05) : le demi-flottant de ref/half.h (gpu_ir, Vulkan, TensorRT : arrondir comme
 # les noyaux), l'analyse d'image de ref/frame_stats.h (la pré-analyse des plans, shot_probe.cpp, et les mesures
 # tirées des comptes du noyau), la carte de la scène de ref/scene_flow.h (scene_motion_of, lue par l'étage gpu)
-# et, de ref/resample.h, compute_weights et Weights (les tables de chroma de
+# et de ref/scene_camera.h (scene_camera_request, scene_camera_apply), et, de ref/resample.h, compute_weights et Weights (les tables de chroma de
 # l'ingestion TensorRT, gpu/cuda/backend/ingest_chroma.cpp, de l'export et de l'ingestion Vulkan). frame_stats
 # appelle ref/transfer.cpp. Modifier ces fonctions modifie le lecteur ; le reste de ref/ (color, detect, rife,
 # rife_fused, warp) n'est lu que par les tests, mais fixe le contrat que les ports doivent suivre.
@@ -23,6 +23,8 @@ kirari_add_module(kernels
     ref/resample.cpp
     ref/rife.cpp
     ref/rife_fused.cpp
+    ref/scene_camera.cpp
+    ref/scene_fit.cpp
     ref/scene_flow.cpp
     ref/transfer.cpp
     ref/warp.cpp

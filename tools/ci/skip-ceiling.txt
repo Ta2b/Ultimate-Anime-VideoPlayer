@@ -1,9 +1,11 @@
 # Plafond des tests sautés par tâche de ci.yml (check-skips.sh, P2.39). Sous lavapipe, sans carte NVIDIA ni
 # modèles : NVDEC (5), Vulkan Video (1), découpe des modèles du catalogue (3), runtimes du fabricant (1).
-# L'interop de mémoire exportée (2) est retirée (C14, A45-10). Le relever demande une raison.
-lavapipe 10
-asan-ubsan 10
-tsan 10
+# L'interop de mémoire exportée (2) est retirée (C14, A45-10). Novembre 2026 : GMFSS et GMFlow natifs, sans les
+# graphes exportés de GMFSS union (3 : la fusion, #902 ; la paire, #923 ; le squelette de GMFlow, #930), d'où 13.
+# Le relever demande une raison.
+lavapipe 13
+asan-ubsan 13
+tsan 13
 tsan-pr 0
 # Le rejeu du corpus de fuzz sous ASan, sur chaque pull request : aucun saut.
 asan-fuzz 0
@@ -13,8 +15,9 @@ asan-fuzz 0
 # (NVDEC 5, Vulkan Video et appareils Vulkan 4), polices de libass sans police système (3), découpe des modèles du
 # catalogue (3), veilleur d'écriture de l'anneau (1). Novembre 2026 : look en table (3, #803) et grade avant le warp
 # (1, #804), rendus GPU joués sous lavapipe ; plafond au compte du passage sur b5ac0da0 (50), plus la découpe de
-# TemporalFix fusionné (#862) sans les modèles du lecteur (51).
-windows 51
+# TemporalFix fusionné (#862) sans les modèles du lecteur (51), plus GMFSS et GMFlow natifs sans les graphes exportés
+# de GMFSS union (3, comme sous lavapipe : 54).
+windows 54
 # Tâches sans GPU ni Vulkan logiciel (cœur seul) : aucun test sauté (B28-12).
 core-gcc-13 0
 core-clang-20 0
@@ -22,6 +25,6 @@ core-asan-ubsan 0
 core-tsan 0
 arch 0
 # Le lecteur entier sous le GCC d'Arch, lavapipe : comme la tâche lavapipe.
-arch-player 10
+arch-player 13
 # La version livrée (Release, LTO) sous lavapipe, dans release-linux.yml : comme la tâche lavapipe.
-linux-release 10
+linux-release 13

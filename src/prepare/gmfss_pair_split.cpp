@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -140,7 +141,8 @@ std::expected<GmfssPairCut, Refusal> gmfss_pair_cut(std::span<const std::byte> p
 std::expected<std::vector<std::byte>, Refusal> gmfss_flow_piece(std::span<const std::byte> pair,
                                                                 const GmfssPairCut& cut, int height,
                                                                 int width) {
-  const std::vector<SplitTensor> inputs{{.name = "frames", .dims = {1, 6, 2 * height, 2 * width}}};
+  const std::vector<SplitTensor> inputs{
+      {.name = "frames", .dims = {1, 6, 2 * std::int64_t{height}, 2 * std::int64_t{width}}}};
   std::vector<SplitTensor> outputs{{.name = cut.metric_input}};
   for (const std::string& flow : cut.flows) outputs.push_back({.name = flow});
   outputs.push_back({.name = "half0"});
@@ -206,7 +208,7 @@ std::expected<std::filesystem::path, Refusal> derive_gmfss_pair(const std::files
   const std::filesystem::path dir = pair.parent_path();
   const std::string stem = std::format("{}-{}-{}x{}-{}", core::to_utf8(pair.stem()), kGmfssPairDerivation,
                                        height, width, sha->substr(0, 16));
-  const std::filesystem::path manifest_path =
+  std::filesystem::path manifest_path =
       dir / core::path_from_utf8(std::format("{}{}", stem, kGmfssPairExtension));
   const std::string weights_name = core::to_utf8(weights.filename());
   // Déjà dérivé : le manifeste est écrit en dernier, sa présence dit que le flot y est.

@@ -130,7 +130,7 @@ std::expected<std::filesystem::path, Refusal> derive_gmfss_fused(const std::file
   const std::filesystem::path dir = fusion.parent_path();
   const std::string stem = std::format("{}-{}-{}x{}-{}", core::to_utf8(fusion.stem()), kGmfssFusedDerivation,
                                        height, width, sha->substr(0, 16));
-  const std::filesystem::path manifest_path =
+  std::filesystem::path manifest_path =
       dir / core::path_from_utf8(std::format("{}{}", stem, kGmfssFusedExtension));
   // Déjà dérivé : le manifeste est écrit en dernier, sa présence dit que l'IFNet y est.
   if (std::ifstream known(manifest_path); known) {

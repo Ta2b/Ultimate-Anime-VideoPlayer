@@ -129,6 +129,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                                          bool restart) override;
   std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
       std::uint64_t ticket) override;
+  // L'affinage de la caméra de la carte (tensorrt_scene_flow.cpp, scene_camera.cpp), relu sans attente.
+  std::expected<std::uint64_t, Refusal> scene_camera_start(
+      std::uint64_t flow_ticket, const kernels::SceneCameraRequest& request) override;
+  std::expected<std::optional<kernels::SceneCameraRefined>, Refusal> scene_camera_take(
+      std::uint64_t ticket) override;
   std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
                                                 const Motion* previous, float t, const Tensor& out) override;
   // Les mêmes, directement dans le slot (BackendCaps::ring_targets).
