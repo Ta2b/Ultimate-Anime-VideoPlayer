@@ -340,6 +340,15 @@ class KernelOps {
       std::uint64_t /*ticket*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_flow : absent de ce backend"});
   }
+  // Fondu local du mouvement (kernels/spec/motion_doubt.h) : motion tiré vers le fondu de masque fade selon
+  // la grille de doute (cols × rows poids, au plus kDoubtMaxCells de côté, posée sur motion.area), écrit dans
+  // out.flow et out.mask, de mêmes formes que motion.flow et motion.mask ; out.area et le reste ne sont pas
+  // lus. Refus : grille hors contrat, formes différentes, fade hors de [0, 1].
+  virtual std::expected<void, Refusal> motion_doubt(const Motion& /*motion*/,
+                                                    std::span<const std::uint8_t> /*weights*/, int /*cols*/,
+                                                    int /*rows*/, float /*fade*/, const Motion& /*out*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "motion_doubt : absent de ce backend"});
+  }
   // L'appareil répond-il encore (étape 11.5) ? Chaque file interrogée sans l'attendre ; DeviceLost quand le
   // contexte est perdu. RingStage le demande quand une image attend un slot depuis plus de 200 ms.
   virtual std::expected<void, Refusal> health() { return {}; }

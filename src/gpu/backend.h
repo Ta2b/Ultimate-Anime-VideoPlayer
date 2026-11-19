@@ -103,7 +103,8 @@ namespace kirari::gpu {
 // 47 : KernelOps::scene_flow_start et scene_flow_take (la carte de la scène par le flux optique de NVIDIA,
 // kernels/spec/scene_flow.h).
 // 48 : TemporalFix fusionné (manifestes « .tfixfused » : encodeur et fenêtre, tampon gardé à pyramides).
-inline constexpr int kBackendAbi = 48;
+// 49 : KernelOps::motion_doubt (le fondu local du mouvement de RIFE, kernels/spec/motion_doubt.h).
+inline constexpr int kBackendAbi = 49;
 
 using DeviceUuid = kirari::DeviceUuid;
 

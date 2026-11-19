@@ -31,6 +31,7 @@
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
 #include "app/play/rife_plan.h"
+#include "app/play/rife_triage.h"
 #include "app/play/ring_stage.h"
 #include "app/play/scene_map.h"
 #include "app/play/source_grade.h"
@@ -141,20 +142,17 @@ struct UpscaleSetup {
   // gardées ; l'étage lit alors jusqu'à kSmoothMaxHold - 1 images en avance (frames_ahead). Une tenue plus
   // longue, ou coupée, garde le rythme des sources.
   bool smooth_drawings = false;
-  // GMFSS Fortuna Union (upscale_gmfss.cpp) : le mélange avec rife_motion, ou seul (sans rife ni
-  // rife_motion).
-  GmfssSetup gmfss;
+  GmfssSetup gmfss;  // GMFSS Fortuna Union (upscale_gmfss.cpp) : avec rife_motion, ou seul
   // Le filtre qui lit les images au warp de la variante mouvement de RIFE (PlaySettings::cubic_warp).
   kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;
-  // Le mouvement d'ensemble au même warp (PlaySettings::pan_lock, kernels/spec/warp_pan.h).
-  bool pan_lock = false;
+  bool pan_lock = false;     // mouvement d'ensemble au même warp (PlaySettings::pan_lock, spec/warp_pan.h)
+  bool pair_triage = false;  // --pair-triage : la carte de la scène trie les paires (rife_triage.h)
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
   // Le grade avant le warp (PlaySettings::grade_before_warp, source_grade.h) : chaque source gradée à sa
   // sortie de SPAN, quand le warp se fait après lui (warp_after_span) et que l'écran lit le ring ; nullptr :
   // l'écran grade chaque image affichée.
   std::shared_ptr<SourceGrader> grader;
-  // Export par puits CUDA : les images de l'encodeur derrière les slots (sans image ni sémaphore
-  // dans slots), écrites par write_yuv ; ni écriture directe du ring. nullptr : le ring.
+  // Export par puits CUDA : les images de l'encodeur derrière les slots, par write_yuv ; nullptr : le ring.
   std::shared_ptr<const YuvSlots> yuv_slots;
   bool scene_map = false;  // --scene-map : la carte de la scène par NVOF (scene_map.h), PairFacts::scene
 };
@@ -443,6 +441,7 @@ class UpscaleStage final : public RingStage {
   std::uint32_t outputs_ = 1;
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
   bool uninterpolated_ = false;      // la paire courante, laissée sans interpolation à dessein
+  mutable RifeTriage triage_;        // le tri de la paire par la carte, lu par les warps (blend)
   // Débandage avant SPAN (KernelOps::deband) : voulu quand le grade tourne, avec SPAN, DistilDRBA compris
   // (A09-07) ; deband_op_ tombe si le backend ne l'a pas, et l'écran garde alors le sien.
   bool deband_op_ = true;

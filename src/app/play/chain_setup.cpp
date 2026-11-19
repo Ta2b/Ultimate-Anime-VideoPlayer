@@ -226,6 +226,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
           settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
       // Mouvement d'ensemble : le warp de RIFE mouvement et celui de DistilDRBA mouvement.
       .pan_lock = settings.pan_lock && (rife_motion || drba_motion),
+      .pair_triage = pair_triage && rife_motion,
       .slots = std::move(slots),
       .scene_map = scene_map};
 }
@@ -373,6 +374,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.rife_at_slot = o.rife_at_slot;
   c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
+  c.pair_triage = o.pair_triage;
 }
 
 // Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches…).

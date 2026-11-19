@@ -212,6 +212,10 @@ struct PlayOptions {
   // (chantier 7.9, UpscaleSetup::smooth_drawings) ; pour cette lecture, l'option du menu
   // (PlaySettings::smooth_drawings, settings_for). RIFE mouvement seulement, éteint par défaut.
   bool smooth_drawings = false;
+  // --pair-triage : la carte de la scène (flux optique de NVIDIA) trie les paires de RIFE mouvement : dessin
+  // tenu copié, paire impossible fondue, zone douteuse fondue par endroits (UpscaleSetup::pair_triage,
+  // rife_triage.h). Sans carte, sans effet. Éteint par défaut jusqu'à la porte du groupe 3.
+  bool pair_triage = false;
   // Un thread attend l'écriture des slots et réveille main (ring_watcher.h, 6.5), par défaut ;
   // --no-ring-watcher : main sonde l'anneau.
   bool ring_watcher = true;

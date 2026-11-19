@@ -168,7 +168,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 43> kFlags{{
+constexpr std::array<Flag, 44> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -206,6 +206,7 @@ constexpr std::array<Flag, 43> kFlags{{
     {"--fast-steady", &PlayOptions::fast_steady, true},
     {"--smooth-drawings", &PlayOptions::smooth_drawings, true},
     {"--no-tfix-cache", &PlayOptions::temporal_fix_whole, true},
+    {"--pair-triage", &PlayOptions::pair_triage, true},
     {"--ring-watcher", &PlayOptions::ring_watcher, true},
     {"--no-ring-watcher", &PlayOptions::ring_watcher, false},
     {"--precise-wait", &PlayOptions::precise_wait, true},
@@ -631,6 +632,8 @@ std::string play_usage(bool debug) {
          "                         every pass, instead of the encoder cache (same output)\n"
          "  --no-tfix-fused        trial: temporal stabilization by the encoder-cache graph instead of\n"
          "                         the fused engines (TensorRT)\n"
+         "  --pair-triage          motion RIFE with the NVIDIA scene map: held drawings copied, impossible\n"
+         "                         pairs crossfaded, doubtful areas crossfaded locally (off by default)\n"
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass instead of\n"
          "                         keeping the encoding of the pair and of the previous B (same output)\n"

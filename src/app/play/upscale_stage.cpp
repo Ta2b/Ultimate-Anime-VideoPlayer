@@ -236,9 +236,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       setup_.live->auto_alive(at_us);
     }
   }
-  // Coupe ou dessin tenu : les instants de la paire manquent à dessein, pas faute de temps.
-  uninterpolated_ = on_grid && !runs && facts.factor > 1 && facts.scores &&
-                    (pair_cut(facts) || kernels::is_held(facts.scores->worst_block));
+  uninterpolated_ = triage_.settle(facts, on_grid, runs, smooth_first_);
   resync_grids(on_grid && !runs, free_mode, steady);
   if (runs && step) {
     outputs_ = 0;
