@@ -508,9 +508,11 @@ déforme rien : elle décide. Avec `--pair-triage` (essai lui aussi, donc avec `
 GMFSS (pas DistilDRBA ni les paires de Smooth), chaque paire où RIFE tournerait est triée
 (`src/app/play/rife_triage.h`) :
 
-- **dessin tenu** : ni le dessin ni la caméra ne bougent, et presque aucune tuile ne change hors du grain.
-  RIFE ne tourne pas, b sort seul, comme un dessin tenu reconnu par le pire bloc 16 × 16, que le grain d'une
-  source granuleuse fait souvent manquer (`pair_held`, `rife_plan.h`) ;
+- **dessin tenu** : ni le dessin ni la caméra ne bougent, presque aucune tuile ne change hors du grain, et
+  pas une seule tuile de dessin ne se déplace d'au moins 1,5 pixel du flux (un petit personnage qui marche au
+  loin passait sous les parts tolérées, et la paire tenue le faisait saccader). RIFE ne tourne pas, b sort
+  seul, comme un dessin tenu reconnu par le pire bloc 16 × 16, que le grain d'une source granuleuse fait
+  souvent manquer (`pair_held`, `rife_plan.h`) ;
 - **paire impossible** : le flux ne trouve presque aucune correspondance, pas même un décor que la caméra
   explique (part `unmatched` de 0,45 ou plus sans caméra ajustée, ou coupe probable que RIFE n'a pas vue,
   `flow_lost`), ou la moitié des tuiles mêmes doute. Le mouvement de RIFE est remplacé par un fondu enchaîné
@@ -552,6 +554,9 @@ trait, pas que RIFE n'y trouve rien, et le fondu y fait une image double. Le dou
 précédente de paire en paire (moitié, quart, huitième…) : un effet fondait encore quatre paires après sa fin.
 D'où, sans mesure : seuls les effets sûrs et groupés doutent, et seul le doute propre d'une paire passe à la
 suivante.
+Troisième lecture (après #928, Re:Zero, 60 s) : 1132 paires lues, 101 dessins tenus, aucune paire
+impossible, 32 paires fondues par endroits sur 0,9 % des tuiles en moyenne. Affiné ensuite sans mesure : une
+tuile de dessin qui se déplace empêche le dessin tenu par le flux.
 Les seuils (`triage::` dans `rife_triage.h`) ne sont pas mesurés ; la porte : le test à l'aveugle gagné sur
 les passages de rife-fantomes, sans hausse du scintillement (outil 0.1).
 
