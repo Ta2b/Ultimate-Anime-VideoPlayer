@@ -19,13 +19,13 @@
 //
 // La session a ses propres flux CUDA (nvOFSetIOCudaStreams), jamais le flux par défaut : c'est ce
 // que fera le lecteur pour tourner à côté de TensorRT (porte 2.2). Chaque appel écrit sur la sortie
-// d'erreur « temps_ms <l>x<h> <ms> », le temps GPU entre deux événements posés autour de
-// nvOFExecute, sans les copies. Au début : « gpu <nom> », « cuda <version du pilote> » et
-// « grilles <liste> » (les grilles que la carte accepte).
+// d'erreur « temps_ms <l>x<h> <ms> », le temps entre deux événements posés autour de nvOFExecute,
+// sans les copies : le travail du bloc NVOF, majoré du temps de soumission par l'hôte (le flux
+// d'entrée est vide, l'événement de départ passe aussitôt). Au début : « gpu <nom> », « cuda <version du
+// pilote> » et « grilles <liste> » (les grilles que la carte accepte).
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <cuda.h>
 #include <exception>
 #include <fstream>

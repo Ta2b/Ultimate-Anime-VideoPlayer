@@ -394,8 +394,13 @@ std::optional<Shot> ShotCutter::follow_flow(const ShotFrame& frame) {
     if (frame.pts_us - jumped_.front().pts_us >= kMinShotUs) return confirm_jump();  // un plan fixe
     return std::nullopt;
   }
-  if (const auto unmatched = flow_unmatched(frame); unmatched && *unmatched <= kFlowCalm)
+  // Le dessin qui confirme la coupe en est la suite : il repasse avec les autres, et devient l'ancre.
+  if (const auto unmatched = flow_unmatched(frame); unmatched && *unmatched <= kFlowCalm) {
+    jumped_.push_back(frame);
     return confirm_jump();
+  }
+  // Pas une coupe : le saut compte dans le mouvement récent, comme judge l'aurait compté sans le flux.
+  recent_.push_back({.pts_us = jumped_.front().pts_us, .distance = jump_});
   for (const ShotFrame& f : jumped_) keep(f);
   anchor_ = jumped_.back();
   jumped_.clear();
@@ -479,6 +484,7 @@ std::optional<Shot> ShotCutter::cut_at(std::int64_t end_us, float jump) {
 
 void ShotCutter::discard_shot() {
   totals_ = {};
+  rhythm_ = {};  // un plan court fondu dans un voisin ne laisse pas ses paires au plan suivant
   head_.clear();
   tail_.clear();
 }
@@ -519,7 +525,6 @@ std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
   first_shot_ = false;
   shot.meta = totals_.meta();
   shot.rhythm = rhythm_.rhythm();
-  rhythm_ = {};
   shot.first = totals_.stats();
   shot.last = shot.first;
   if (totals_.count >= 2 * kFadeFrames) {

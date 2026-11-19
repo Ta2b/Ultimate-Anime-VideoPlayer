@@ -76,8 +76,11 @@ class Grade {
 
   // Éclats sur les seuls effets (render/effect_mask.h) : le masque de la paire montrée. nullptr ou neutre :
   // la passe du masque s'ôte et fx_on retombe à 0, le grade d'aujourd'hui image pour image. Vrai si le masque
-  // s'applique (faux aussi quand le GPU a refusé sa texture, dit une fois par le refus de la création).
+  // s'applique ; faux aussi quand le GPU a refusé la passe, refus que garde effect_mask_refusal.
   bool set_effect_mask(const EffectMask* mask);
+  // Le refus de la passe du masque (créée au premier masque non neutre, jamais retentée), à journaliser par
+  // l'appelant.
+  const std::optional<Refusal>& effect_mask_refusal() const;
 
   // Dans l'ordre d'exécution : la passe du masque des effets s'il s'applique, la passe du grade (ses trois
   // passes dans un hook), le look, puis le vrai noir.

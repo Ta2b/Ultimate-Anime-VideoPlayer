@@ -20,8 +20,9 @@ slow, carte de coût), le banc mesure :
   passé en indices externes (grille 8) à la passe 720p ; porte, résidu et part du décor avec et sans, par vitesse.
   Au-delà de 45 px, NVOF seul dépasse sa portée de recherche (écart moyen de 45 px à RIFE, 17 novembre).
 
-Porte : sur les paires des panoramiques où la caméra bouge (0,5 px ou plus à 720p), l'écart moyen du décor au
-modèle sous 0,5 px (à 720p) avec au moins 40 % des blocs texturés dans le décor, pour 90 % des paires. Sinon, on
+Porte : sur les paires des panoramiques où la caméra bouge (0,5 px ou plus à 720p, vu par une configuration au
+moins ; les mêmes paires pour toutes), l'écart médian du décor au modèle (blocs à moins de 3 px) sous 0,5 px à 720p,
+avec au moins 40 % des blocs texturés gardés par l'ajustement, pour 90 % des paires. Sinon, on
 garde les usages par paire (coupes, tri, tuiles) et on abandonne les calques.
 
 Sortie : rapport.md, mesures.json et, par extrait, des vues PNG (luma ; tuiles décor en bleu, dessin en rouge ;
@@ -39,7 +40,6 @@ import numpy as np
 
 GATE_PX, GATE_SHARE, GATE_PAIRS, MOVING_PX = 0.5, 0.4, 0.9, 0.5
 CLASSES = ("aplat", "trait", "grain")
-TILES = ("décor", "dessin", "incertain")
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -47,34 +47,40 @@ TILES = ("décor", "dessin", "incertain")
 
 def probe(path):
     out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                          "stream=width,height", "-of", "csv=p=0", path], capture_output=True, text=True, check=True)
-    w, h = out.stdout.strip().split(",")[:2]
-    return int(w), int(h)
+                          "stream=width,height,pix_fmt", "-of", "csv=p=0", path], capture_output=True, text=True,
+                         check=True)
+    w, h, fmt = out.stdout.strip().split(",")[:3]
+    return int(w), int(h), fmt
 
 
 def decode(path, start, frames, height):
-    """Les lumas 8 bits (n, h, w) telles qu'un décodeur les donne au lecteur : plan Y réduit par surface."""
-    sw, sh = probe(path)
+    """Lumas 8 bits (n, h, w) comme le lecteur les donnera à NVOF : plan Y réduit à sa profondeur, puis ses 8 bits
+    hauts (porte 2.2). Pas de yuv420p : swscale tramerait une source 10 bits et fausserait aplats et coût."""
+    sw, sh, fmt = probe(path)
     w = int(round(sw * height / sh / 2)) * 2
+    depth = re.search(r"p(\d+)(le|be)$", fmt)
+    bits = int(depth.group(1)) if depth else 8
     cmd = ["ffmpeg", "-v", "error"] + (["-ss", start] if start else []) + [
         "-i", path, "-frames:v", str(frames), "-an", "-sn",
-        "-vf", f"scale={w}:{height}:flags=area,format=yuv420p,extractplanes=y", "-f", "rawvideo", "-"]
+        "-vf", f"scale={w}:{height}:flags=area,format={fmt},extractplanes=y", "-f", "rawvideo", "-"]
     raw = subprocess.run(cmd, capture_output=True, check=True).stdout
-    return np.frombuffer(raw, np.uint8).reshape(-1, height, w)
+    if bits == 8:
+        return np.frombuffer(raw, np.uint8).reshape(-1, height, w)
+    wide = np.frombuffer(raw, "<u2" if depth.group(2) == "le" else ">u2").reshape(-1, height, w)
+    return (wide >> (bits - 8)).astype(np.uint8)
 
 
 def moving_pairs(frames, limit):
-    """Paires voisines (k, k + 1) qui bougent ; les images tenues (anime en 2 ou en 3) sont sautées."""
-    diffs = np.abs(frames[1:].astype(np.int16) - frames[:-1]).mean(axis=(1, 2))
-    keep = [k for k, d in enumerate(diffs) if d > 0.5]
-    return keep[:limit], len(diffs) - len(keep)
+    """Paires voisines (k, k + 1), sauf les doublons exacts. Le mouvement ne se juge pas à la luminance (un panoramique
+    lent sur un aplat la change à peine) : une image tenue reste, la caméra mesurée l'écarte de la porte."""
+    keep = [k for k in range(len(frames) - 1) if not np.array_equal(frames[k], frames[k + 1])]
+    return keep[:limit], len(frames) - 1 - len(keep)
 
 
 def run_tool(tool, grid, hints, frames, pairs, external=None):
     """{k: (flux 2 × ch × cw en px, coût ch × cw)}, [ms], {gpu, cuda, grilles}. Lève RuntimeError si refus.
-
     external : (grille des indices, {k: int16 hh × hw × 2 en S10.5}), les indices externes de chaque paire."""
-    n, h, w = frames.shape
+    _, h, w = frames.shape
     cw, ch = (w + grid - 1) // grid, (h + grid - 1) // grid
     with tempfile.TemporaryDirectory() as tmp:
         names = {}
@@ -98,6 +104,7 @@ def run_tool(tool, grid, hints, frames, pairs, external=None):
                 times.append(float(rest.split()[1]))
             elif head in ("gpu", "cuda", "grilles"):
                 info[head] = rest
+        times = times[2:] if len(times) > 4 else times  # chaque lancement ouvre sa session : ses premiers appels chauffent
         if done.returncode != 0:
             raise RuntimeError(done.stderr.strip().splitlines()[-1] if done.stderr.strip() else "code %d" % done.returncode)
         out = {}
@@ -187,9 +194,11 @@ def camera(flow, cost, textured, grid, height):
     r = np.hypot(u - X @ pu, v - X @ pv)
     decor = np.zeros((ch, cw), bool)
     decor[textured] = inl
+    # Résidu de la porte sur un décor large (3 px à 720p) : le seuil de l'ajustement (0,75 à 2 px) le bornerait.
+    wide = r < 3 * k
     return model, decor, {
         "camera_px": float(np.hypot(*model).mean() / k),
-        "residu_px": float(r[inl].mean() / k),
+        "residu_px": float(np.median(r[wide]) / k) if wide.any() else float("inf"),
         "part_decor": float(inl.mean()),
         "affine": [float(x) for x in (*pu, *pv)],
     }
@@ -302,20 +311,28 @@ def pct(hist, q):
     return int(np.searchsorted(c, q * c[-1])) if c[-1] else float("nan")
 
 
-def gate(rows):
-    moving = [r for r in rows if r.get("camera_px", 0) >= MOVING_PX]
-    good = [r for r in moving if r["residu_px"] < GATE_PX and r["part_decor"] >= GATE_SHARE]
+def moving_set(results, names):
+    """Les paires (extrait, image) où une configuration au moins voit bouger la caméra. Toutes les configurations sont
+    jugées sur ces paires-là : une grille qui ne trouve plus le mouvement (portée de recherche dépassée) ne peut pas
+    sortir les panoramiques rapides de son propre compte."""
+    return {(name, r["image"]) for slot in results.values() for name in names
+            for r in slot["paires"].get(name, []) if r.get("camera_px", 0) >= MOVING_PX}
+
+
+def gate(rows, moving):
+    """rows : [(extrait, ligne)] d'une configuration. Une paire mobile sans ajustement compte comme ratée."""
+    judged = [r for name, r in rows if (name, r["image"]) in moving]
+    good = [r for r in judged if r.get("residu_px", float("inf")) < GATE_PX and r.get("part_decor", 0) >= GATE_SHARE]
     return len(good), len(moving)
 
 
 def report(results, times, info, clips, ref, pyr=None, levels=None):
-    L = [f"# Banc NVOF hors lecteur (porte 2.1)", "",
+    L = ["# Banc NVOF hors lecteur (porte 2.1)", "",
          f"Carte : {info.get('gpu', '?')}, pilote CUDA {info.get('cuda', '?')}, grilles acceptées : "
          f"{info.get('grilles', '?')}. Préréglage slow, sens avant, carte de coût allumée.", "",
          "## Temps GPU d'un appel (ms)", "", "| Grille | Hauteur | Médiane | 95e centile | Appels |",
          "|---|---|---:|---:|---:|"]
     for (g, hgt), ms in sorted(times.items()):
-        ms = ms[2:] if len(ms) > 4 else ms  # les premiers appels d'une session paient l'initialisation
         L.append(f"| {g} × {g} | {hgt}p | {np.median(ms):.2f} | {np.percentile(ms, 95):.2f} | {len(ms)} |")
     L += ["", "## Qualité du flux et carte de coût", "",
           "Gain : PSNR de b recalé sur a, moins b tel quel (dB, plus haut : meilleur flux). Coût : médiane / "
@@ -328,9 +345,9 @@ def report(results, times, info, clips, ref, pyr=None, levels=None):
         L.append(f"| {key[0]} × {key[0]} | {key[1]}p | {np.mean([r['gain_db'] for r in rows]):.2f} | "
                  + " | ".join(f"{pct(hists[c], .5)} / {pct(hists[c], .9)}" for c in CLASSES) + " |")
     L += ["", f"## Extraits ({ref[0]} × {ref[0]}, {ref[1]}p)", "",
-          "Caméra : mouvement moyen du modèle ; résidu : écart moyen du décor au modèle ; px à 720p. Tuiles : "
+          "Caméra : mouvement moyen du modèle ; résidu : écart médian du décor (blocs à moins de 3 px) au modèle ; px à 720p. Tuiles : "
           "part décor / dessin / incertain ; bascule : tuiles qui changent de classe entre deux paires voisines.", "",
-          "| Extrait | Paires (tenues) | Gain | Coût moyen | Caméra | Part décor | Résidu | Tuiles | Bascule |",
+          "| Extrait | Paires (doublons) | Gain | Coût moyen | Caméra | Part décor | Résidu | Tuiles | Bascule |",
           "|---|---:|---:|---:|---:|---:|---:|---|---:|"]
     for name, _, _ in clips:
         rows = results.get(ref, {"paires": {}})["paires"].get(name, [])
@@ -340,19 +357,22 @@ def report(results, times, info, clips, ref, pyr=None, levels=None):
         med = lambda k: np.median([r[k] for r in fit]) if fit else float("nan")  # noqa: E731
         share = np.mean([r["tuiles"] for r in rows], 0)
         flips = [r["bascule"] for r in rows if r.get("bascule") is not None]
-        L.append(f"| {name} | {len(rows)} ({results[ref]['tenues'][name]}) | "
+        L.append(f"| {name} | {len(rows)} ({results[ref]['doublons'][name]}) | "
                  f"{np.mean([r['gain_db'] for r in rows]):.2f} | {np.mean([r['cout_moyen'] for r in rows]):.1f} | "
                  f"{med('camera_px'):.2f} | {100 * med('part_decor'):.0f} % | {med('residu_px'):.2f} | "
                  + " / ".join(f"{100 * s:.0f}" for s in share)
                  + f" | {100 * np.mean(flips) if flips else float('nan'):.1f} % |")
     L += ["", "## Porte deux-un", "",
-          f"Paires des panoramiques où la caméra bouge (≥ {MOVING_PX} px) : résidu du décor sous {GATE_PX} px et "
+          f"Paires des panoramiques où une configuration au moins voit bouger la caméra (≥ {MOVING_PX} px), les mêmes "
+          f"pour toutes ; une paire sans ajustement est ratée. Résidu médian du décor sous {GATE_PX} px et "
           f"part du décor ≥ {100 * GATE_SHARE:.0f} %, sur {100 * GATE_PAIRS:.0f} % des paires.", "",
           "| Grille | Hauteur | Paires bonnes / mobiles | Part |", "|---|---|---:|---:|"]
     verdicts = {}
+    pans = [name for name, typ, _ in clips if typ == "panoramique"]
+    moving_pairs_all = moving_set(results, pans)
     for key in sorted(results):
-        rows = [r for name, typ, _ in clips if typ == "panoramique" for r in results[key]["paires"].get(name, [])]
-        good, moving = gate(rows)
+        rows = [(name, r) for name in pans for r in results[key]["paires"].get(name, [])]
+        good, moving = gate(rows, moving_pairs_all)
         verdicts[key] = (good / moving) if moving else None
         L.append(f"| {key[0]} × {key[0]} | {key[1]}p | {good} / {moving} | "
                  + (f"{100 * good / moving:.0f} %" if moving else "–") + " |")
@@ -387,7 +407,7 @@ def main():
     p.add_argument("--grilles", default="4,2,1")
     p.add_argument("--hauteurs", default="540,720,1080")
     p.add_argument("--images", type=int, default=160, help="images lues par extrait")
-    p.add_argument("--paires", type=int, default=64, help="paires qui bougent gardées par extrait")
+    p.add_argument("--paires", type=int, default=64, help="paires voisines gardées par extrait (sans les doublons)")
     p.add_argument("--indices", action="store_true", help="indices temporels de NVOF (paires qui se suivent)")
     p.add_argument("--reference", default="4:720", help="GRILLE:HAUTEUR des tableaux par extrait et des vues")
     p.add_argument("--pyramide", default="360:720",
@@ -424,9 +444,9 @@ def main():
                     continue
                 info.update(got)
                 times.setdefault(key, []).extend(ms)
-                slot = results.setdefault(key, {"paires": {}, "tenues": {}, "couts": {c: np.zeros(256, np.int64)
+                slot = results.setdefault(key, {"paires": {}, "doublons": {}, "couts": {c: np.zeros(256, np.int64)
                                                                                      for c in CLASSES}})
-                slot["tenues"][name] = held
+                slot["doublons"][name] = held
                 rows, last, shown = [], None, 0
                 every = max(1, len(pairs) // max(1, args.vues))
                 for i, k in enumerate(pairs):

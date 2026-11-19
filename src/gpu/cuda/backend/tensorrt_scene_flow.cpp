@@ -40,6 +40,10 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Te
   if (!scene_flow_) scene_flow_ = std::make_unique<SceneFlow>();
   auto fresh = scene_flow_->prepare(width / divisor, height / divisor, divisor);
   if (!fresh) return std::unexpected(std::move(fresh.error()));
+  // NVOF n'a pas fini la paire d'avant : celle-ci n'est pas lancée, la voie n'attend pas (ticket 0).
+  auto busy = scene_flow_->busy();
+  if (!busy) return std::unexpected(std::move(busy.error()));
+  if (*busy) return std::uint64_t{0};
   NvofSession& session = scene_flow_->session();
   const NvofSession::Pitched into_a = session.input();
   const NvofSession::Pitched into_b = session.reference();

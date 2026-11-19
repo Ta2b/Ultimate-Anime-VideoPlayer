@@ -178,6 +178,7 @@ std::expected<std::unique_ptr<TfixWindowEngine>, Refusal> TfixWindowEngine::load
   const Shape image = engine->image_shape();
   const Shape packed = engine->packed_shape();
   std::vector<Tensor> inputs;
+  inputs.reserve(2 * static_cast<std::size_t>(kernels::kTfixFrames));
   for (int r = 0; r < kernels::kTfixFrames; ++r)
     inputs.push_back({.type = TensorType::F16,
                       .shape = image,

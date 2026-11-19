@@ -180,6 +180,7 @@ TEST_CASE("kirari play : refus nommés", "[app][options]") {
   CHECK(parse({"a.mkv", "--window=10x10"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--window=1280"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--seconds=-1"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--vrr-margin=nan"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--model"}).error().code == RefusalCode::FieldMissing);
   CHECK(parse({"--", "--fichier.mkv"})->file == "--fichier.mkv");
   CHECK(parse({"--help"})->help);
@@ -396,6 +397,9 @@ TEST_CASE("kirari play : l'aide ne cite aucune option inconnue de l'analyseur", 
   REQUIRE_FALSE(refused);
   CHECK(refused.error().code == RefusalCode::OptionUnknown);
   CHECK(play_usage().find("--one-lane") == std::string::npos);
+  // Le tri des paires ne vaut qu'avec la carte de la scène, une option d'essai : essai lui aussi.
+  CHECK_FALSE(parse_play_options(std::vector<std::string_view>{"video.mkv", "--pair-triage"}));
+  CHECK(parse({"video.mkv", "--scene-map", "--pair-triage"})->pair_triage);
 }
 
 }  // namespace kirari::app::play

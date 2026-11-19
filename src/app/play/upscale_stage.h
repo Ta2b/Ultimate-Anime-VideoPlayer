@@ -713,7 +713,7 @@ class UpscaleStage final : public RingStage {
   }
   std::expected<void, Refusal> allocate_smooth();
   // La tenue en cours passe à la paire suivante, ou s'arrête (époque, coupe, grille) ; avant smooth_decide.
-  void smooth_advance(const DecodedFrame& frame, const PairFacts& facts, bool on_grid);
+  void smooth_advance(const DecodedFrame& frame, PairFacts& facts, bool on_grid);
   std::expected<void, Refusal> smooth_decide(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                              const PairFacts& facts, bool on_grid);
   // La tenue dure plus de deux sources : b cherché derrière la suivante, chaque image mesurée contre la copie

@@ -1,14 +1,12 @@
 #pragma once
-// Le gabarit du réseau SPAN FP8 (span_fp8_body.h) : Ch canaux (64, ou 48 sans rembourrage), l'algorithme
+// Le gabarit du réseau SPAN FP8 (span_fp8_body.h) : Ch canaux (64, ou 48 sans rembourrage) et l'algorithme
 // des convolutions 3×3 à Ch canaux d'entrée (BlockAlg : kOptimized, K par position du filtre, ou
-// kFewChannels, K mis à plat) et Fp16 : les blocs en FP16 sans quantification (SPAN FP16 en noyaux
-// CUTLASS, lot 2 du fil SPAN), activations FP16 et poids du paquet tels quels, échelles ignorées. Le graphe
-// des noyaux est celui du banc tools/bench/fp8/cutlass/span_net.cu ; voir docs/span-fp8-cutlass.md. Les poids
-// que reçoit upload sont déjà à la largeur Ch (span_fp8_net.cu).
+// kFewChannels, K mis à plat). Le SPAN FP16 n'y passe plus : il a ses noyaux natifs (span_native16.cu). Le
+// graphe des noyaux est celui du banc tools/bench/fp8/cutlass/span_net.cu ; voir docs/span-fp8-cutlass.md.
+// Les poids que reçoit upload sont déjà à la largeur Ch (span_fp8_net.cu).
 #include <array>
 #include <cstddef>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 #include "gpu/cuda/backend/span_fp8_body.h"
@@ -63,7 +61,7 @@ constexpr std::int64_t align_up(std::int64_t bytes) {
   return (bytes + kAlign - 1) / kAlign * kAlign;
 }
 
-template <int Ch, Alg BlockAlg, bool Fp16>
+template <int Ch, Alg BlockAlg>
 class Body final : public SpanFp8Body {
   using E4 = cutlass::float_e4m3_t;
   using F16 = cutlass::half_t;
@@ -71,19 +69,17 @@ class Body final : public SpanFp8Body {
   static constexpr int kConcat = 4 * Ch;
   static constexpr int kScaleCount = SpanFp8Weights::kScales;
 
-  // Blocs : entrée FP8 (ou FP16), Ch canaux. Hors blocs : entrée FP16, accumulateur f32.
+  // Blocs : entrée FP8, Ch canaux. Hors blocs : entrée FP16, accumulateur f32.
   template <class Acc>
-  using CB = std::conditional_t<Fp16, sk::Cfg<F16, 128, 32, 32, 4, Acc, BlockAlg, Ch>,
-                                sk::Cfg<E4, 128, 64, 32, 3, Acc, BlockAlg, Ch>>;
-  using EB = typename CB<float>::E;          // élément des activations des blocs
-  static constexpr int kAct = Fp16 ? 2 : 1;  // octets par canal d'activation des blocs
+  using CB = sk::Cfg<E4, 128, 64, 32, 3, Acc, BlockAlg, Ch>;
+  using EB = typename CB<float>::E;  // élément des activations des blocs (un octet)
   using C8 = CB<float>;
-  using L8 = sk::Launcher<C8, 0, true, Fp16>;
-  using LT = sk::Launcher<C8, 1, false, Fp16>;
+  using L8 = sk::Launcher<C8, 0, true>;
+  using LT = sk::Launcher<C8, 1, false>;
   using C16A = sk::Cfg<F16, 128, 32, 32, 4, float, Alg::kAnalytic, Ch>;
   using C16 = sk::Cfg<F16, 128, 32, 32, 4, float, Alg::kOptimized, Ch>;
   using C16P = sk::Cfg<F16, 128, 32, 32, 4, float, BlockAlg>;  // to_pixel : Ch canaux, kPixel colonnes
-  using LC1 = sk::Launcher<C16A, 0, false, Fp16>;              // sa sortie out8 entre au bloc 1
+  using LC1 = sk::Launcher<C16A, 0, false>;                    // sa sortie out8 entre au bloc 1
   using LCAT = sk::Launcher<C16, 0, false>;
   using LPIX = sk::Launcher<C16P, 2, false>;  // to_pixel, DepthToSpace fondu (étape 3.4a)
   // Étape 3.5a : les mêmes, accumulateur f16 (mma m16n8k16 .f16.f16.f16.f16), choisis par le paquet.
@@ -95,8 +91,8 @@ class Body final : public SpanFp8Body {
   // GeForce Ada, l'accumulation f32 des mma FP8 tourne à la moitié du débit de l'accumulation f16 (piste N3
   // de la deuxième passe TensorRT). Les poids y sont rangés kAcc16Headroom fois plus bas.
   using C8H = CB<F16>;
-  using L8H = sk::Launcher<C8H, 0, true, Fp16>;
-  using LTH = sk::Launcher<C8H, 1, false, Fp16>;
+  using L8H = sk::Launcher<C8H, 0, true>;
+  using LTH = sk::Launcher<C8H, 1, false>;
 
  public:
   Body(int height, int width)
@@ -111,11 +107,11 @@ class Body final : public SpanFp8Body {
 
   bool upload(const SpanFp8Weights& weights, SpanFp8Status& status, std::string& error) override;
   std::int64_t workspace_bytes() const override {
-    // concaténation FP16 de 4·Ch canaux + quatre tampons d'activation de Ch canaux (FP8, ou FP16) ;
+    // concaténation FP16 de 4·Ch canaux + quatre tampons d'activation FP8 de Ch canaux ;
     // dégroupage et sortie de conv_cat recouvrent des tampons alors inactifs. to_pixel écrit droit dans la
     // sortie.
     const std::int64_t rows = tiled();
-    return 2 * kAlign + align_up(rows * kConcat * 2) + align_up(rows * 4 * Ch * kAct);
+    return 2 * kAlign + align_up(rows * kConcat * 2) + align_up(rows * 4 * Ch);
   }
   void bind(void* base) override;
   bool launch_body(cudaStream_t stream, const void* input, std::string& error) override;
@@ -150,9 +146,9 @@ class Body final : public SpanFp8Body {
     return b == 0 ? scales_[0] : scales_[1 + 3 * (b - 1) + 2];
   }
   bool upload_block(std::size_t b, const SpanFp8Weights& weights, SpanFp8Status& status, std::string& error);
-  // L'échelle par colonne de la convolution i d'un bloc ; nulle en FP16 (alpha de KP, 1).
+  // L'échelle par colonne de la convolution i d'un bloc.
   const float* col_scale(const BlockWeights& bw, std::size_t i) const {
-    return Fp16 ? nullptr : bw.alpha[i].template as<float>();
+    return bw.alpha[i].template as<float>();
   }
   void bind_block(std::size_t b, std::uint8_t* const (&x)[2], std::uint8_t* r1, std::uint8_t* r2,
                   __half* cat_in);
@@ -196,15 +192,13 @@ class Body final : public SpanFp8Body {
   cudaError_t attribute_ = cudaSuccess;
 };
 
-template <int Ch, Alg BlockAlg, bool Fp16>
-bool Body<Ch, BlockAlg, Fp16>::upload(const SpanFp8Weights& weights, SpanFp8Status& status,
-                                      std::string& error) {
+template <int Ch, Alg BlockAlg>
+bool Body<Ch, BlockAlg>::upload(const SpanFp8Weights& weights, SpanFp8Status& status, std::string& error) {
   used_ = weights.blocks;
   acc16_ = weights.acc16;
   native_edges_ = weights.native_edges;
   scales_.fill(1.F);
-  if (!Fp16)
-    for (std::size_t i = 0; i < static_cast<std::size_t>(1 + 3 * used_); ++i) scales_[i] = weights.scales[i];
+  for (std::size_t i = 0; i < static_cast<std::size_t>(1 + 3 * used_); ++i) scales_[i] = weights.scales[i];
 
   // false : l'envoi a échoué, status et error le disent.
   const auto sent = [&](cudaError_t result, const char* what) {
@@ -241,10 +235,10 @@ bool Body<Ch, BlockAlg, Fp16>::upload(const SpanFp8Weights& weights, SpanFp8Stat
   return true;
 }
 
-// Les poids du bloc b : FP8 à l'échelle de leur canal (ou FP16 tels quels), biais, attention.
-template <int Ch, Alg BlockAlg, bool Fp16>
-bool Body<Ch, BlockAlg, Fp16>::upload_block(std::size_t b, const SpanFp8Weights& weights,
-                                            SpanFp8Status& status, std::string& error) {
+// Les poids du bloc b : FP8 à l'échelle de leur canal, biais, attention.
+template <int Ch, Alg BlockAlg>
+bool Body<Ch, BlockAlg>::upload_block(std::size_t b, const SpanFp8Weights& weights, SpanFp8Status& status,
+                                      std::string& error) {
   const auto sent = [&](cudaError_t result, const char* what) {
     if (result == cudaSuccess) return true;
     static_cast<void>(cudaGetLastError());
@@ -257,10 +251,6 @@ bool Body<Ch, BlockAlg, Fp16>::upload_block(std::size_t b, const SpanFp8Weights&
   for (std::size_t i = 0; i < 3; ++i) {
     const SpanFp8ConvView& conv = weights.conv[b][i];
     if (!sent(bw.b[i].upload(conv.bias, Ch * sizeof(float)), "biais")) return false;
-    if (Fp16) {
-      if (!sent(bw.w[i].upload(conv.weights, kBlockWeights * sizeof(std::uint16_t)), "poids")) return false;
-      continue;
-    }
     std::vector<std::uint8_t> q;
     const std::vector<float> w_scale =
         quantize_fp8(conv.weights, kBlockWeights, Ch, q, acc16_ ? kAcc16Headroom : 1.F);
@@ -275,9 +265,9 @@ bool Body<Ch, BlockAlg, Fp16>::upload_block(std::size_t b, const SpanFp8Weights&
          sent(bw.att_b.upload(att.bias, Ch * sizeof(float)), "biais");
 }
 
-template <int Ch, Alg BlockAlg, bool Fp16>
-void Body<Ch, BlockAlg, Fp16>::bind_block(std::size_t b, std::uint8_t* const (&x)[2], std::uint8_t* r1,
-                                          std::uint8_t* r2, __half* cat_in) {
+template <int Ch, Alg BlockAlg>
+void Body<Ch, BlockAlg>::bind_block(std::size_t b, std::uint8_t* const (&x)[2], std::uint8_t* r1,
+                                    std::uint8_t* r2, __half* cat_in) {
   const bool last = b + 1 == static_cast<std::size_t>(used_);
   const std::uint8_t* xin = x[b % 2];
   std::uint8_t* xout = x[(b + 1) % 2];
@@ -336,19 +326,19 @@ void Body<Ch, BlockAlg, Fp16>::bind_block(std::size_t b, std::uint8_t* const (&x
   }
 }
 
-template <int Ch, Alg BlockAlg, bool Fp16>
-void Body<Ch, BlockAlg, Fp16>::bind(void* base) {
+template <int Ch, Alg BlockAlg>
+void Body<Ch, BlockAlg>::bind(void* base) {
   workspace_ = base;
   auto* bytes = static_cast<std::uint8_t*>(base);
   const std::int64_t rows = tiled();
   __half* cat_in = reinterpret_cast<__half*>(bytes);
   std::uint8_t* region = bytes + align_up(rows * kConcat * 2);
-  const std::int64_t act = rows * Ch * kAct;  // un tampon d'activation des blocs
+  const std::int64_t act = rows * Ch;  // un tampon d'activation des blocs
   std::uint8_t* const x[2] = {region, region + act};
   std::uint8_t* r1 = region + 2 * act;
   std::uint8_t* r2 = region + 3 * act;
   // Le dégroupage (16 canaux FP16, 32 o) et la sortie de conv_cat (Ch canaux FP16, 2·Ch o) tiennent dans r1
-  // et r2 qui se suivent (2·Ch·kAct o par ligne).
+  // et r2 qui se suivent (2·Ch o par ligne).
   unshuffled_ = reinterpret_cast<__half*>(r1);
   auto* cat_out = reinterpret_cast<__half*>(r1);
   x0_ = x[0];
@@ -393,16 +383,16 @@ void Body<Ch, BlockAlg, Fp16>::bind(void* base) {
 }
 
 // Vrai si un lancement de stream a échoué, avec le motif dans error.
-template <int Ch, Alg BlockAlg, bool Fp16>
-bool Body<Ch, BlockAlg, Fp16>::failed(cudaStream_t /*stream*/, std::string& error) const {
+template <int Ch, Alg BlockAlg>
+bool Body<Ch, BlockAlg>::failed(cudaStream_t /*stream*/, std::string& error) const {
   const cudaError_t result = cudaGetLastError();
   if (result == cudaSuccess) return false;
   error = std::string("lancement des noyaux : ") + cudaGetErrorString(result);
   return true;
 }
 
-template <int Ch, Alg BlockAlg, bool Fp16>
-bool Body<Ch, BlockAlg, Fp16>::launch_body(cudaStream_t stream, const void* input, std::string& error) {
+template <int Ch, Alg BlockAlg>
+bool Body<Ch, BlockAlg>::launch_body(cudaStream_t stream, const void* input, std::string& error) {
   if (workspace_ == nullptr) {
     error = "zone de travail absente";
     return false;
@@ -432,7 +422,7 @@ bool Body<Ch, BlockAlg, Fp16>::launch_body(cudaStream_t stream, const void* inpu
     }
   }
   if (native_edges_)
-    edges_.cat(stream, cat_in_, kConcat, cat_out_, f16_now());
+    edges_.cat(stream, cat_in_, kConcat, cat_out_, f16_now(), overflow_dev_);
   else if (f16_now())
     cat16_.launch(stream);
   else
@@ -440,9 +430,9 @@ bool Body<Ch, BlockAlg, Fp16>::launch_body(cudaStream_t stream, const void* inpu
   return !failed(stream, error);
 }
 
-template <int Ch, Alg BlockAlg, bool Fp16>
-bool Body<Ch, BlockAlg, Fp16>::launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring,
-                                           std::string& error) {
+template <int Ch, Alg BlockAlg>
+bool Body<Ch, BlockAlg>::launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring,
+                                     std::string& error) {
   if (workspace_ == nullptr) {
     error = "zone de travail absente";
     return false;
@@ -459,7 +449,7 @@ bool Body<Ch, BlockAlg, Fp16>::launch_tail(cudaStream_t stream, void* output, co
     pix.launch(stream);
   };
   if (native_edges_)
-    edges_.pixel(stream, cat_out_, output, ring, f16_now());
+    edges_.pixel(stream, cat_out_, output, ring, f16_now(), overflow_dev_);
   else if (f16_now())
     tail(pix16_);
   else

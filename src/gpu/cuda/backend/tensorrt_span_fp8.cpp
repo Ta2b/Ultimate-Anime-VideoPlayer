@@ -14,7 +14,7 @@
 namespace kirari::gpu::cuda {
 namespace {
 
-// Le FP8 sur Ada seulement ; le FP16 natif aussi sur RTX 30 et RTX 50 (SpanFp8Net::supported_fp16_device).
+// Le FP8 sur Ada seulement ; le FP16 natif aussi sur RTX 50 (SpanFp8Net::supported_fp16_device).
 std::expected<void, Refusal> device_refusal(const cudaDeviceProp& properties, bool fp16) {
   const bool supported = fp16 ? SpanFp8Net::supported_fp16_device(properties.major, properties.minor)
                               : SpanFp8Net::supported_device(properties.major, properties.minor);
@@ -61,8 +61,12 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   auto engine = SpanFp8Engine::load(artifact.path, *crc, static_cast<int>(shape->dims[2]),
                                     static_cast<int>(shape->dims[3]), arena(), span_native_);
   if (!engine) return std::unexpected(std::move(engine.error()));
-  log(BackendLogLevel::Info,
-      std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}", shape->dims[3], shape->dims[2]));
+  if ((*engine)->fp16())
+    log(BackendLogLevel::Info, std::format("SPAN FP16 natif chargé : {}×{}", shape->dims[3], shape->dims[2]));
+  else
+    log(BackendLogLevel::Info,
+        std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}{}", shape->dims[3], shape->dims[2],
+                    (*engine)->native_edges() ? ", bords natifs" : ""));
   if (const std::optional<double> db = (*engine)->native_check_db())
     log(BackendLogLevel::Info,
         std::format(

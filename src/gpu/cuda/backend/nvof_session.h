@@ -8,8 +8,8 @@
 //   - les capacités lues (nvOFGetCaps : grilles, tailles), rien de supposé. La carte de coût n'existe
 //     qu'à partir d'Ampere : open refuse un GPU plus ancien (Turing) ;
 //   - une session par taille : une autre taille demande une autre session.
-// La bibliothèque vient du pilote, chargée ici ; aucun fichier de NVIDIA n'est livré. L'API n'est pas sûre
-// entre threads : un seul thread se sert d'une session.
+// La bibliothèque vient du pilote, chargée ici et jamais déchargée ; aucun fichier de NVIDIA n'est livré.
+// L'API n'est pas sûre entre threads : un seul thread se sert d'une session.
 #pragma once
 
 #include <cstddef>

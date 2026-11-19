@@ -110,7 +110,9 @@ struct SceneMotion {
   int rows = 0;
   std::vector<SceneTile> tiles;  // cols × rows, lissées dans le temps
   double unmatched = 0.0;        // part des vecteurs sans correspondance
-  bool drawing_held = false;     // aucun dessin ne bouge par rapport à la caméra
+  // Rien ne bouge hors de la caméra : au plus kDrawingHeldShare des tuiles en dessin ou en effet (classes
+  // brutes) ; sans caméra ajustée, au plus cette part de tuiles changées. Faux sur une coupe ou un fondu.
+  bool drawing_held = false;
   bool background_held = false;  // la caméra ne bouge pas
   bool cut_likely = false;       // la plupart des vecteurs sans correspondance, hors fondu
   bool fade = false;             // luminosité qui glisse partout dans le même sens (fondu, flash)
@@ -142,7 +144,7 @@ inline constexpr int kFitRounds = 4;
 inline constexpr float kCutUnmatched = 0.6F;       // part de vecteurs sans correspondance d'une coupe
 inline constexpr float kFadeShift = 4.0F;          // glissement moyen de luminosité d'un fondu, codes
 inline constexpr float kFadeAgree = 0.8F;          // part des tuiles qui glissent dans le même sens
-inline constexpr float kDrawingHeldShare = 0.01F;  // part de tuiles dessin au plus d'un dessin tenu
+inline constexpr float kDrawingHeldShare = 0.01F;  // part de tuiles qui bougent au plus d'un dessin tenu
 inline constexpr double kHeldCamera = 0.25;        // translation nulle, pixels de travail
 inline constexpr double kHeldLinear = 0.002;       // partie linéaire égale à l'identité
 }  // namespace scene

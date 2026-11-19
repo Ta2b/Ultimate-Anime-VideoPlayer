@@ -107,7 +107,8 @@ la RTX.
 ## Fusionné (lot B, étapes 2 et 3)
 
 Sous TensorRT, le lecteur essaie d'abord TemporalFix fusionné (`src/app/play/chain_temporal.cpp`), et ne
-retombe sur le graphe à cache de l'encodeur que s'il est refusé (la raison au journal). `--debug --no-tfix-fused`
+retombe sur le graphe à cache de l'encodeur que s'il est refusé (la raison au journal, le refus retenu pour la
+séance) ; « Annuler et regarder » ou une vidéo glissée pendant sa construction ne lancent pas ce graphe. `--debug --no-tfix-fused`
 garde ce graphe, pour la mesure ABAB ; `--debug --no-tfix-cache` prend le graphe en un morceau.
 
 - **Découpe** (`src/prepare/tfix_split.*`) : le modèle est reconnu (noms des tenseurs aux frontières, Concat

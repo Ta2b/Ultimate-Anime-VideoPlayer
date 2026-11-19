@@ -4,12 +4,10 @@
 //
 // Trois briques, toutes en fonctions de périphérique :
 //   - la prise (Tap) : position x + flot en FP32, bornée à une fenêtre, puis lecture bilinéaire ou
-//   Catmull-Rom
-//     d'un plan FP16 ;
+//     Catmull-Rom d'un plan FP16 ;
 //   - le flot à n'importe quelle échelle : un tenseur de flot plus petit que l'image (sortie d'un bloc de
-//   RIFE
-//     en DepthToSpace, flot NVOF en grille 4, carte de caméra), agrandi en bilinéaire demi-pixel aux seuls
-//     points lus ; ou un mouvement affine (caméra) évalué au point ;
+//     RIFE en DepthToSpace, flot NVOF en grille 4, carte de caméra), agrandi en bilinéaire demi-pixel aux
+//     seuls points lus ; ou un mouvement affine (caméra) évalué au point ;
 //   - le relèvement par bloc : la région d'un tenseur grossier que lit un bloc de fils, copiée une fois en
 //     mémoire partagée par des lectures de 16 octets, puis lue là par chaque fil. C'est ce qui ôte la plus
 //     grande part du coût de l'ancienne colle de RIFE : chaque fil y relisait les flots de tous les blocs
@@ -157,8 +155,9 @@ struct Staged {
 
 // Relève dans dst la région [rows] × [cols] des canaux first .. first + count − 1 d'un tenseur FP16 de
 // height × width pixels, rangé en plans (pitch 0) ou par pixel (pitch canaux, multiple de 8) ; dst garde
-// stride canaux par pixel (multiple de 8, au moins count). Par pixel, first multiple de 8, lecture par 16
-// octets. Tous les fils du bloc participent ; l'appelant synchronise ensuite.
+// stride canaux par pixel (multiple de 8, au moins count). Par pixel, lecture par 16 octets : first multiple
+// de 8, src aligné sur 16 octets, et first + 8 ⌈count / 8⌉ ≤ pitch (sinon la dernière lecture déborde sur le
+// pixel suivant, ou après le tenseur). Tous les fils du bloc participent ; l'appelant synchronise ensuite.
 __device__ __forceinline__ void stage_region(__half* dst, int stride, const __half* src, int height,
                                              int width, int pitch, int first, int count, Span rows,
                                              Span cols) {

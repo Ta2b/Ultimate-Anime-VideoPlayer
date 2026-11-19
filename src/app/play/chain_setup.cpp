@@ -416,7 +416,7 @@ std::optional<SpanInt8> usable_variant(SpanVariantKind kind, const ModelChoice& 
   const auto log = log_channel("app");
   if (kind == SpanVariantKind::Fp16Cutlass) {  // --span-native : le paquet se tire de l'ONNX, sans reçu
     auto native = native16_variant(model.path, variants);
-    if (!native) log->info("SPAN FP16 CUTLASS : {}", native.error().detail);
+    if (!native) log->info("SPAN FP16 natif : {}", native.error().detail);
     return native ? std::optional<SpanInt8>(std::move(*native)) : std::nullopt;
   }
   SpanInt8Lookup found = find_span_variant(kind, model.path, variants,
@@ -475,7 +475,7 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
       tier, SpanVariantCaps{.cutlass = cutlass, .native16 = native16, .fp8 = caps.fp8, .int8 = caps.int8},
       strict);
   if (p.options.span_native && !native16)
-    log->info("SPAN FP16 CUTLASS : ce moteur ou cette carte n'a pas les noyaux CUTLASS, TensorRT FP16");
+    log->info("SPAN FP16 natif : ce moteur ou cette carte n'a pas ses noyaux, TensorRT FP16");
   if (tier == PrecisionTier::Performance && !caps.fp8)
     log->info("SPAN Performance (FP8) : ce moteur ne le calcule pas, variante INT8 ou FP16");
   const auto prepare_span = [&] {

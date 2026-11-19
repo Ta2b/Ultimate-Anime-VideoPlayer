@@ -230,3 +230,37 @@ TEST_CASE("Découpe : un fondu enchaîné, perdu par le flux sur plusieurs dessi
   const auto shots = cut(frames);
   CHECK(shots.size() == 1);
 }
+
+TEST_CASE("Découpe : le dessin qui confirme une coupe vue par le flux en devient l'ancre") {
+  // Aux mêmes couleurs, trois dessins à 0,18 l'un de l'autre : la coupe (perdue par le flux), le dessin qui
+  // la confirme, puis un troisième, à 0,36 de la coupe mais proche du second. Jugé face à la coupe (le dessin
+  // qui confirme oublié), le troisième ouvrait un plan à sa place.
+  std::vector<ShotFrame> frames;
+  animate(frames, 0, 24, 0.3F, 0.0F, 0.1F);
+  frames.push_back(drawing(24, 0.3F, 0.07F, 0.9F));
+  frames.push_back(drawing(25, 0.3F, 0.07F, 0.0F));
+  frames.push_back(drawing(26, 0.3F, 0.13F, 0.1F));
+  frames.push_back(drawing(27, 0.3F, 0.19F, 0.2F));
+  for (int i = 28; i < 48; ++i) frames.push_back(drawing(i, 0.3F, 0.19F, 0.0F));
+  const auto shots = cut(frames);
+  REQUIRE(shots.size() == 2);
+  CHECK(shots.at(1).start_us == 24 * kFrame);
+}
+
+TEST_CASE("Découpe : une coupe du flux écartée compte dans le mouvement récent, comme sans le flux") {
+  // Après un plan fixe de deux secondes (rien dans le mouvement récent), un combat que le flux ne suit pas :
+  // deux dessins à 0,21, deux à 0,03, puis un geste à 0,36, sous le seuil que ces quatre mouvements donnent.
+  // Le premier, mis en attente par le flux puis écarté, manquait au seuil : le geste ouvrait un plan.
+  std::vector<ShotFrame> frames;
+  for (int i = 0; i < 48; ++i) frames.push_back(drawing(i, 0.3F, 0.0F, i == 0 ? 0.1F : 0.0F));
+  std::int64_t at = 48;
+  for (const float blue : {0.07F, 0.14F, 0.15F, 0.16F, 0.28F}) {
+    frames.push_back(drawing(at++, 0.3F, blue, 0.9F));
+    frames.push_back(drawing(at++, 0.3F, blue, 0.0F));
+  }
+  for (int i = 0; i < 20; ++i) frames.push_back(drawing(at++, 0.3F, 0.28F, 0.0F));
+  std::vector<ShotFrame> blind = frames;
+  for (ShotFrame& f : blind) f.motion.reset();
+  REQUIRE(cut(blind).size() == 1);
+  CHECK(cut(frames).size() == 1);
+}

@@ -58,11 +58,13 @@ class NativeEdges {
         <<<grid_, span_native::kThreads, kSmem, stream>>>(p);
   }
 
-  // conv_cat : les quatre tranches de la concaténation (pas ld) vers out (C canaux).
-  void cat(cudaStream_t stream, const __half* concat, int ld, __half* out, bool f16) const {
+  // conv_cat : les quatre tranches de la concaténation (pas ld) vers out (C canaux). f16 : sommes en f16,
+  // une somme débordée notée dans overflow (le mot du FP8, nul sans acc16), comme cat16_.
+  void cat(cudaStream_t stream, const __half* concat, int ld, __half* out, bool f16, int* overflow) const {
     span_native::Params p = params(cat_w_, cat_b_, out);
     for (int s = 0; s < 4; ++s) p.in[s] = concat + s * C;
     p.in_ld = ld;
+    p.overflow = overflow;
     constexpr int kSmem = span_native::smem_bytes(C, C, 1);
     if (f16)
       span_native::conv_kernel<C, C, 1, 4, S::kNhwc, M::kPlain, false, true>
@@ -72,10 +74,12 @@ class NativeEdges {
           <<<grid_, span_native::kThreads, kSmem, stream>>>(p);
   }
 
-  // to_pixel : sortie NCHW FP16 (ou nulle) et/ou l'emplacement de l'anneau.
-  void pixel(cudaStream_t stream, const __half* in, void* output, const SpanFp8Ring& ring, bool f16) const {
+  // to_pixel : sortie NCHW FP16 (ou nulle) et/ou l'emplacement de l'anneau ; f16 et overflow comme cat.
+  void pixel(cudaStream_t stream, const __half* in, void* output, const SpanFp8Ring& ring, bool f16,
+             int* overflow) const {
     span_native::Params p = params(pixel_w_, pixel_b_, static_cast<__half*>(output));
     p.in[0] = in;
+    p.overflow = overflow;
     p.surface = ring.surface;
     p.surf_w = ring.width;
     p.surf_h = ring.height;

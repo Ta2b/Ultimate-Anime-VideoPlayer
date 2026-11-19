@@ -17,11 +17,6 @@ void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tenso
                      SourceId right, std::uint32_t epoch) {
   if (!on_) return;
   poll(ops);
-  // Le backend garde kSceneFlowReadbacks paires : au-delà, la plus ancienne ne sera plus relue.
-  if (pending_.size() >= gpu::kSceneFlowReadbacks) {
-    pending_.erase(pending_.begin());
-    ++dropped_;
-  }
   const bool follows = last_right_ && *last_right_ == left && last_epoch_ == epoch;
   const bool restart = restart_ || !follows;
   auto ticket = ops.scene_flow_start(a, b, restart);
@@ -29,7 +24,17 @@ void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tenso
     stop(ticket.error(), "scene_flow_start");
     return;
   }
+  if (*ticket == 0) {  // NVOF occupé : paire sautée, la suivante ne la suit pas (last_right_ inchangé)
+    ++dropped_;
+    return;
+  }
+  // Le backend garde kSceneFlowReadbacks paires : la nouvelle a pris la place de la plus ancienne.
+  if (pending_.size() >= gpu::kSceneFlowReadbacks) {
+    pending_.erase(pending_.begin());
+    ++dropped_;
+  }
   pending_.push_back({.ticket = *ticket, .left = left, .right = right, .restart = restart});
+  last_left_ = left;
   last_right_ = right;
   last_epoch_ = epoch;
   restart_ = false;

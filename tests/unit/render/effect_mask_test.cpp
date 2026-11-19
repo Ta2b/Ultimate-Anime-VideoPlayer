@@ -118,6 +118,28 @@ TEST_CASE("Masque des effets : une coupe pose le masque d'un coup", "[render]") 
   CHECK(mask.neutral());
 }
 
+TEST_CASE("Masque des effets : une coupe sans carte du nouveau plan remet le masque au neutre", "[render]") {
+  EffectMask mask;
+  EffectTiles cut = grid(9, 5, 0.0F);
+  cut.cut = true;
+  mask.update(cut);
+  REQUIRE_FALSE(mask.neutral());
+  const std::uint64_t before = mask.serial();
+  EffectTiles blind;  // pas de tuiles : la carte de la paire n'est pas là
+  blind.cut = true;
+  blind.span_us = kPair;
+  mask.update(blind);
+  CHECK(mask.neutral());
+  CHECK(mask.values().empty());
+  CHECK(mask.serial() != before);
+  // Sans coupe, la même note vide ne fait que relâcher.
+  mask.update(cut);
+  blind.cut = false;
+  mask.update(blind);
+  CHECK_FALSE(mask.neutral());
+  CHECK(centre(mask) == Catch::Approx(effect_step(kPair, kEffectFallUs)).margin(1e-4));
+}
+
 TEST_CASE("Masque des effets : sans carte, retour lent au neutre, puis plus rien", "[render]") {
   EffectMask mask;
   EffectTiles cut = grid(9, 5, 0.0F);

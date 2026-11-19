@@ -8,14 +8,17 @@ choisit, plan par plan, entre ce qu'elle a déjà.
 1. **Le rythme de chaque plan** (`src/media/shot_rhythm.h`), lu par la pré-analyse (`shot_probe`) en avance
    sur la lecture. Pour chaque paire d'images consécutives :
    - sur la grille de l'analyse (128 × 72 points, toujours là), par blocs de 8 × 8 points : la part des blocs
-     qui changent (écart moyen d'au moins 6 codes) et le grain des autres ;
+     qui changent (écart moyen d'au moins 6 codes) et le grain des autres. Un bloc noir dans les deux images
+     (bandes noires, noir d'un fondu, luma moyenne sous 3 codes) ne compte ni dans l'un ni dans l'autre : en
+     2,39:1, les bandes diluaient le grain d'un quart et TemporalFix sautait des plans qui scintillent ;
    - avec le flux matériel de NVIDIA à 256 × 144 (`media/probe_flow.h`, la session du fil des coupes, une
      seule pour les deux) : la translation dominante (la caméra), l'écart des vecteurs à elle (les dessins)
      et la part des blocs sans correspondance. C'est ce qui sépare un panoramique d'un passage de sakuga.
 
    Un plan garde le nombre de ses paires, de ses paires tenues (sans dessin nouveau) et de ses paires fortes,
-   le grain moyen et la part immobile. La première paire du plan (qui enjambe la coupe) n'entre pas. Le
-   rythme va au cache des plans (signature `AJPSHOT7` : un cache plus ancien se refait).
+   le grain moyen et la part immobile. La première paire du plan (qui enjambe la coupe) n'entre pas, ni les
+   paires d'un plan trop court fondu dans son voisin. Le rythme va au cache des plans (signature `AJPSHOT7`,
+   version d'analyse 6 : un cache plus ancien se refait).
 
 2. **Le choix d'un plan** (`src/app/play/shot_plan.h`) :
    - DistilDRBA si le plan est en deux ou plus lent (au moins 1,6 image par dessin) et que moins de 15 % de
@@ -32,8 +35,16 @@ choisit, plan par plan, entre ce qu'elle a déjà.
    analysé garde le moteur en cours, et TemporalFix.
 
 Quand la forme de la chaîne ne s'y prête pas (warp avant SPAN, RIFE image, GMFSS, dessins lissés, sans SPAN,
-DistilDRBA absent), DistilDRBA n'est pas chargé ou est rendu, et seul TemporalFix se règle par plan. Le
-journal le dit (« plan par plan : … »).
+DistilDRBA absent), DistilDRBA n'est pas chargé ou est rendu, et seul TemporalFix se règle par plan. Si RIFE
+n'a pas pu se charger du tout (et sans GMFSS), DistilDRBA reste seul moteur plutôt que rien. Le journal le dit
+(« plan par plan : … »).
+
+Sous DistilDRBA, la carte de la scène du flux NVIDIA (`--scene-map`, `docs/carte-de-la-scene.md`) tourne
+comme avec DistilDRBA choisi au menu : `scene_pair` lance la paire à son arrivée (`rgb_[current_ ^ 1U]` tient
+l'image d'avant après `drba_arrive`, aussi à la bascule), et sa carte n'arrive qu'à l'image suivante
+(`SceneMap::latest`), pas dans `PairFacts`. Les éclats sur les effets la lisent avec une image de retard ;
+le tri des paires ne sert que RIFE. À une bascule de RIFE vers DistilDRBA, la paire déjà lancée par la
+lecture en avance de RIFE garde sa carte (une paire n'est lancée qu'une fois).
 
 ## Ce que dit le journal
 

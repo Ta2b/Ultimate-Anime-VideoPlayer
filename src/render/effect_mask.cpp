@@ -47,6 +47,11 @@ void EffectMask::update(const EffectTiles& tiles) {
   const auto count =
       static_cast<std::size_t>(std::max(tiles.cols, 0)) * static_cast<std::size_t>(std::max(tiles.rows, 0));
   if (count == 0 || tiles.effect.size() != count) {
+    // Sans carte : une coupe ne laisse rien du plan d'avant (le grade d'aujourd'hui), sinon retour lent.
+    if (tiles.cut) {
+      if (!level_.empty()) reset();
+      return;
+    }
     relax(tiles.span_us);
     return;
   }

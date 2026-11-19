@@ -102,7 +102,7 @@ namespace kirari::gpu {
 // 45 : KernelOps::gmfss_still (le décor fixe des clés repris des sources).
 // 46 : SplatJob::pull (le splat tiré).
 // 47 : KernelOps::scene_flow_start et scene_flow_take (la carte de la scène par le flux optique de NVIDIA,
-// kernels/spec/scene_flow.h).
+// kernels/spec/scene_flow.h ; ticket 0 : NVOF encore occupé, rien de lancé).
 // 48 : TemporalFix fusionné (manifestes « .tfixfused » : encodeur et fenêtre, tampon gardé à pyramides).
 // 49 : KernelOps::motion_doubt (le fondu local du mouvement de RIFE, kernels/spec/motion_doubt.h).
 // 50 : Engine::span_tile_grid et next_span_tiles (les tuiles qui bougent : SPAN sur les seules tuiles
