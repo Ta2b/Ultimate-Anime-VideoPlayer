@@ -285,10 +285,11 @@ void note_effects(LiveSettings& live, const SceneMap& map, SourceId left, std::i
 
 }  // namespace
 
-// La carte de la scène de la paire (previous_, frame), lancée en avance avec RIFE et GMFSS (look_ahead).
-// Sinon (sans interpolation, DistilDRBA, image suivante pas encore décodée), la paire est lancée ici et sa
-// carte n'arrive qu'à l'image suivante (SceneMap::latest) ; rgb_[current_ ^ 1U] tient alors previous_ dans
-// les trois cas (next_source, take_ahead, drba_arrive). D'une époque à l'autre : ni carte ni lancement.
+// La carte de la scène de la paire (previous_, frame), lancée en avance avec RIFE et GMFSS (look_ahead) et
+// avec DistilDRBA (drba_next). Sinon (sans interpolation, image suivante pas encore décodée), la paire est
+// lancée ici et sa carte n'arrive qu'à l'image suivante (SceneMap::latest) ; rgb_[current_ ^ 1U] tient alors
+// previous_ dans les trois cas (next_source, take_ahead, drba_arrive). D'une époque à l'autre : ni carte ni
+// lancement.
 PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts) {
   if (!scene_.on() || !previous_ || !facts.same_epoch) return facts;
   gpu::KernelOps& ops = *setup_.backend->kernels();
@@ -300,10 +301,10 @@ PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts)
                  setup_.work_height > 0 ? setup_.work_height : setup_.source_height,
                  facts.scores && pair_cut(facts));
   }
-  // Avec l'image suivante déjà là, look_ahead lance (frame, suivante) plus loin dans cette image : lancer
-  // aussi (previous_, frame) en retard, pour latest() seulement, prendrait NVOF à la paire à l'heure (passage
-  // 9 : 460 paires sautées sur 473, chacune lancée en retard faisant sauter la suivante).
-  const DecodedFrame* after = looks_ahead() ? next() : nullptr;
+  // Avec l'image suivante déjà là, look_ahead ou drba_next lance (frame, suivante) plus loin dans cette
+  // image : lancer aussi (previous_, frame) en retard, pour latest() seulement, prendrait NVOF à la paire à
+  // l'heure (passage 9 : 460 paires sautées sur 473, chacune lancée en retard faisant sauter la suivante).
+  const DecodedFrame* after = looks_ahead() || drba() ? next() : nullptr;
   const bool ahead_due = after != nullptr && after->epoch == frame.epoch &&
                          after->width == setup_.source_width && after->height == setup_.source_height;
   if (!ahead_due && !scene_.started(previous_->id, frame.id)) {

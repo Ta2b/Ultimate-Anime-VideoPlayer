@@ -511,8 +511,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.look_highlight = wanted.look_highlight;
   s.surface_white = wanted.surface_white;
   s.flash_guard = wanted.flash_guard;
-  s.look_table = wanted.look_table;
-  s.grade_before_warp = wanted.grade_before_warp;
   s.oled_black = wanted.oled_black;
   s.oled_black_steps = wanted.oled_black_steps;
   s.keep_poses = wanted.keep_poses;

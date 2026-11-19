@@ -2,7 +2,7 @@
 # Il emporte prepare (constructeur trtexec) et sa propre copie de spdlog ; ses symboles
 # restent cachés, sauf les trois points d'entrée.
 add_library(kirari_backend_tensorrt_kernels STATIC deband_kernels.cu doubt_kernels.cu drba_fused_kernels.cu export_kernels.cu
-  gmflow_backbone_net.cu gmfss_kernels.cu gmfss_native_net.cu layer_kernels.cu rife_fused_kernels.cu rife_kernels.cu rife_native_net.cu scene_flow_kernels.cu slice_kernels.cu stats_kernels.cu
+  gmflow_backbone_net.cu gmfss_kernels.cu gmfss_native_net.cu gmfss_pair_native_net.cu layer_kernels.cu rife_fused_kernels.cu rife_kernels.cu rife_native_net.cu scene_flow_kernels.cu slice_kernels.cu stats_kernels.cu
   tfix_blend_kernels.cu tfix_fused_kernels.cu warp_kernels.cu warp_lib.cu)
 target_include_directories(kirari_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(kirari_backend_tensorrt_kernels PRIVATE kirari::dep::cudart)
@@ -74,9 +74,9 @@ else()
 endif()
 
 add_library(kirari_backend_tensorrt MODULE
-  drba_fused_engine.cpp entry.cpp fused_graphs.cpp gmfss_fused_engine.cpp gmfss_fused_trial.cpp gpu_timing.cpp host_upload.cpp ring_slot.cpp rife_fused_engine.cpp rife_fused_native.cpp
+  drba_fused_engine.cpp entry.cpp fused_graphs.cpp gmfss_fused_engine.cpp gmfss_fused_trial.cpp gmfss_pair_engine.cpp gmfss_pair_trial.cpp gpu_timing.cpp host_upload.cpp ring_slot.cpp rife_fused_engine.cpp rife_fused_native.cpp
   ingest_chroma.cpp nvof_session.cpp scene_flow.cpp shared_activations.cpp span_fp8_check.cpp span_fp8_engine.cpp span_fp8_tiles.cpp tensorrt_backend.cpp tensorrt_doubt.cpp tensorrt_export.cpp tensorrt_kernels.cpp
-  tensorrt_gmfss.cpp tensorrt_gmfss_fused.cpp tensorrt_layers.cpp tensorrt_lanes.cpp tensorrt_drba_fused.cpp tensorrt_rife.cpp tensorrt_rife_fused.cpp tensorrt_scene_flow.cpp tensorrt_span_derive.cpp
+  tensorrt_gmfss.cpp tensorrt_gmfss_fused.cpp tensorrt_gmfss_pair.cpp tensorrt_layers.cpp tensorrt_lanes.cpp tensorrt_drba_fused.cpp tensorrt_rife.cpp tensorrt_rife_fused.cpp tensorrt_scene_flow.cpp tensorrt_span_derive.cpp
   span_timing.cpp tensorrt_span_fp8.cpp tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_tfix_fused.cpp tensorrt_warp.cpp tfix_fused_engine.cpp
   trt_engine.cpp)
 target_include_directories(kirari_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")

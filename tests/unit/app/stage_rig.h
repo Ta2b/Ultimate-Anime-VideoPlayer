@@ -267,6 +267,18 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     push("flow_max_take");
     return value;
   }
+  // La carte de la scène : chaque paire lancée au journal (« scene_flow_start a b »), jamais relue.
+  std::expected<std::uint64_t, Refusal> scene_flow_start(const gpu::Tensor& a, const gpu::Tensor& b,
+                                                         bool /*restart*/) override {
+    const std::scoped_lock lock(mutex_);
+    const gpu::PairScores ids = scores_of(a, b);
+    push(std::format("scene_flow_start {} {}", ids.left.value, ids.right.value));
+    return next_ticket_++;
+  }
+  std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
+      std::uint64_t /*ticket*/) override {
+    return std::optional<kernels::SceneFlowTiles>{};
+  }
   std::size_t pending_flow_tickets() const {
     const std::scoped_lock lock(mutex_);
     return flow_tickets_.size();

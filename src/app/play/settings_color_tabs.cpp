@@ -174,25 +174,10 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
 
   panel::advanced_header();
   section(i18n::tr("Grade"));
-  // Rien du grade ne tourne sur une source déjà HDR ; avant l'interpolation n'a de sens qu'en HDR, avec
-  // l'interpolation allumée.
+  // Rien du grade ne tourne sur une source déjà HDR. Le grade avant le warp et le look en une table n'ont
+  // plus de case : toujours pris là où ils s'appliquent (source_grade.h, look_table.h).
   ImGui::BeginDisabled(choices.source_hdr);
   const bool grid = panel::begin_grid("##grade");
-  if (grid) panel::cell();
-  const Factor factor = factor_of(d);
-  ImGui::BeginDisabled(!choices.hdr_output || factor.num <= factor.den);
-  ImGui::Checkbox(i18n::tr("Grade before interpolation"), &d.grade_before_warp);
-  ImGui::EndDisabled();
-  panel::tip(i18n::tr("Grade before interpolation"),
-             i18n::tr("Grades each source frame once instead of every displayed frame: frees the card at "
-                      "high multipliers. Moving edges can show slight color differences. Speed: up to 8× "
-                      "less grading at ×8. Quality impact: minor, on moving edges. Recommended: off."));
-  if (grid) panel::cell();
-  ImGui::Checkbox(i18n::tr("LUTs in one table"), &d.look_table);
-  panel::tip(i18n::tr("LUTs in one table"),
-             i18n::tr("Makes the HDR grade about 4 times lighter for the card, with no visible difference. "
-                      "Turn it off only to compare. Speed: grading about 4× faster. Quality impact: "
-                      "imperceptible. Recommended: on."));
   if (grid) panel::cell();
   ImGui::Checkbox(i18n::tr("Skin from faces (test)"), &d.face_skin);
   panel::tip(
@@ -208,8 +193,6 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
     d.true_hdr_peak = defaults.true_hdr_peak;
     d.surface_white = defaults.surface_white;
     d.flash_guard = defaults.flash_guard;
-    d.grade_before_warp = defaults.grade_before_warp;
-    d.look_table = defaults.look_table;
     d.face_skin = defaults.face_skin;
   }
 }

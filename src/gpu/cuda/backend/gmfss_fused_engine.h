@@ -46,9 +46,9 @@ class GmfssFusedEngine final : public Engine {
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
   // L'essai du natif (gmfss_fused_trial.cpp) : des entrées de test passent par le moteur entier, puis par
-  // l'IFNet et le GridNet natif en sommes f16, puis f32 ; le natif n'est gardé que si sa sortie tient min_db
-  // contre celle de TensorRT. La ligne du journal qui dit ce qui a été retenu ; refus : l'essai n'a pas pu
-  // tourner (le moteur entier reste).
+  // l'IFNet et le GridNet natif en sommes f16, mixtes et f32 ; le natif n'est gardé que si sa sortie tient
+  // min_db contre celle de TensorRT et s'il le bat d'au moins 2 % en temps. La ligne du journal qui dit ce
+  // qui a été retenu ; refus : l'essai n'a pas pu tourner (le moteur entier reste).
   std::expected<std::string, Refusal> try_native(const prepare::GmfssGrid& grid,
                                                  const std::shared_ptr<SharedActivations>& shared,
                                                  double min_db);

@@ -300,7 +300,6 @@ struct PlaceboScreen::Impl {
   }
   // Gradée avant le warp, l'image est déjà dans l'espace de la sortie : ni conversion ni compression.
   pl_color_space frame_color() const { return frame_graded ? target_color : source; }
-  bool grade_before_warp = false;          // set_grade_before_warp
   int sharpness = 0;                       // posé par set_finish, 0 à 100 %
   std::optional<render::Sharpen> sharpen;  // absent si le hook ne se lit pas (dit au journal)
   // Anime4K de la chaîne ouverte (set_anime4k) : ses shaders passent devant la netteté et le grade.

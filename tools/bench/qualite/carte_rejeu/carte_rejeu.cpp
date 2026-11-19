@@ -8,9 +8,14 @@
 // FLUX : ce qu'écrit nvof_dump --grid 4 --one-way --cost, vecteurs S10.5 (x, y en int16) puis coûts (uint8).
 // SORTIE : par tuile, ligne par ligne, la classe (uint8 : 0 incertain, 1 décor, 2 dessin, 3 effet), puis
 // « changée » (uint8), puis la confiance (float32). Sur la sortie standard, une ligne par paire :
-// carte COLONNES LIGNES caméra_ajustée caméra_tenue dessin_tenu coupe fondu (0 ou 1).
+// carte COLONNES LIGNES caméra_ajustée caméra_tenue dessin_tenu coupe fondu (0 ou 1), puis
+// diag CANDIDATES MINIMUM PEU_TEXTURÉES SANS_CORRESPONDANCE ÉPARSES T25 T50 T75 : les tuiles qui peuvent
+// ajuster la caméra, le nombre qu'il en faut, celles écartées (texture sous kFitTexture, coût, vecteurs
+// épars, dans cet ordre), les quartiles de la texture (codes par pixel ; seuils de kernels::scene).
 // D : le diviseur du travail au flux (scene_flow_divisor), qui ne change que les pixels de travail.
+#include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -37,6 +42,41 @@ bool read_all(const std::string& path, std::span<std::byte> out) {
 template <class T>
 bool read_plane(const std::string& path, Plane<T>& plane) {
   return read_all(path, std::as_writable_bytes(std::span(plane.data)));
+}
+
+// Pourquoi la caméra s'ajuste ou non : les critères de fit_candidate (kernels/ref/scene_flow.cpp), recopiés.
+void print_diagnosis(const SceneFlowTiles& tiles) {
+  int candidates = 0;
+  int bare = 0;
+  int unmatched = 0;
+  int spread = 0;
+  std::vector<float> textures;
+  for (const SceneTileSums& t : tiles.tiles) {
+    if (t.cells <= 0.0F || t.pixels <= 0.0F) continue;
+    const float texture = t.texture / t.pixels;
+    const float mx = t.sum_x / t.cells;
+    const float my = t.sum_y / t.cells;
+    const float scatter = std::sqrt(std::max(0.0F, t.sum_xx / t.cells - mx * mx) +
+                                    std::max(0.0F, t.sum_yy / t.cells - my * my));
+    textures.push_back(texture);
+    if (texture < scene::kFitTexture) {
+      ++bare;
+    } else if (1.0F - t.unmatched / t.cells < scene::kFitMatched) {
+      ++unmatched;
+    } else if (scatter > scene::kSpreadMax) {
+      ++spread;
+    } else {
+      ++candidates;
+    }
+  }
+  const double share = std::ceil(scene::kFitMinShare * static_cast<double>(tiles.tiles.size()));
+  const int minimum = std::max(scene::kFitMinTiles, static_cast<int>(share));
+  std::ranges::sort(textures);
+  const auto quartile = [&](std::size_t q) {
+    return textures.empty() ? 0.0F : textures[q * (textures.size() - 1) / 4];
+  };
+  std::cout << "diag " << candidates << ' ' << minimum << ' ' << bare << ' ' << unmatched << ' ' << spread
+            << ' ' << quartile(1) << ' ' << quartile(2) << ' ' << quartile(3) << "\n";
 }
 
 bool write_map(const std::string& path, const SceneMotion& m) {
@@ -95,6 +135,7 @@ bool run(const std::string& line, int divisor, ref::SceneHistory& history) {
   std::cout << "carte " << m.cols << ' ' << m.rows << ' ' << int{m.camera_fit} << ' '
             << int{m.background_held} << ' ' << int{m.drawing_held} << ' ' << int{m.cut_likely} << ' '
             << int{m.fade} << "\n";
+  print_diagnosis(*tiles);
   return true;
 }
 
