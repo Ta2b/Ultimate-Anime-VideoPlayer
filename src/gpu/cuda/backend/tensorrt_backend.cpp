@@ -155,7 +155,6 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->rife_hwc8_ = (init.trials & kTrialRifeHwc8) != 0;
   backend->warp_l2_ = (init.trials & kTrialWarpL2) != 0;
   backend->span_native_ = (init.trials & kTrialSpanNative) != 0;
-  backend->span_promoted_ = (init.trials & kTrialSpanPromoted) != 0;
   backend->rife_native_ = (init.trials & kTrialRifeNative) != 0;
   backend->gmfss_native_ = (init.trials & kTrialGmfssNative) != 0;
   backend->trtexec_ = std::move(trtexec);

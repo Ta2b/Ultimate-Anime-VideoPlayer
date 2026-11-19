@@ -3,7 +3,7 @@
 // (PSNR et SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
 //   kirari_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
-//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32 | --promoted] [--band N] [--compare]
+//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--band N] [--compare]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
@@ -12,8 +12,7 @@
 // canaux, l'ancien calcul en 64 canaux ou le K par position du filtre (SpanFp8Width), pour les mesurer contre
 // le calcul natif du lecteur. --fp16 : les blocs en FP16 sans quantification (SpanFp8Weights::fp16), à
 // mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. --acc16 :
-// accumulateur f16, comme le drapeau du paquet. --acc32 : le FP16 natif somme en f32, en f16 sans l'option ;
-// --promoted : chaque mma somme ses 16 produits en f16, ajoutés en f32 (SpanNativeSums::Promoted).
+// accumulateur f16, comme le drapeau du paquet. --acc32 : le FP16 natif somme en f32, en f16 sans l'option.
 // --band N : le FP16 natif en bandes de N lignes de demi-résolution (0 : chaque couche sur l'image entière ;
 // sans l'option, SpanFp8Weights::band, celle du lecteur).
 // --compare : la sortie est aussi calculée par la référence FP16 (sommes f32) et l'écart dit sur la sortie
@@ -90,8 +89,6 @@ std::string read_options(int argc, char* const* argv, Options& options) {
       options.acc16 = true;
     } else if (option == "--acc32") {
       options.sums = kirari::gpu::cuda::SpanNativeSums::F32;
-    } else if (option == "--promoted") {
-      options.sums = kirari::gpu::cuda::SpanNativeSums::Promoted;
     } else if (option == "--compare") {
       options.compare = true;
     } else if (option == "--per-tap") {
@@ -120,18 +117,6 @@ std::expected<kirari::gpu::span_fp8::Package, kirari::Refusal> load_package(cons
   if (!read_all(path, bytes))
     return std::unexpected(kirari::Refusal{kirari::RefusalCode::FileUnreadable, "paquet illisible"});
   return kirari::gpu::span_fp8::parse(bytes);
-}
-
-const char* native_label(kirari::gpu::cuda::SpanNativeSums sums) {
-  switch (sums) {
-    case kirari::gpu::cuda::SpanNativeSums::F32:
-      return "FP16 natif (sommes f32)";
-    case kirari::gpu::cuda::SpanNativeSums::Promoted:
-      return "FP16 natif (sommes promues)";
-    case kirari::gpu::cuda::SpanNativeSums::F16:
-      break;
-  }
-  return "FP16 natif";
 }
 
 // Les pointeurs du paquet, avec la forme de calcul demandée.
@@ -220,8 +205,9 @@ int bench_graph(SpanFp8Net& net, const Options& options, int height, int width, 
   for (std::size_t i = 0; i < ms.size(); ++i)
     CU(cudaEventElapsedTime(&ms[i], events[2 * i], events[2 * i + 1]));
   std::ranges::sort(ms);
+  const bool f32 = options.sums == kirari::gpu::cuda::SpanNativeSums::F32;
   std::printf("SPAN %s %dx%d : médiane %.3f ms, min %.3f ms sur %d lancements (graphe CUDA)\n",
-              options.fp16 ? native_label(options.sums) : "FP8", width, height,
+              options.fp16 ? (f32 ? "FP16 natif (sommes f32)" : "FP16 natif") : "FP8", width, height,
               static_cast<double>(ms[ms.size() / 2]), static_cast<double>(ms.front()), bench);
   return 0;
 }
