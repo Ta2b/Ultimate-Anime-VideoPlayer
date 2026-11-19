@@ -148,7 +148,7 @@ void SpanFp8Engine::drop_graphs() {
 
 std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
     const std::filesystem::path& package, std::uint32_t crc, int height, int width,
-    const std::shared_ptr<SharedActivations>& shared) {
+    const std::shared_ptr<SharedActivations>& shared, bool native_edges) {
   auto bytes = read_span_fp8_package(package);
   if (!bytes) return std::unexpected(std::move(bytes.error()));
   // Une préparation de fond a pu réécrire le paquet depuis la construction : des poids qu'aucun reçu ne
@@ -162,7 +162,9 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
     return refuse(RefusalCode::FormatUnsupported, "SPAN FP8 : " + why);
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string why;
-  std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(span_fp8_view(*parsed), height, width, status, why);
+  SpanFp8Weights weights = span_fp8_view(*parsed);
+  weights.native_edges = native_edges && !parsed->fp16;
+  std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, height, width, status, why);
   if (!net)
     return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
                                                        : RefusalCode::VendorCallFailed,

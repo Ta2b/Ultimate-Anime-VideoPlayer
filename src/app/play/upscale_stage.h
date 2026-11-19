@@ -71,9 +71,11 @@ constexpr int pair_scale_side(int rife_side) {
 struct UpscaleSetup {
   gpu::Backend* backend = nullptr;  // vit plus longtemps que l'étage
   gpu::Engine* engine = nullptr;    // SPAN aux formes de travail ; nullptr : sans agrandissement
-  // La stabilisation temporelle (upscale_temporal.cpp) : sept images de travail en entrée, l'image du milieu
-  // stabilisée en sortie ; nullptr : éteinte. L'étage lit alors kTemporalFixRadius images de plus en avance.
+  // Stabilisation temporelle (upscale_temporal.cpp) : sept images et leurs traits (temporal_features canaux,
+  // encodés une fois par image par temporal_encoder) ; nullptr : éteinte. Lit kTemporalFixRadius de plus.
   gpu::Engine* temporal_fix = nullptr;
+  gpu::Engine* temporal_encoder = nullptr;
+  int temporal_features = 0;
   // Lecture (horloge présente) : un instant identique à l'image affichée n'est ni calculé ni écrit.
   bool skip_held = false;
   gpu::Engine* rife = nullptr;  // RIFE à rife_geometry(travail) ; nullptr : sans interpolation
@@ -234,12 +236,10 @@ class UpscaleStage final : public RingStage {
   // l'interpolation si la carte ne suit pas » (motion_cut.h). `source_only` : le Rapide l'a réduite à sa
   // source faute de temps.
   void count_free(const PairFacts& facts, int written, bool source_only);
-  // Débogage des paires (pair_marks.h) : la paire (previous_, frame) tenue ou coupée notée et écrite au
-  // journal, seulement quand le menu Statistiques le demande.
+  // Débogage des paires (pair_marks.h) : (previous_, frame) tenue ou coupée, au journal (Stats)
   void mark_pair(const DecodedFrame& frame, const PairFacts& facts);
   PairFacts& scene_pair(const DecodedFrame& frame, PairFacts& facts);  // facts.scene (upscale_ahead.cpp)
-  // Où DistilDRBA estime : la taille de RIFE.
-  kernels::RifeGeometry drba_geometry() const;
+  kernels::RifeGeometry drba_geometry() const;  // où DistilDRBA estime : la taille de RIFE
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
   std::expected<void, Refusal> drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                          bool measure);

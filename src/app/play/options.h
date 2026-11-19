@@ -153,6 +153,9 @@ struct PlayOptions {
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;
+  // La pré-analyse départage les coupes par le flux optique de NVIDIA (media/probe_flow.h), par défaut ;
+  // --no-probe-flow : la découpe des autres cartes, sans lui.
+  bool probe_flow = true;
   // --profile-dispatches : temps GPU et nombre de dispatchs par shader des réseaux Vulkan, au journal
   // quand un réseau se décharge (BackendInit::profile_dispatches).
   bool profile_dispatches = false;
@@ -168,9 +171,9 @@ struct PlayOptions {
   // RIFE mesuré dans le lecteur sur la RTX 4070 Ti (docs/interpolation.md) ; allumé par défaut,
   // --no-rife-hwc8 (essai) revient aux E/S en plans.
   bool rife_hwc8 = true;
-  // --span-native (essai) : au cran Équilibre, SPAN en FP16 par les noyaux CUTLASS du backend (canaux natifs,
-  // b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par défaut jusqu'à la
-  // mesure sur la carte (docs/span-fp8-cutlass.md, « SPAN FP16 natif dans le lecteur »).
+  // --span-native (essai) : au cran Équilibre, SPAN en FP16 par nos noyaux natifs (docs/span-native16.md,
+  // canaux natifs, b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par
+  // défaut jusqu'à la mesure sur la carte (tools/bench/span_native/banc.sh).
   bool span_native = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
@@ -181,6 +184,9 @@ struct PlayOptions {
   // --rife-warm (essai, P6.15) : la passe du milieu d'une paire calme reprend les blocs grossiers de RIFE de
   // la paire précédente (RIFE fusionné sous Vulkan) ; UpscaleSetup::rife_warm.
   bool rife_warm = false;
+  // --no-tfix-cache (essai) : TemporalFix en un seul moteur, chaque image encodée à chaque passe, au
+  // lieu du cache de l'encodeur (prepare/onnx_cache.h) ; le retour en arrière si le cache se trompe.
+  bool temporal_fix_whole = false;
   // --rife-encode-all (mesure, avec --debug) : RIFE fusionné encode les deux images à chaque passe, comme
   // avant fusion3, au lieu de garder l'encodage de la paire et de la B précédente ; la sortie est la même
   // (UpscaleSetup::rife_encode_all). Pour mesurer le gain en ABAB (docs/rife-fusionne.md).

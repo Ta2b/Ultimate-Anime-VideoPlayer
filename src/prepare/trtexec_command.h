@@ -47,12 +47,20 @@ std::string shapes_label(const gpu::ShapeSet& shapes);
 // Chaque dimension positive, et min ≤ opt ≤ max dimension par dimension.
 std::expected<void, Refusal> check_shapes(const gpu::ShapeSet& shapes);
 
+// Une autre entrée libre du profil (ModelSource::twins) : les formes de l'entrée nommée, ses canaux à elle
+// (les traits gardés de la stabilisation temporelle, prepare/onnx_cache.h).
+struct ShapeTwin {
+  std::string name;
+  std::int64_t channels = 0;
+  bool operator==(const ShapeTwin&) const = default;
+};
+
 // Réglages hachés dans la clé. Sans formes (ONNX statique), aucun profil :
 // trtexec 11 refuse même un profil égal aux formes déclarées. twins : les autres entrées libres, de mêmes
-// formes (ModelSource::twins) ; sans elles, la ligne est celle d'avant.
+// formes au nombre de canaux près (ModelSource::twins) ; sans elles, la ligne est celle d'avant.
 std::string engine_settings(Recipe recipe, std::string_view input_name,
                             const std::optional<gpu::ShapeSet>& shapes,
-                            std::span<const std::string> twins = {});
+                            std::span<const ShapeTwin> twins = {});
 
 struct SanitizedSettings {
   std::string kept;                  // réglages pour la ligne de commande

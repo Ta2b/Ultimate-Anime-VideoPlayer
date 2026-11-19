@@ -24,13 +24,12 @@ void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tenso
   }
   const bool follows = last_right_ && *last_right_ == left && last_epoch_ == epoch;
   const bool restart = restart_ || !follows;
-  if (restart) history_.clear();  // les classes d'un autre plan ne disent rien de celui-ci
   auto ticket = ops.scene_flow_start(a, b, restart);
   if (!ticket) {
     stop(ticket.error(), "scene_flow_start");
     return;
   }
-  pending_.push_back({.ticket = *ticket, .left = left, .right = right});
+  pending_.push_back({.ticket = *ticket, .left = left, .right = right, .restart = restart});
   last_right_ = right;
   last_epoch_ = epoch;
   restart_ = false;
@@ -49,7 +48,8 @@ void SceneMap::poll(gpu::KernelOps& ops) {
       ++dropped_;
       continue;
     }
-    if (!*taken) return;  // pas encore finie : les suivantes non plus
+    if (!*taken) return;                             // pas encore finie : les suivantes non plus
+    if (pending_.front().restart) history_.clear();  // les classes d'un autre plan ne disent rien ici
     kernels::SceneMotion motion = kernels::ref::scene_motion_of(**taken, history_);
     ++read_;
     if (motion.cut_likely) {

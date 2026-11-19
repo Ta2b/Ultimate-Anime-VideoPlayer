@@ -52,7 +52,8 @@ class SceneFlow {
     cudaEvent_t done = nullptr;
     std::uint64_t ticket = 0;
   };
-  void release_grid();  // la file de NVOF déjà vide
+  std::expected<void, Refusal> allocate_grid();  // la grille de cols_ × rows_ tuiles et ses relectures
+  void release_grid();                           // la file de NVOF déjà vide
 
   std::optional<Refusal> refused_;
   std::unique_ptr<NvofSession> session_;
