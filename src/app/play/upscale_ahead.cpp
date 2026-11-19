@@ -7,8 +7,10 @@
 //
 // Entrée de RIFE : les images de la paire une fois, sur la voie des mesures et dans l'autre des deux
 // entrées, puis l'instant seul pour les autres instants.
+#include <memory>
 #include <utility>
 
+#include "app/play/effect_book.h"
 #include "app/play/pair_marks.h"
 #include "app/play/upscale_stage.h"
 #include "core/log.h"
@@ -29,6 +31,10 @@ std::expected<void, Refusal> UpscaleStage::allocate_ahead() {
   if (auto ok = alloc(ahead_.rgb, setup_.work_width, setup_.work_height); !ok) return ok;
   if (small_[0]) {
     if (auto ok = alloc(ahead_.small, setup_.rife_width, setup_.rife_height); !ok) return ok;
+  }
+  // Plan par plan : l'étage part sous RIFE (drba() faux), les tampons de DistilDRBA s'ajoutent ici.
+  if (setup_.drba_by_shot) {
+    if (auto ok = allocate_drba(); !ok) return ok;
   }
   return smooth_possible() ? allocate_smooth() : std::expected<void, Refusal>{};
 }
@@ -182,6 +188,9 @@ constexpr std::uint64_t kDisagreementsLogged = 100;  // désaccords écrits au j
 // 8.7 : les plans de la pré-analyse décident quand ils couvrent la paire ; RIFE ne fait que signaler, et ne
 // l'emporte sur « même plan » que par une coupe isolée (CutBurst, rife_plan.h).
 void UpscaleStage::judge_cuts(const DecodedFrame& frame, PairFacts& facts) {
+  // Tri des paires (rife_triage.h) : RIFE seul, ni GMFSS (son mouvement n'est pas celui de RIFE), ni
+  // DistilDRBA (une image de retard : le warp ne lit pas la paire triée ici).
+  facts.flow_triage = setup_.pair_triage && setup_.gmfss.use == GmfssUse::Off && !drba();
   if (!setup_.live || !previous_ || !facts.scores || previous_->pts_us == kNoPts || frame.pts_us == kNoPts)
     return;
   facts.known_cut = setup_.live->cuts().cut_between(previous_->pts_us, frame.pts_us);
@@ -245,6 +254,26 @@ void UpscaleStage::mark_pair(const DecodedFrame& frame, const PairFacts& facts) 
   log_channel("gpu")->info("{}", pair_mark_line(mark, *facts.scores, facts.known_cut, useful_area_));
 }
 
+namespace {
+
+// Rien sans carte (pas encore relue, refusée) ni sans paire de la même époque : l'écran revient alors au
+// grade d'aujourd'hui. Sans interpolation, la carte de la paire d'avant (celle qui finit sur left) sert à la
+// paire en cours : une paire de retard, que le lissage du masque couvre.
+void note_effects(LiveSettings& live, const SceneMap& map, SourceId left, std::int64_t from_us,
+                  const DecodedFrame& b, const PairFacts& facts, int width, int height, bool cut) {
+  if (!live.effect_highlights() || !facts.same_epoch || from_us == kNoPts || b.pts_us == kNoPts) return;
+  const kernels::SceneMotion* scene = facts.scene ? &*facts.scene : nullptr;
+  if (scene == nullptr && map.latest() && map.latest()->right == left) scene = &map.latest()->motion;
+  if (scene == nullptr) return;
+  live.effect_book().add(EffectNote{.epoch = b.epoch,
+                                    .from_us = from_us,
+                                    .to_us = b.pts_us,
+                                    .tiles = std::make_shared<const render::EffectTiles>(
+                                        effect_tiles_of(*scene, width, height, facts.gap_us, cut))});
+}
+
+}  // namespace
+
 // La carte de la scène de la paire (previous_, frame), lancée en avance avec RIFE (look_ahead). Sans
 // interpolation, la paire est lancée ici et sa carte n'arrive qu'à l'image suivante (SceneMap::latest).
 PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts) {
@@ -252,6 +281,12 @@ PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts)
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (facts.scores && pair_cut(facts)) scene_.cut();  // la paire suivante repart sans indices
   facts.scene = scene_.for_pair(ops, previous_->id, frame.id);
+  if (setup_.live != nullptr) {
+    note_effects(*setup_.live, scene_, previous_->id, previous_->pts_us, frame, facts,
+                 setup_.work_width > 0 ? setup_.work_width : setup_.source_width,
+                 setup_.work_height > 0 ? setup_.work_height : setup_.source_height,
+                 facts.scores && pair_cut(facts));
+  }
   if (!interpolates() && facts.same_epoch) {
     scene_.start(ops, rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor(), previous_->id, frame.id,
                  frame.epoch);

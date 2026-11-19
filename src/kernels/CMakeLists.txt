@@ -17,6 +17,7 @@ kirari_add_module(kernels
     ref/frame_stats.cpp
     ref/gmfss.cpp
     ref/half.cpp
+    ref/motion_doubt.cpp
     ref/resample.cpp
     ref/rife.cpp
     ref/rife_fused.cpp

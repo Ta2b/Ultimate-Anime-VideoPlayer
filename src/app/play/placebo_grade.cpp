@@ -183,6 +183,16 @@ std::expected<void, Refusal> PlaceboScreen::set_looks(
   return {};
 }
 
+void PlaceboScreen::Impl::follow_effects(const ShowRequest& request) {
+  if (!grade) return;
+  const std::int64_t pts = request.frame != nullptr ? request.frame->pts_us : kNoPts;
+  const bool changed = effects.show(request.effects, pts);
+  if (!changed && !effects_on) return;  // neutre et resté neutre : rien à poser
+  const bool on = grade->set_effect_mask(&effects.mask());
+  if (changed || on != effects_on) ++grade_serial;  // la composition gardée ne vaut plus
+  effects_on = on;
+}
+
 void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
   const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
   const std::optional<bool> before = grade_loaded_pq;

@@ -17,10 +17,12 @@
 #include <vector>
 
 #include "app/play/cut_book.h"
+#include "app/play/effect_book.h"
 #include "app/play/frame_latency.h"
 #include "app/play/motion_cut.h"
 #include "app/play/pair_marks.h"
 #include "app/play/settings.h"
+#include "app/play/shot_plan.h"
 #include "core/auto_rate.h"
 #include "core/free_rate.h"
 #include "core/steady_rate.h"
@@ -83,6 +85,9 @@ class LiveSettings {
   // Les coupes des plans de la pré-analyse (cut_book.h, --shot-cuts) : main écrit, le fil du GPU lit.
   CutBook& cuts() { return cut_book_; }
   const CutBook& cuts() const { return cut_book_; }
+  // L'Auto plan par plan (shot_plan.h, --shot-plan) : main pose les plans, le fil du GPU lit leurs choix.
+  ShotPlanBook& shot_plan() { return shot_plan_; }
+  const ShotPlanBook& shot_plan() const { return shot_plan_; }
   // ×num/den ; num ≤ den : aucune interpolation (le moteur reste chargé). Les deux termes dans un
   // seul atomique : jamais l'un sans l'autre.
   void set_rife_factor(Factor factor) {
@@ -360,6 +365,16 @@ class LiveSettings {
   PairMarks& pair_marks() { return pair_marks_; }
   const PairMarks& pair_marks() const { return pair_marks_; }
 
+  // Éclats HDR sur les seuls effets (effect_book.h), posé par main (--no-effect-highlights l'éteint) : gpu
+  // note alors la carte de la scène de chaque paire. Éteint, les notes passées s'effacent.
+  void set_effect_highlights(bool on) {
+    if (!on) effect_book_.clear();
+    effect_highlights_.store(on, std::memory_order_relaxed);
+  }
+  bool effect_highlights() const { return effect_highlights_.load(std::memory_order_relaxed); }
+  EffectBook& effect_book() { return effect_book_; }
+  const EffectBook& effect_book() const { return effect_book_; }
+
   // Garder les poses (kernels/spec/poses.h), lu par gpu au début de chaque paire.
   void set_keep_poses(bool keep) { keep_poses_.store(keep); }
   bool keep_poses() const { return keep_poses_.load(); }
@@ -425,12 +440,15 @@ class LiveSettings {
 
  private:
   CutBook cut_book_;
+  ShotPlanBook shot_plan_;
   media::LiveScenes scenes_;
   std::atomic<std::uint32_t> rife_factor_{1};  // ×0/1
   std::atomic<bool> keep_poses_{false};
   std::atomic<bool> strong_middle_{false};
   std::atomic<bool> pair_marks_on_{false};
   PairMarks pair_marks_;
+  std::atomic<bool> effect_highlights_{true};
+  EffectBook effect_book_;
   std::atomic<bool> deband_source_{false};
   std::atomic<bool> hidden_{false};
   mutable std::mutex mutex_;

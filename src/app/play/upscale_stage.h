@@ -31,12 +31,15 @@
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
 #include "app/play/rife_plan.h"
+#include "app/play/rife_triage.h"
 #include "app/play/ring_stage.h"
 #include "app/play/scene_map.h"
+#include "app/play/shot_plan.h"
 #include "app/play/source_grade.h"
 #include "app/play/temporal_window.h"
 #include "app/play/upscale_gmfss.h"
 #include "app/play/upscale_reuse.h"
+#include "app/play/upscale_slots.h"
 #include "core/cadence.h"
 #include "core/free_grid.h"
 #include "core/moving_area.h"
@@ -50,24 +53,6 @@
 #include "kernels/spec/warp.h"
 
 namespace kirari::app::play {
-
-// Les slots de l'export par puits CUDA (export_sink.h) : chaque slot est une image de l'encodeur,
-// que write_slot remplit en YUV (KernelOps::write_yuv) au lieu du ring ; done_value est la valeur
-// qu'aurait signalée le slot du ring (RingFrame::ready_value). Appelé depuis le thread gpu.
-class YuvSlots {
- public:
-  virtual ~YuvSlots() = default;
-  virtual gpu::YuvTarget target(std::uint32_t slot, std::uint64_t done_value) const = 0;
-  // Le bloc qui loge les signaux done des cibles, aligné sur une page et en multiple de pages, pour que le
-  // backend y écrive depuis le GPU (KernelOps::map_fences) ; vide : rappels hôtes.
-  virtual std::span<std::byte> fence_block() const { return {}; }
-};
-
-// Échelle par paire (PlaySettings::pair_scale) : le côté où le second RIFE estime les paires à mouvement
-// fort, la moitié de celui de RIFE, pair (1080 → 540, 1280 → 640).
-constexpr int pair_scale_side(int rife_side) {
-  return std::max(2, rife_side / 4 * 2);
-}
 
 struct UpscaleSetup {
   gpu::Backend* backend = nullptr;  // vit plus longtemps que l'étage
@@ -99,6 +84,11 @@ struct UpscaleSetup {
   // « mouvement », drba_model.h, ou le fusionné à deux sorties) : le warp et le mélange se font ici, après
   // SPAN quand warp_after_span (un SPAN par source au lieu d'un par image créée).
   bool drba_motion = false;
+  // L'Auto plan par plan (shot_plan.h, upscale_shot.cpp) : distil_drba et rife_motion, chargés tous deux en
+  // variante mouvement, servent l'un ou l'autre selon le plan de l'image (LiveSettings::shot_plan), bascule
+  // aux coupes seulement ; temporal_by_shot : temporal_fix seulement sur les plans qui le demandent.
+  bool drba_by_shot = false;
+  bool temporal_by_shot = false;
   Factor rife_factor{.num = 1,
                      .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×10, limits::kRifeFactor)
   // --one-lane : tout sur la voie Upscale, sans recouvrement. Plus lent, mais le temps GPU de
@@ -143,20 +133,17 @@ struct UpscaleSetup {
   // gardées ; l'étage lit alors jusqu'à kSmoothMaxHold - 1 images en avance (frames_ahead). Une tenue plus
   // longue, ou coupée, garde le rythme des sources.
   bool smooth_drawings = false;
-  // GMFSS Fortuna Union (upscale_gmfss.cpp) : le mélange avec rife_motion, ou seul (sans rife ni
-  // rife_motion).
-  GmfssSetup gmfss;
+  GmfssSetup gmfss;  // GMFSS Fortuna Union (upscale_gmfss.cpp) : avec rife_motion, ou seul
   // Le filtre qui lit les images au warp de la variante mouvement de RIFE (PlaySettings::cubic_warp).
   kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;
-  // Le mouvement d'ensemble au même warp (PlaySettings::pan_lock, kernels/spec/warp_pan.h).
-  bool pan_lock = false;
+  bool pan_lock = false;     // mouvement d'ensemble au même warp (PlaySettings::pan_lock, spec/warp_pan.h)
+  bool pair_triage = false;  // --pair-triage : la carte de la scène trie les paires (rife_triage.h)
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
   // Le grade avant le warp (PlaySettings::grade_before_warp, source_grade.h) : chaque source gradée à sa
   // sortie de SPAN, quand le warp se fait après lui (warp_after_span) et que l'écran lit le ring ; nullptr :
   // l'écran grade chaque image affichée.
   std::shared_ptr<SourceGrader> grader;
-  // Export par puits CUDA : les images de l'encodeur derrière les slots (sans image ni sémaphore
-  // dans slots), écrites par write_yuv ; ni écriture directe du ring. nullptr : le ring.
+  // Export par puits CUDA : les images de l'encodeur derrière les slots, par write_yuv ; nullptr : le ring.
   std::shared_ptr<const YuvSlots> yuv_slots;
   bool scene_map = false;  // --scene-map : la carte de la scène par NVOF (scene_map.h), PairFacts::scene
 };
@@ -218,7 +205,7 @@ class UpscaleStage final : public RingStage {
   bool interpolates() const {
     return setup_.rife != nullptr || setup_.rife_motion != nullptr || drba() || gmfss_only();
   }
-  bool drba() const { return setup_.distil_drba != nullptr; }
+  bool drba() const { return setup_.distil_drba != nullptr && (!setup_.drba_by_shot || shot_.drba); }
   bool drba_motion() const { return drba() && setup_.drba_motion; }
   // DistilDRBA (upscale_drba.cpp) : ses tenseurs ; l'arrivée de l'image b à la place de son
   // ingestion (rgb_[current_] reçoit b, l'image d'avant la paire passe dans drba_.before) ; les
@@ -364,7 +351,7 @@ class UpscaleStage final : public RingStage {
   std::array<bool, 2> rife_mesh_{};      // rife_ins_[i] tient le maillage, écrit par un rife_input
   // Le mouvement est estimé à la taille de RIFE puis déformé au warp (variante mouvement), plutôt
   // que l'image de RIFE elle-même.
-  bool by_motion() const { return setup_.rife_motion != nullptr; }
+  bool by_motion() const { return setup_.rife_motion != nullptr && !(setup_.drba_by_shot && shot_.drba); }
   // L'image où RIFE et les mesures de la paire travaillent : la réduite s'il y en a une.
   const gpu::Tensor& rife_source(std::uint32_t index) const {
     return small_[index] ? small_[index]->tensor() : rgb_[index]->tensor();
@@ -443,6 +430,7 @@ class UpscaleStage final : public RingStage {
   std::uint32_t outputs_ = 1;
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
   bool uninterpolated_ = false;      // la paire courante, laissée sans interpolation à dessein
+  mutable RifeTriage triage_;        // le tri de la paire par la carte, lu par les warps (blend)
   // Débandage avant SPAN (KernelOps::deband) : voulu quand le grade tourne, avec SPAN, DistilDRBA compris
   // (A09-07) ; deband_op_ tombe si le backend ne l'a pas, et l'écran garde alors le sien.
   bool deband_op_ = true;
@@ -461,6 +449,12 @@ class UpscaleStage final : public RingStage {
   TemporalBuffers temporal_;
   std::expected<void, Refusal> allocate_temporal();
   void log_temporal() const;
+  // L'Auto plan par plan (upscale_shot.cpp) : le moteur du plan de l'image qui arrive, changé à une coupe
+  // seulement ; TemporalFix voulu pour cette image ; le bilan au journal de fin.
+  ShotPlay shot_;
+  std::expected<void, Refusal> follow_shot(const DecodedFrame& frame);
+  bool temporal_wanted(const DecodedFrame& frame);
+  void log_shots() const;
   std::size_t temporal_ahead(std::size_t base) const;  // frames_ahead : base, la chaîne sans stabilisation
   std::optional<core::CadenceAccumulator> cadence_;
   core::SteadyGrid steady_grid_;  // Rapide à pas constant (--fast-steady) : N images par source
@@ -712,7 +706,7 @@ class UpscaleStage final : public RingStage {
   // (smooth_second_) : la paire elle-même, ses instants pris au rang smooth_rank_.
   bool smooth_possible() const { return setup_.smooth_drawings && by_motion() && !drba() && interpolates(); }
   std::size_t frames_ahead() const override {
-    return temporal_ahead(drba() ? 1 : smooth_possible() ? kSmoothMaxHold - 1 : 0);
+    return temporal_ahead(drba() || setup_.drba_by_shot ? 1 : smooth_possible() ? kSmoothMaxHold - 1 : 0);
   }
   std::expected<void, Refusal> allocate_smooth();
   // La tenue en cours passe à la paire suivante, ou s'arrête (époque, coupe, grille) ; avant smooth_decide.

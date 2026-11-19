@@ -4,6 +4,7 @@
 #include <cmath>
 #include <optional>
 #include <span>
+#include <vector>
 
 #include "kernels/ref/frame_stats.h"
 #include "media/shot_probe.h"
@@ -31,7 +32,7 @@ std::optional<ProbeLayout> probe_layout(PixelFormat format) {
 
 }  // namespace
 
-std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
+std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame, std::vector<float>* luma) {
   namespace fs = kernels::frame_stats;
   const std::optional<ProbeLayout> probe = probe_layout(frame.format);
   if (!probe) return refuse(RefusalCode::FormatUnsupported, "format de pixel non pris par la pré-analyse");
@@ -94,6 +95,16 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
                                           : frame.color.transfer == Transfer::Hlg
                                               ? kernels::FrameTransfer::Hlg
                                               : kernels::FrameTransfer::Sdr;
+  if (luma != nullptr) {
+    luma->resize(static_cast<std::size_t>(fs::kGridW) * static_cast<std::size_t>(fs::kGridH));
+    for (int gy = 0; gy < fs::kGridH; ++gy) {
+      for (int gx = 0; gx < fs::kGridW; ++gx) {
+        (*luma)[(static_cast<std::size_t>(gy) * fs::kGridW) + static_cast<std::size_t>(gx)] =
+            (0.2126F * rgb.planes[0].at(gx, gy)) + (0.7152F * rgb.planes[1].at(gx, gy)) +
+            (0.0722F * rgb.planes[2].at(gx, gy));
+      }
+    }
+  }
   auto counts = kernels::ref::frame_counts(rgb, transfer);
   if (!counts) return refuse(RefusalCode::FormatUnsupported, counts.error().detail);
   return shot_frame_of(frame.pts_us, kernels::ref::frame_stats_of(*counts), transfer);

@@ -151,6 +151,7 @@ struct ChainEngines {
   bool scene_map = false;               // --scene-map (UpscaleSetup::scene_map)
   bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
   bool temporal_fix_whole = false;      // --no-tfix-cache (chain_temporal.cpp)
+  bool pair_triage = false;             // --pair-triage (UpscaleSetup::pair_triage)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   // La stabilisation temporelle avant SPAN (chain_temporal.cpp), à la taille de travail : la fenêtre et
   // l'encodeur de ses images (prepare/onnx_cache.h) ; nuls : éteinte ou refusée.
@@ -188,7 +189,11 @@ struct ChainEngines {
   bool fallback_fresh = false;  // B08-02 : un repli interne refusé à cette ouverture, pas retenu d'avant
   std::vector<LoadedEngine> loaded_engines;  // B08-12 : pour les badges de l'onglet Moteurs
 
-  bool use_drba() const { return drba != nullptr; }
+  // --shot-plan (shot_plan.h) : l'Auto plan par plan ; drba_by_shot, DistilDRBA chargé avec RIFE mouvement,
+  // l'un ou l'autre selon le plan (chain_shot_plan.cpp). DistilDRBA n'est alors pas le moteur de la chaîne.
+  bool shot_plan = false;
+  bool drba_by_shot = false;
+  bool use_drba() const { return drba != nullptr && !drba_by_shot; }
   bool use_apple() const { return apple && rife != nullptr; }
   bool interpolates() const { return rife || rife_motion || use_drba() || gmfss_use == GmfssUse::Only; }
   // « DistilDRBA », « Apple » ou « RIFE », pour les compteurs.
@@ -262,6 +267,13 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
 std::expected<bool, StageFailure> load_motion(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                               const PlaySettings& settings, InnerFallbacks& inner,
                                               const std::string& library);
+
+// L'Auto plan par plan (chain_shot_plan.cpp, --shot-plan). drba_for_shots : DistilDRBA est-il à charger en
+// plus de RIFE (RIFE choisi, DistilDRBA trouvé, warp après SPAN pour que les deux soient en variante
+// mouvement) ? settle_shot_plan, après le chargement : les deux moteurs vont ensemble, ou DistilDRBA est
+// rendu et RIFE joue seul (la raison au journal).
+bool drba_for_shots(const ChainEngines& c, const PlaySettings& settings);
+void settle_shot_plan(ChainEngines& c);
 
 // La stabilisation temporelle (chain_temporal.cpp) : le modèle de settings.temporal_fix à c.work dans
 // c.temporal_fix, sous TensorRT. Rien si l'utilisateur ferme la fenêtre ; un refus (autre moteur, modèle

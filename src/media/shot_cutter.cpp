@@ -295,6 +295,7 @@ ShotMeta ShotCutter::Totals::meta() const {
 
 void ShotCutter::keep(const ShotFrame& frame) {
   if (totals_.count == 0) start_us_ = frame.pts_us;
+  if (totals_.count > 0 && frame.rhythm) rhythm_.add(*frame.rhythm);
   totals_.add(frame);
   if (head_.size() < kEdgeKept) head_.push_back(frame);
   tail_.push_back(frame);
@@ -517,6 +518,8 @@ std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
   shot.cut_before = first_shot_ ? starts_at_cut_ : true;
   first_shot_ = false;
   shot.meta = totals_.meta();
+  shot.rhythm = rhythm_.rhythm();
+  rhythm_ = {};
   shot.first = totals_.stats();
   shot.last = shot.first;
   if (totals_.count >= 2 * kFadeFrames) {

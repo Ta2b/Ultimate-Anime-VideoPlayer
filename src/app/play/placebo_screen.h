@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "app/play/cadence_watch.h"
 #include "app/play/final_scaler.h"
 #include "app/play/links.h"
 #include "app/play/present_level.h"
@@ -65,6 +66,9 @@ struct ScreenOptions {
   // --present : le retour de présentation (chantier 6, present_level.h). Le lecteur passe toujours celui des
   // options (wait par défaut, options.h, player.cpp) : la valeur ci-dessous n'est jamais prise.
   PresentWanted present = PresentWanted::Open;
+  // --swap-mode : le mode de présentation de la swapchain (cadence_watch.h) ; libplacebo retombe sur FIFO si
+  // la surface ne l'offre pas.
+  SwapMode swap_mode = SwapMode::Fifo;
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
   // gardé à la fermeture. Sans lui, tout se recompile à chaque lancement. Vide : pas de cache.
   std::filesystem::path shader_cache;

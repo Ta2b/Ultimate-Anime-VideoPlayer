@@ -180,6 +180,11 @@ class GuardedKernelOps final : public KernelOps {
       std::uint64_t ticket) override {
     return guarded_detail::call("scene_flow_take", [&] { return in_->scene_flow_take(ticket); });
   }
+  std::expected<void, Refusal> motion_doubt(const Motion& motion, std::span<const std::uint8_t> weights,
+                                            int cols, int rows, float fade, const Motion& out) override {
+    return guarded_detail::call("motion_doubt",
+                                [&] { return in_->motion_doubt(motion, weights, cols, rows, fade, out); });
+  }
   std::expected<void, Refusal> health() override {
     return guarded_detail::call("health", [&] { return in_->health(); });
   }

@@ -133,6 +133,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> warp_blend_poses_ring(const Tensor& a, const Tensor& b, const Motion& motion,
                                                      const Motion* previous, float t,
                                                      const RingTarget& ring) override;
+  // Fondu local du mouvement de RIFE (tensorrt_doubt.cpp).
+  std::expected<void, Refusal> motion_doubt(const Motion& motion, std::span<const std::uint8_t> weights,
+                                            int cols, int rows, float fade, const Motion& out) override;
   // Export par puits CUDA (tensorrt_export.cpp) : RGB → NV12 ou P010 dans l'image de l'encodeur.
   std::expected<void, Refusal> write_yuv(const Tensor& rgb, const YuvTarget& target) override;
   // Étape 11.5 (tensorrt_export.cpp) : chaque voie interrogée par cudaStreamQuery ; les signaux de l'export
@@ -227,6 +230,12 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                                     Progress& progress);
   std::expected<std::unique_ptr<Engine>, Refusal> load_drba_fused(const Artifact& artifact);
   std::expected<void, Refusal> enqueue_drba_fused(DrbaFusedEngine& engine, std::span<const Tensor> inputs,
+                                                  std::span<Tensor> outputs);
+  // TemporalFix coupé en morceaux (tensorrt_tfix_fused.cpp) : l'encodeur ou la fenêtre, selon le manifeste.
+  std::expected<Artifact, Refusal> build_tfix_fused(const ModelSpec& model, const ShapeSet& shapes,
+                                                    Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_tfix_fused(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_tfix_fused(Engine& engine, std::span<const Tensor> inputs,
                                                   std::span<Tensor> outputs);
   // Les réglages de trtexec de cet appareil (build, build_rife_fused, build_drba_fused).
   prepare::TrtexecConfig trtexec_config() const;

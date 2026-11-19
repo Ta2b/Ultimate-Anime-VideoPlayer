@@ -53,12 +53,12 @@ std::expected<void, Refusal> window(std::string_view text, PlayOptions& options)
 }
 
 // Les options à valeur, dans l'ordre où elles se cherchent (--snapshot-at avant --snapshot).
-constexpr std::array<std::string_view, 23> kValuedOptions{
+constexpr std::array<std::string_view, 25> kValuedOptions{
     "--model",       "--window",          "--start",           "--seconds",          "--fullscreen-after",
     "--stats",       "--snapshot-at",     "--snapshot-frames", "--snapshot",         "--keys",
     "--work-height", "--rife-model",      "--anime-contrast",  "--anime-saturation", "--anime-highlights",
     "--rife",        "--truehdr-peak",    "--data-dir",        "--bake-looks",       "--bench-level",
-    "--bench-out",   "--rife-calm-model", "--motion"};
+    "--bench-out",   "--rife-calm-model", "--motion",          "--swap-mode",        "--vrr-margin"};
 
 // Les options qui ne donnent qu'un chemin.
 using PathMember = std::optional<std::filesystem::path> PlayOptions::*;
@@ -127,15 +127,17 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 41> kTrialOptions{
-    "--rife-image",      "--ring-rgb10a2",   "--no-ring-rgb10a2", "--hdr-metadata",   "--no-hdr-metadata",
-    "--probe-nvdec",     "--no-probe-nvdec", "--shot-cuts",       "--no-shot-cuts",   "--one-lane",
-    "--lanes",           "--skip-held",      "--anime-shots",     "--no-anime-shots", "--fast-steady",
-    "--smooth-drawings", "--ring-watcher",   "--no-ring-watcher", "--precise-wait",   "--no-precise-wait",
-    "--audio-pll",       "--no-audio-pll",   "--vsync-index",     "--no-vsync-index", "--present",
-    "--no-present",      "--no-vrr",         "--rife-calm-model", "--rife-warm",      "--profile-dispatches",
-    "--rife-encode-all", "--rife-at-slot",   "--filtered-warp",   "--warp-l2",        "--rife-hwc8",
-    "--no-rife-hwc8",    "--no-span-reuse",  "--no-span-tiles",   "--no-tfix-cache",  "--scene-map"};
+// clang-format off
+constexpr std::array<std::string_view, 43> kTrialOptions{
+    "--rife-image", "--ring-rgb10a2", "--no-ring-rgb10a2", "--hdr-metadata", "--no-hdr-metadata",
+    "--probe-nvdec", "--no-probe-nvdec", "--shot-cuts", "--no-shot-cuts", "--one-lane", "--lanes",
+    "--skip-held", "--anime-shots", "--no-anime-shots", "--fast-steady", "--smooth-drawings", "--ring-watcher",
+    "--no-ring-watcher", "--precise-wait", "--no-precise-wait", "--audio-pll", "--no-audio-pll",
+    "--vsync-index", "--no-vsync-index", "--present", "--no-present", "--no-vrr", "--rife-calm-model",
+    "--rife-warm", "--profile-dispatches", "--rife-encode-all", "--rife-at-slot", "--filtered-warp",
+    "--warp-l2", "--rife-hwc8", "--no-rife-hwc8", "--no-tfix-cache", "--scene-map", "--no-tfix-fused",
+    "--no-effect-highlights", "--shot-plan", "--no-span-reuse", "--no-span-tiles"};
+// clang-format on
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -157,7 +159,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 44> kFlags{{
+constexpr std::array<Flag, 49> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -172,10 +174,13 @@ constexpr std::array<Flag, 44> kFlags{{
     {"--shot-cuts", &PlayOptions::shot_cuts, true},
     {"--no-shot-cuts", &PlayOptions::shot_cuts,
      false},  // les coupes de l'interpolation mesurées par RIFE seul
+    {"--shot-plan", &PlayOptions::shot_plan, true},
     {"--anime-shots", &PlayOptions::anime_shots, true},
     // Le relèvement fixe, la lumière de la scène mesurée en direct.
     {"--no-anime-shots", &PlayOptions::anime_shots, false},
+    {"--no-effect-highlights", &PlayOptions::effect_highlights, false},
     {"--no-vrr", &PlayOptions::no_vrr, true},
+    {"--display-loss-pressure", &PlayOptions::display_loss_pressure, true},
     {"--one-lane", &PlayOptions::one_lane, true},
     {"--lanes", &PlayOptions::lanes, true},
     {"--profile-dispatches", &PlayOptions::profile_dispatches, true},
@@ -185,6 +190,7 @@ constexpr std::array<Flag, 44> kFlags{{
     {"--rife-hwc8", &PlayOptions::rife_hwc8, true},
     {"--no-rife-hwc8", &PlayOptions::rife_hwc8, false},
     {"--span-native", &PlayOptions::span_native, true},
+    {"--no-tfix-fused", &PlayOptions::temporal_fix_fused, false},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},
     {"--rife-at-slot", &PlayOptions::rife_at_slot, true},
@@ -196,6 +202,7 @@ constexpr std::array<Flag, 44> kFlags{{
     {"--fast-steady", &PlayOptions::fast_steady, true},
     {"--smooth-drawings", &PlayOptions::smooth_drawings, true},
     {"--no-tfix-cache", &PlayOptions::temporal_fix_whole, true},
+    {"--pair-triage", &PlayOptions::pair_triage, true},
     {"--ring-watcher", &PlayOptions::ring_watcher, true},
     {"--no-ring-watcher", &PlayOptions::ring_watcher, false},
     {"--precise-wait", &PlayOptions::precise_wait, true},
@@ -213,6 +220,34 @@ std::expected<RelaunchedFor, Refusal> relaunched_reason(std::string_view arg) {
        {RelaunchedFor::GpuLost, RelaunchedFor::EngineUpdated, RelaunchedFor::Settings})
     if (reason == relaunched_name(known)) return known;
   return refuse(RefusalCode::FieldOutOfRange, std::format("{}: gpu-lost or engine-updated", arg));
+}
+
+// Les réglages fins : le peps du grade (--anime-*, en %) et la cadence haute (cadence_watch.h).
+std::expected<void, Refusal> tuning(std::string_view name, std::string_view text, PlayOptions& options) {
+  if (name == "--swap-mode") {
+    const auto mode = parse_swap_mode(text);
+    if (!mode)
+      return refuse(RefusalCode::FieldOutOfRange,
+                    std::format("--swap-mode: \"{}\" is not fifo, mailbox, immediate or relaxed", text));
+    options.swap_mode = *mode;
+    return {};
+  }
+  if (name == "--vrr-margin") {
+    const auto margin = number<double>(text);
+    if (!margin || *margin < 0.0 || *margin > 10.0)
+      return refuse(RefusalCode::FieldOutOfRange,
+                    std::format("--vrr-margin: \"{}\" is not a margin from 0 to 10 %", text));
+    options.vrr_margin_pct = *margin;
+    return {};
+  }
+  const auto percent = number<int>(text);
+  if (!percent || *percent < 0 || *percent > 200)
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("{}: \"{}\" is not a percentage between 0 and 200", name, text));
+  if (name == "--anime-contrast") options.anime_contrast = *percent;
+  if (name == "--anime-saturation") options.anime_saturation = *percent;
+  if (name == "--anime-highlights") options.anime_highlights = *percent;
+  return {};
 }
 
 bool set_flag(std::string_view arg, PlayOptions& options) {
@@ -328,16 +363,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
                           std::format("{}: \"{}\" outside {} to {}", name, text, range.lo, range.hi));
           }
           options.true_hdr_peak = *setting;
-        } else if (name == "--anime-contrast" || name == "--anime-saturation" ||
-                   name == "--anime-highlights") {
-          const auto percent = number<int>(text);
-          if (!percent || *percent < 0 || *percent > 200) {
-            return refuse(RefusalCode::FieldOutOfRange,
-                          std::format("{}: \"{}\" is not a percentage between 0 and 200", name, text));
-          }
-          if (name == "--anime-contrast") options.anime_contrast = *percent;
-          if (name == "--anime-saturation") options.anime_saturation = *percent;
-          if (name == "--anime-highlights") options.anime_highlights = *percent;
+        } else if (name.starts_with("--anime-") || name == "--swap-mode" || name == "--vrr-margin") {
+          applied = tuning(name, text, options);
         } else if (name == "--rife") {
           const auto factor = parse_factor(text);
           if (!factor) {
@@ -602,6 +629,8 @@ std::string play_usage(bool debug) {
          "                         --no-probe-nvdec: software decoding)\n"
          "  --no-shot-cuts         interpolation cuts measured by RIFE alone (default: the pre-analysis\n"
          "                         shots decide, RIFE when they do not cover the pair)\n"
+         "  --shot-plan            trial: Auto per shot, DistilDRBA on limited animation, RIFE on\n"
+         "                         sakuga, TemporalFix only on grainy still shots (pre-analysis rhythm)\n"
          "  --one-lane             a single compute queue (the default): the GPU profile gives each\n"
          "                         engine's own cost\n"
          "  --lanes                three compute queues instead of one\n"
@@ -619,20 +648,21 @@ std::string play_usage(bool debug) {
          "                         Video menu option \"Smooth held drawings\" for this playback)\n"
          "  --no-tfix-cache        trial: temporal stabilization in one engine, each frame encoded at\n"
          "                         every pass, instead of the encoder cache (same output)\n"
+         "  --no-tfix-fused        trial: temporal stabilization by the encoder-cache graph instead of\n"
+         "                         the fused engines (TensorRT)\n"
+         "  --pair-triage          motion RIFE with the NVIDIA scene map: held drawings copied, impossible\n"
+         "                         pairs crossfaded, doubtful areas crossfaded locally (off by default)\n"
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass instead of\n"
          "                         keeping the encoding of the pair and of the previous B (same output)\n"
-         "  --no-span-reuse        measurement: SPAN on every frame, held drawings included (default: a "
-         "held\n"
-         "                         drawing reuses the SPAN output of its anchor, up to 24 in a row)\n"
-         "  --no-span-tiles        measurement: SPAN on whole frames only (default: with native FP16 SPAN\n"
-         "                         and the scene map, only the tiles that changed are recomputed)\n"
-         "  --span-tiles-check     measurement: one tiled frame in 24 is also computed whole; the gap goes\n"
-         "                         to the end-of-session log (waits on the GPU)\n"
+         "  --no-span-reuse        measurement: SPAN on every frame, held drawings included\n"
+         "  --no-span-tiles        measurement: SPAN on whole frames only, never on changed tiles alone\n"
+         "  --span-tiles-check     measurement: 1 tiled frame in 24 also computed whole, gap in the log\n"
          "  --rife-at-slot         measurement: each RIFE pass of a strong pair waits for the ring slot\n"
          "                         of its image instead of being queued when the pair arrives (same output)\n"
          "  --scene-map            trial: NVIDIA optical flow (RTX 30 and later) maps each pair: camera,\n"
          "                         tiles that move, cuts; same output until a feature reads it\n"
+         "  --no-effect-highlights with --scene-map: highlights on every light, not only on effects\n"
          "  --warp-l2              trial: TensorRT warp keeps the flow in persisting L2 (same output)\n"
          "  --no-rife-hwc8         trial: fused RIFE blocks built with planar inputs and outputs under\n"
          "                         TensorRT, with reformat copies (default: HWC8, same output)\n"
@@ -651,7 +681,11 @@ std::string play_usage(bool debug) {
          "                         (timing with a target date), wayland or open; --no-present: open, the\n"
          "                         former presentation; trials: bare (extensions only), poll (present\n"
          "                         ids and waits only), timing-plain (timing, default swapchain)\n"
-         "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n";
+         "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n"
+         "  --swap-mode=MODE       swapchain present mode: fifo (default), mailbox, immediate, relaxed\n"
+         "  --vrr-margin=N         Instant mode stays N % under a VRR screen's maximum (default 1)\n"
+         "  --display-loss-pressure  frames the display lost while ready widen the Instant step too\n"
+         "                         (former count)\n";
 }
 
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,

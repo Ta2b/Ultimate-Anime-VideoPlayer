@@ -45,6 +45,7 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
 UpscaleStage::~UpscaleStage() {
   stop();
   log_temporal();
+  log_shots();
   scene_.log_summary();
   if (fences_mapped_) setup_.backend->kernels()->unmap_fences(setup_.yuv_slots->fence_block());
   if (setup_.rife_motion != nullptr) {
@@ -52,6 +53,7 @@ UpscaleStage::~UpscaleStage() {
         "RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs (dont {} sans passe au milieu)",
         rife_runs_, single_pairs_, multi_pairs_, direct_pairs_);
   }
+  triage_.log();  // --pair-triage : la ligne à comparer d'une séance à l'autre (rife_triage.h)
   if (strong_derived_ != 0)
     log_channel("gpu")->info("paires fortes : {} instants déduits du milieu (moins de passes RIFE)",
                              strong_derived_);
@@ -104,7 +106,7 @@ UpscaleStage::~UpscaleStage() {
         "{} "
         "à froid",
         encodes_kept_, encodes_followed_, encodes_after_gap_, encodes_cold_);
-  if (drba()) {
+  if (setup_.distil_drba != nullptr) {
     log_channel("gpu")->info(
         "DistilDRBA : {} passes, dont {} sans l'image d'un côté (début, coupe) ; {} instants sans passe "
         "(côté tenu)",
@@ -160,8 +162,8 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
                   std::format("étage gpu : taille de travail {}x{} hors de la source {}x{}", setup.work_width,
                               setup.work_height, setup.source_width, setup.source_height));
   }
-  const int estimators = (setup.rife != nullptr ? 1 : 0) + (setup.rife_motion != nullptr ? 1 : 0) +
-                         (setup.distil_drba != nullptr ? 1 : 0);
+  if (auto ok = check_by_shot(setup); !ok) return std::unexpected(std::move(ok.error()));
+  const int estimators = estimators_of(setup);  // plan par plan : DistilDRBA et RIFE comptent pour un
   if (estimators > 1) {
     return refuse(RefusalCode::FieldOutOfRange,
                   "étage gpu : RIFE image, RIFE mouvement ou DistilDRBA, un seul des trois");
@@ -261,7 +263,7 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     }
   }
   if (auto ok = allocate_temporal(); !ok) return ok;
-  if (looks_ahead()) {
+  if (looks_ahead()) {  // plan par plan aussi : RIFE d'abord, DistilDRBA avec (allocate_ahead)
     if (auto ok = allocate_ahead(); !ok) return ok;
   }
   if (drba()) return allocate_drba();

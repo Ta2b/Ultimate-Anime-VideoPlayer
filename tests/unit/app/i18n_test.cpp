@@ -210,6 +210,9 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "span_derive.cpp",
                                         "span_derive.h",
                                         "upscale_temporal.cpp",
+                                        "upscale_shot.cpp",
+                                        "shot_plan.cpp",
+                                        "chain_shot_plan.cpp",
                                         "upscale_drba.cpp",
                                         "upscale_gmfss.cpp",
                                         "user_keys.cpp",
@@ -229,7 +232,8 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "system_peak.cpp",
                                         "display_gpu.cpp",
                                         "present_watch.cpp",
-                                        "window_vrr.cpp"};
+                                        "window_vrr.cpp",
+                                        "cadence_watch.cpp"};
   // Un journal, un refus interne ou une étiquette de débogage : du texte de développeur, même dans un fichier
   // qui dessine l'interface.
   const std::regex diagnostic(

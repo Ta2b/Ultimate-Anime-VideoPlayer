@@ -103,9 +103,11 @@ namespace kirari::gpu {
 // 46 : SplatJob::pull (le splat tiré).
 // 47 : KernelOps::scene_flow_start et scene_flow_take (la carte de la scène par le flux optique de NVIDIA,
 // kernels/spec/scene_flow.h).
-// 48 : Engine::span_tile_grid et next_span_tiles (les tuiles qui bougent : SPAN sur les seules tuiles
+// 48 : TemporalFix fusionné (manifestes « .tfixfused » : encodeur et fenêtre, tampon gardé à pyramides).
+// 49 : KernelOps::motion_doubt (le fondu local du mouvement de RIFE, kernels/spec/motion_doubt.h).
+// 50 : Engine::span_tile_grid et next_span_tiles (les tuiles qui bougent : SPAN sur les seules tuiles
 // changées, la sortie d'avant reprise ou décalée ; kernels/spec/span_tiles.h).
-inline constexpr int kBackendAbi = 48;
+inline constexpr int kBackendAbi = 50;
 
 using DeviceUuid = kirari::DeviceUuid;
 

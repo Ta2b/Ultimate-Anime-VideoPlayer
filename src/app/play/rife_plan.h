@@ -42,6 +42,8 @@ struct PairFacts {
   // sans coût, NVOF refusé, --scene-map éteint, pas encore relue) : chaque client se comporte exactement
   // comme sans elle. Aucune fonction de ce fichier ne la lit encore.
   std::optional<kernels::SceneMotion> scene;
+  // --pair-triage (rife_triage.h) : la carte trie les paires ; éteint, elle n'en change aucune.
+  bool flow_triage = false;
 };
 
 // Coupes de RIFE en rafale. Une vraie coupe que la pré-analyse manque est une paire isolée ; un mouvement
@@ -82,6 +84,10 @@ bool pair_cut(const PairFacts& facts);
 // La coupe selon la seule mesure, le score rapporté à la zone hors bandes noires : ce que le journal des
 // désaccords compare aux plans (sur le score brut, toute vidéo à bandes comptait de faux désaccords, A09-01).
 bool measured_cut(const PairFacts& facts);
+
+// Dessin tenu : le pire bloc 16 × 16 sous kHeldBlock (kernels/spec/detect.h), ou, avec le tri des paires, la
+// carte de la scène qui ne voit rien bouger hors du grain (rife_triage.h, flow_held). Mesures présentes.
+bool pair_held(const PairFacts& facts);
 
 // Vrai si l'interpolation tourne sur la paire ; sinon b sort seul.
 bool rife_runs(const PairFacts& facts);

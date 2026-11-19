@@ -34,7 +34,7 @@ gpu::Shape planes3(int width, int height) {
 std::size_t UpscaleStage::temporal_ahead(std::size_t base) const {
   if (setup_.temporal_fix == nullptr) return base;
   // look_ahead lit la suivante sans que frames_ahead la compte : la fenêtre de celle-ci aussi doit être là.
-  const std::size_t farthest = std::max<std::size_t>(base, looks_ahead() ? 1 : 0);
+  const std::size_t farthest = std::max<std::size_t>(base, looks_ahead() || setup_.drba_by_shot ? 1 : 0);
   return farthest + kRadius;
 }
 
@@ -88,7 +88,8 @@ std::expected<void, Refusal> UpscaleStage::allocate_temporal() {
 
 std::expected<bool, Refusal> UpscaleStage::ingest_source(const DecodedFrame& frame, gpu::IngestSpec spec,
                                                          const gpu::Tensor& rgb) {
-  if (setup_.temporal_fix == nullptr || frame.pts_us == kNoPts) return ingest_plain(frame, spec, rgb);
+  if (setup_.temporal_fix == nullptr || frame.pts_us == kNoPts || !temporal_wanted(frame))
+    return ingest_plain(frame, spec, rgb);
   // Le rang de frame derrière la tête : 0 pour la tête, sinon celui où next() la donne.
   std::size_t rank = 0;
   for (std::size_t q = 1; q <= frames_ahead(); ++q) {
