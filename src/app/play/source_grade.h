@@ -26,6 +26,7 @@
 #include <libplacebo/colorspace.h>
 
 #include "app/play/effect_book.h"
+#include "core/frame.h"
 #include "core/types.h"
 #include "gpu/kernel_ops.h"
 #include "render/cube_lut.h"
@@ -62,10 +63,12 @@ class SourceGradeShare {
   SourceGradeState state_;
 };
 
-// La source gradée : son époque, et la note des éclats sur les seuls effets de sa paire
-// (EffectBook::for_source) ; rien sans carte, sans --scene-map ou avec --no-effect-highlights.
+// La source gradée : son époque, son pts (le journal de fin dit où voir le masque), et la note des éclats sur
+// les seuls effets de sa paire (EffectBook::for_source) ; rien sans carte, sans --scene-map ou avec
+// --no-effect-highlights.
 struct GradedSource {
   std::uint32_t epoch = 0;
+  std::int64_t pts_us = kNoPts;
   std::optional<EffectNote> effects;
 };
 
