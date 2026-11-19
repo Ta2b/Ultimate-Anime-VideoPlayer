@@ -106,16 +106,23 @@ comparaison du natif et de TensorRT sur le même extrait.
 #    « GMFSS natif écarté… » dit pourquoi TensorRT garde la fusion ou la paire.
 kirari --debug play --gmfss-native --motion=gmfss --rife=2 --start=960 extrait.mkv 2>&1 | grep -i "gmfss natif"
 
-# 1. GMFSS union seul ×2 puis ×3, avec SPAN : natif avec et sans le tri des paires, puis TensorRT seul
-#    (--motion=gmfss choisit GMFSS avec ou sans le natif, pour la comparaison).
+# 1. Vitesse, GMFSS union seul ×2 puis ×3 avec SPAN : TensorRT (A) contre natif (B), en A, B, B, A.
 for x in 2 3; do
-  kirari --debug play --gmfss-native --motion=gmfss --rife=$x --pair-triage --start=960 --stats=n$x.csv extrait.mkv
-  kirari --debug play --gmfss-native --motion=gmfss --rife=$x --start=960 --stats=n$x-sans-tri.csv extrait.mkv
-  kirari --debug play --motion=gmfss --rife=$x --start=960 --stats=t$x.csv extrait.mkv
+  kirari compare extrait.mkv --a="--motion=gmfss --rife=$x --start=960" \
+    --b="--gmfss-native --motion=gmfss --rife=$x --start=960" --seconds=30 --report=gmfss-x$x.txt
 done
+#    Le tri des paires (il demande la carte de la scène), sur le natif :
+kirari compare extrait.mkv --a="--gmfss-native --motion=gmfss --rife=2 --start=960" \
+  --b="--gmfss-native --motion=gmfss --rife=2 --start=960 --scene-map --pair-triage" --seconds=30 \
+  --report=gmfss-tri.txt
+#    Le temps de chaque image et les étages (GMFSS paire native, GMFSS fusion native) :
+kirari --debug play --gmfss-native --motion=gmfss --rife=2 --start=960 --stats=n2.csv extrait.mkv
 
-# 2. Tests GPU du backend (l'essai natif contre TensorRT, à la taille de la chaîne).
-KIRARI_TEST_VULKAN_VALIDATION=off ctest --preset linux-release -R "backend|gmfss"
+# 2. Justesse sur l'extrait : deux exports sans perte, TensorRT puis natif (l'export porte sur tout l'extrait,
+#    puis la lecture reprend : fermer le lecteur), et leur PSNR (50 dB visés).
+kirari --mute --motion=gmfss --rife=2 --keys=1:export-lossless=t.mkv extrait.mkv
+kirari --mute --gmfss-native --motion=gmfss --rife=2 --keys=1:export-lossless=n.mkv extrait.mkv
+ffmpeg -i n.mkv -i t.mkv -lavfi psnr -f null - 2>&1 | tail -1
 ```
 
 Le paquet Linux change d'empreinte TensorRT (`tools/release/trt-fingerprint.sh`) : `src/gpu` et `src/prepare` ont
