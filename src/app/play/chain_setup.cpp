@@ -739,7 +739,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     auto upscaled = load_span(p, init, c, settings);
     if (!upscaled) return std::unexpected(std::move(upscaled.error()));
     if (!*upscaled) return std::nullopt;
-    if (!load_plate(p, init, c, settings)) return std::nullopt;
+    plan_plate(c, settings);
   }
   c.rife_size = motion_size(video, c.work, settings, p.options.rife_image);
   InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);
