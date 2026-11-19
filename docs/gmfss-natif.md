@@ -223,8 +223,8 @@ finale) ; et que tout se lance : l'essai par morceaux et le réglage n'ont jamai
 
 ## Résultats du PC (RTX 4070 Ti, 19 novembre 2026)
 
-Extrait de Re:Zero, GMFSS union seul (`--motion=gmfss`), SPAN derrière, travail 720p (plans remplis de la paire à
-1920×1152).
+Extrait de Re:Zero, GMFSS union seul (`--motion=gmfss`), SPAN derrière, travail en 1080p (plans remplis de la
+paire à 1920×1152).
 
 - **Paire native retenue**, sommes f16 : contre la paire TensorRT, f16 64,8 dB au pire (mixtes 66,0, f32 67,7) ;
   une passe en 19,75 ms contre 22,55 ms (mixtes 21,83, f32 22,76), 12 % de moins. En lecture (`--stats`, 30 s) :
@@ -244,6 +244,43 @@ Extrait de Re:Zero, GMFSS union seul (`--motion=gmfss`), SPAN derrière, travail
   180 des 671 paires fortes, et RIFE a gardé les 491 autres faute de temps.
 - Première ouverture : 149 s pour construire la paire, 180 s pour la fusion entière ; 54,6 s pour la fusion
   coupée (IFNet seul sous TensorRT).
+
+## Plafonds théoriques en 1080p
+
+Calculés sur processeur par `tools/gmfss/plafond_gmfss.py`, à partir des graphes de l'export d'origine, aux formes
+d'une lecture en 1080p (plans remplis 1920×1152, paire au demi-flot). Hypothèses :
+- débits de la RTX 4070 Ti : 160 Tflop/s en sommes f16, 80 en sommes f32, 321 en FP8 ;
+- bande passante : 504 Go/s ;
+- chaque couche lit son entrée une fois, écrit sa sortie une fois et lit ses poids, en f16, avec PReLU, additions
+  et PixelShuffle fondus ;
+- le plafond d'une couche est le plus lent du calcul et des octets, celui d'un morceau la somme de ses couches.
+
+Les canaux ne sont pas complétés à 16 : le plafond du GridNet est de 10,9 ms ici, contre 11,7 ms avec les canaux
+complétés (paragraphe précédent).
+
+| Morceau | Taille | Gflop | Mo minimaux | Plafond f16 | Plafond FP8 | Mesuré au PC |
+|---|---|---|---|---|---|---|
+| paire : FeatureNet | 1152×1920 | 284 | 959 | 2,3 ms | 1,9 ms | |
+| paire : MetricNet | 1152×1920 | 133 | 584 | 1,2 ms | 1,2 ms | |
+| paire : GMFlow (demi-flot) | 288×480 | 363 | 3 283 | 2,3 à 6,6 ms | 1,1 à 6,5 ms | |
+| **paire entière** | | **780** | | **5,7 à 10,1 ms** | | **19,70 ms** (TensorRT 22,44) |
+| fusion : IFNet | 576×960 | 44 | 171 | 0,4 ms | 0,3 ms | |
+| fusion : GridNet | 576×960, sortie 1152×1920 | 1 560 | 3 987 | 10,9 ms | 8,2 ms | |
+| **fusion entière** | | **1 604** | | **11,2 ms** | **8,5 ms** | **21,90 ms** (TensorRT 25,57) |
+
+Le plafond de GMFlow est une fourchette :
+- 2,3 ms si l'attention est fondue (ses scores ne quittent pas la puce) ;
+- 6,6 ms si chaque produit de matrices écrit sa sortie, scores compris.
+
+La fusion est à environ deux fois son plafond, la paire à deux à trois fois et demie. L'IFNet, à 0,4 ms, ne
+vaut pas d'être travaillé plus bas.
+
+En FP8, le plafond du GridNet ne passe que de 10,9 à 8,2 ms tant que les activations restent en f16 : les octets
+prennent alors le dessus.
+
+La porte du temps réel en 1080p, ×2 avec SPAN, laisse environ 28 ms par image source à la paire et à la fusion,
+contre 41,6 ms aujourd'hui. Les plafonds additionnés font 17 à 21 ms en f16 : la porte se passe à environ
+1,4 fois le plafond sur chacun des deux. Le profil Nsight Systems (étape 3 de la séance) dit où sont les écarts.
 
 ## Séance finale (sur le PC, binaire `linux-release`)
 
