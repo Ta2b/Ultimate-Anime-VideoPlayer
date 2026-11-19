@@ -113,8 +113,7 @@ std::expected<void, Refusal> keys(std::string_view text, PlayOptions& options) {
   return {};
 }
 
-// Une option à valeur : « --nom=valeur » ou « --nom valeur ». Rend la valeur, ou rien si
-// args[i] n'est pas cette option ; avance i quand la valeur est l'argument suivant.
+// Option à valeur (« --nom=valeur » ou « --nom valeur ») : sa valeur, ou rien ; i avance sur une valeur séparée.
 std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const std::string_view> args,
                                                                std::size_t& i, std::string_view name) {
   const std::string_view arg = args[i];
@@ -127,7 +126,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 41> kTrialOptions{"--rife-image",      "--ring-rgb10a2",
+constexpr std::array<std::string_view, 42> kTrialOptions{"--rife-image",      "--ring-rgb10a2",
                                                          "--no-ring-rgb10a2", "--hdr-metadata",
                                                          "--no-hdr-metadata", "--probe-nvdec",
                                                          "--no-probe-nvdec",  "--shot-cuts",
@@ -147,7 +146,7 @@ constexpr std::array<std::string_view, 41> kTrialOptions{"--rife-image",      "-
                                                          "--rife-hwc8",       "--no-rife-hwc8",
                                                          "--no-tfix-cache",   "--scene-map",
                                                          "--no-tfix-fused",   "--no-effect-highlights",
-                                                         "--shot-plan"};
+                                                         "--shot-plan",       "--no-span-reuse"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -169,7 +168,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 46> kFlags{{
+constexpr std::array<Flag, 47> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -206,6 +205,7 @@ constexpr std::array<Flag, 46> kFlags{{
     {"--rife-at-slot", &PlayOptions::rife_at_slot, true},
     {"--scene-map", &PlayOptions::scene_map, true},
     {"--skip-held", &PlayOptions::skip_held, true},
+    {"--no-span-reuse", &PlayOptions::span_reuse, false},
     {"--fast-steady", &PlayOptions::fast_steady, true},
     {"--smooth-drawings", &PlayOptions::smooth_drawings, true},
     {"--no-tfix-cache", &PlayOptions::temporal_fix_whole, true},
@@ -549,8 +549,7 @@ std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std
   return options;
 }
 
-// L'aide de la ligne de commande, en anglais comme l'interface par défaut : elle s'écrit avant que les
-// réglages (et la langue choisie) ne soient lus.
+// L'aide, en anglais comme l'interface par défaut : elle s'écrit avant la lecture des réglages et de la langue.
 std::string compare_usage() {
   return "kirari compare <file> --a=\"OPTIONS\" --b=\"OPTIONS\" [options]   two chains side by side, sound "
          "off\n"
@@ -662,6 +661,7 @@ std::string play_usage(bool debug) {
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass instead of\n"
          "                         keeping the encoding of the pair and of the previous B (same output)\n"
+         "  --no-span-reuse        measurement: SPAN on every frame, held drawings included\n"
          "  --rife-at-slot         measurement: each RIFE pass of a strong pair waits for the ring slot\n"
          "                         of its image instead of being queued when the pair arrives (same output)\n"
          "  --scene-map            trial: NVIDIA optical flow (RTX 30 and later) maps each pair: camera,\n"

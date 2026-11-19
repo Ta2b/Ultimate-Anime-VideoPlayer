@@ -1,6 +1,7 @@
 // L'étage gpu (upscale_stage.h) : SPAN, son tampon repris sur un dessin tenu et l'écriture de
 // l'emplacement de l'anneau. Sorti d'upscale_stage.cpp (C09-09).
 #include <array>
+#include <chrono>
 #include <optional>
 #include <utility>
 
@@ -8,20 +9,74 @@
 #include "app/play/upscale_stage.h"
 #include "core/log.h"
 #include "core/trace.h"
+#include "kernels/spec/resample.h"
 
 namespace kirari::app::play {
 
-bool UpscaleStage::reuses_span(bool held) const {
+std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame, const PairFacts& facts,
+                                                       bool held) {
   if (setup_.engine == nullptr) return false;
   // Smooth, warp après SPAN : chaque copie de la tenue reprend le SPAN de a, quelle que soit sa longueur ;
   // aucune n'est montrée telle quelle, et l'autre tampon tient celui de b (span_smooth_b).
-  if (smooth_first_ && warps_spanned()) return true;
-  return held && spans_reused_in_row_ < kMaxSpanReuse &&
-         (warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_));
+  if (smooth_first_ && warps_spanned()) {
+    reuse_.force();
+    return true;
+  }
+  const bool pair_measured = facts.scores.has_value();
+  ReuseFacts rf{.same_epoch = facts.same_epoch,
+                .corrupt = frame.corrupt,
+                .has_output = warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_),
+                .pair_held = pair_measured ? held : true};
+  const bool candidate = rf.same_epoch && !rf.corrupt && rf.has_output && rf.pair_held;
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  const int in_row = reuse_.in_row();
+  // L'ancre est la précédente au début d'une série, sa copie ensuite. Sans mesure de la paire (SPAN seul),
+  // l'ancre se mesure dès la première image.
+  if (candidate && reuse_.anchor_measure && reuse_.wants_anchor(pair_measured) &&
+      (in_row == 0 || reuse_.anchor)) {
+    KIRARI_TRACE("span.anchor");
+    const gpu::Tensor& anchor = in_row == 0 ? rgb_[current_ ^ 1U]->tensor() : reuse_.anchor->tensor();
+    const auto asked = std::chrono::steady_clock::now();
+    auto scores = ops.scores_now(anchor, rgb_[current_]->tensor());
+    keep_scores_wait(
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked)
+            .count());
+    if (scores) {
+      rf.anchor = AnchorGap{.worst_block = scores->worst_block, .mean_levels = scores->scene_score * 255.0};
+    } else {
+      log_channel("gpu")->info("SPAN repris : pas de mesure contre l'ancre ({}) ; deux de suite au plus",
+                               scores.error().detail);
+      reuse_.anchor_measure = false;
+    }
+  }
+  // Sans mesure du tout (SPAN seul, mesure refusée) : rien ne dit que l'image est tenue.
+  if (!pair_measured && !rf.anchor) rf.pair_held = false;
+  const bool reused = reuse_.decide(rf) == ReuseKind::Whole;
+  // Début d'une série : l'ancre (la précédente, telle que SPAN l'a lue) est copiée avant que son tampon ne
+  // reçoive une autre image ; la copie suit sur la voie des mesures, sans attente.
+  if (reused && in_row == 0 && reuse_.anchor_measure) {
+    if (!reuse_.anchor) {
+      const gpu::Tensor& like = rgb_[current_]->tensor();
+      auto tensor = setup_.backend->alloc_tensor(like.type, like.shape);
+      if (tensor) {
+        reuse_.anchor = std::move(*tensor);
+      } else {
+        log_channel("gpu")->info("SPAN repris : ancre refusée ({}) ; deux de suite au plus",
+                                 tensor.error().detail);
+        reuse_.anchor_measure = false;
+      }
+    }
+    if (reuse_.anchor) {
+      if (auto ok =
+              ops.resample(rgb_[current_ ^ 1U]->tensor(), kernels::Filter::Area, reuse_.anchor->tensor());
+          !ok)
+        return std::unexpected(std::move(ok.error()));
+    }
+  }
+  return reused;
 }
 
 void UpscaleStage::pick_span_buffer() {
-  if (reuse_span_) ++spans_reused_;
   // Choisi au premier SPAN, le tampon restait celui d'il y a deux images, qui après un dessin tenu est
   // celui de a : le premier instant de la paire mélangeait a à elle-même, warpée par le mouvement de la
   // paire (contours doublés, masque de RIFE en trame).

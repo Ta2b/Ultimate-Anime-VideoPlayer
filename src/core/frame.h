@@ -155,6 +155,9 @@ struct DecodedFrame {
   std::int64_t duration_us = 0;  // durée nominale, microsecondes
   std::uint32_t epoch = 0;       // incrémenté à chaque Flush ; une image d'une époque passée est jetée
   std::shared_ptr<const FrameData> data;
+  // Abîmée au décodage (AV_FRAME_FLAG_CORRUPT, decode_error_flags) : montrée, mais ni reprise ni ancre de la
+  // reprise de SPAN (app/play/upscale_reuse.h).
+  bool corrupt = false;
 };
 
 // Ce que media appelle pour livrer une image ; gpu l'implémente par sa boîte.
