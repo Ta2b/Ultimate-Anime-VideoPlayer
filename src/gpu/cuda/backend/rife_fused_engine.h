@@ -20,12 +20,14 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/fused_graphs.h"
 #include "gpu/cuda/backend/fused_keys.h"
 #include "gpu/cuda/backend/rife_native_net.h"
+#include "gpu/cuda/backend/rife_native_verdict.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "kernels/spec/rife_fused.h"
 #include "kernels/spec/warp.h"
@@ -107,9 +109,25 @@ class RifeFusedEngine final : public Engine {
   // journal (temps et dB de chaque morceau, profil des couches, verdict en dernier). Refus (la chaîne reste
   // alors à TensorRT, intacte) : blocs TensorRT en plans, erreur CUDA de l'essai (DeviceLost : contexte
   // perdu).
-  std::expected<std::vector<std::string>, Refusal> try_native(
-      const std::vector<RifeNativePiece>& pieces, const std::shared_ptr<SharedActivations>& shared,
-      double min_db);
+  // Le journal de l'essai, et son verdict à garder sur le disque (rife_native_verdict.h).
+  struct NativeTrial {
+    std::vector<std::string> lines;
+    rife_verdict::Verdict verdict;
+  };
+  std::expected<NativeTrial, Refusal> try_native(const std::vector<RifeNativePiece>& pieces,
+                                                 const std::shared_ptr<SharedActivations>& shared,
+                                                 double min_db);
+  // Le verdict gardé d'un essai précédent, à la place de l'essai : seuls les réseaux de son mélange sont
+  // réglés, et la chaîne rejugée une fois contre TensorRT (rife_verdict::still_holds). held : le verdict est
+  // repris (TensorRT garde tout s'il le disait) ; faux, la chaîne est rendue à TensorRT et l'appelant refait
+  // l'essai. Refus : comme try_native.
+  struct CachedTrial {
+    bool held = false;
+    std::vector<std::string> lines;
+  };
+  std::expected<CachedTrial, Refusal> try_cached(const std::vector<RifeNativePiece>& pieces,
+                                                 const std::shared_ptr<SharedActivations>& shared,
+                                                 const rife_verdict::Verdict& verdict);
   // Un morceau au moins passe par les noyaux natifs.
   bool native() const { return native_on_; }
 
@@ -132,8 +150,32 @@ class RifeFusedEngine final : public Engine {
   // La chaîne, lancée ou capturée selon l'appelant.
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                    const Tensor& input, std::span<const Tensor> outputs, const Pass& pass);
+  // La colle du bloc block (1 et après), de in (l'entrée), des encodages aux décalages encode_a et encode_b
+  // et des Y des blocs d'avant vers X_block.
+  FusedGlueParams glue_params(const void* in, int block, std::byte* base, std::size_t encode_a,
+                              std::size_t encode_b) const;
   std::expected<void, Refusal> launch_glue(cudaStream_t stream, const void* in, int block, std::byte* base,
                                            std::size_t encode_a, std::size_t encode_b);
+  // Le bloc b, de X_b vers Y_b, par net (natif) ou par TensorRT (net nul). Un réseau qui calcule l'entrée de
+  // b à la volée (glues) la refait depuis la colle ; sa colle seule n'a alors pas à passer avant lui. finish
+  // (le dernier bloc d'un réseau qui sait faire la fin, nul sinon) : la fin se fait dans sa dernière couche.
+  std::expected<void, Refusal> run_block(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
+                                         const void* in, int b, std::byte* base, std::size_t encode_a,
+                                         std::size_t encode_b, const RifeNativeNet* net,
+                                         const FusedFinishParams* finish = nullptr);
+  // Les encodages de A et de B pendant l'essai (run_piece) : trial_output encode les deux images, A au
+  // premier emplacement, B au second. Vrai de la passe de référence à trial_times, dont les passes de lecture
+  // laissent B aux deux emplacements : aucun morceau seul ne passe après.
+  std::pair<std::size_t, std::size_t> trial_encodes() const {
+    const std::size_t bytes =
+        std::size_t{4} * static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_) * 2U;
+    return {layout_.encode, layout_.encode + bytes};
+  }
+  // Un réseau natif de piece_net(b + 1) calcule-t-il l'entrée du bloc b à la volée ?
+  bool glued(int b) const {
+    const RifeNativeNet* net = piece_net(b + 1);
+    return net != nullptr && net->glues(b);
+  }
   std::expected<void, Refusal> enqueue_chain(cudaStream_t stream,
                                              const std::shared_ptr<SharedActivations>& arena,
                                              std::span<const Tensor> inputs, std::span<const Tensor> outputs,
@@ -150,21 +192,35 @@ class RifeFusedEngine final : public Engine {
                                                    const std::shared_ptr<SharedActivations>& shared);
   std::size_t scratch_offset_for(SharedActivations& zone);
 
-  // L'essai de try_native : la chaîne sur la paire de test, sortie copiée vers l'hôte.
+  // L'essai de try_native : la chaîne sur la paire de test, sortie copiée vers l'hôte ; entièrement NaN si
+  // le flot du dernier bloc, refait à la volée, garde un pixel non écrit.
   std::expected<std::vector<float>, Refusal> trial_output(cudaStream_t stream,
                                                           const std::shared_ptr<SharedActivations>& shared,
                                                           const Tensor& input,
                                                           std::span<const Tensor> outputs,
                                                           std::size_t elements);
+  // Un aiguillage chronométré par trial_times : le réseau de chaque morceau (set_route), la fin fondue dans
+  // la dernière couche native ou à part (set_fused_end).
+  struct TrialRoute {
+    std::vector<int> pieces;
+    bool fused_end = true;
+  };
   // La mesure du temps de try_native : la médiane d'une passe de lecture ×2 (B encodée seule) de chaque
-  // aiguillage (route), en tours intercalés.
+  // aiguillage, en tours intercalés.
   std::expected<std::vector<double>, Refusal> trial_times(cudaStream_t stream,
                                                           const std::shared_ptr<SharedActivations>& shared,
                                                           const Tensor& input,
                                                           std::span<const Tensor> outputs,
-                                                          std::span<const std::vector<int>> routes);
+                                                          std::span<const TrialRoute> routes);
+  // Le mélange route contre TensorRT seul (trial_times) : [TensorRT, le mélange] ; quand son dernier bloc
+  // natif sait faire la fin, aussi le mélange avec la fin à part, en troisième (la fin fondue ne calcule que
+  // la première tuile de la transposée, mais dans une forme que le réglage n'a pas chronométrée).
+  std::expected<std::vector<double>, Refusal> trial_mix_times(
+      cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& input,
+      std::span<const Tensor> outputs, const std::vector<int>& route);
   // Le morceau piece seul (0 : l'encodeur sur l'image A de input, vers le premier emplacement d'encodage ;
-  // 1 + k : le bloc k, du X_k de la zone vers Y_k) par net, ou par TensorRT si net est nul.
+  // 1 + k : le bloc k, du X_k de la zone vers Y_k) par net, ou par TensorRT si net est nul. Un bloc dont un
+  // réseau natif sait calculer l'entrée à la volée passe, par chaque option, colle comprise.
   std::expected<void, Refusal> run_piece(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                          const Tensor& input, int piece, const RifeNativeNet* net);
   void forget_passes();
@@ -173,6 +229,16 @@ class RifeFusedEngine final : public Engine {
   void keep_route(std::vector<int> route, std::int64_t trt_activation);
   // Par morceau, l'indice du réseau de natives_ qui le fait, -1 pour TensorRT ; vide : tout à TensorRT.
   void set_route(std::vector<int> route);
+  // La fin dans la dernière couche du dernier bloc quand son réseau natif sait la faire (vrai au départ), ou
+  // fused_finish à part ; l'essai garde la plus rapide. Elle entre dans la clé des graphes.
+  void set_fused_end(bool on);
+  // Les paramètres de la fin d'une passe : entrée in, zone base (scratch_offset_ compris), sorties.
+  FusedFinishParams finish_params(const void* in, std::byte* base, std::span<const Tensor> outputs) const;
+  // Le dernier bloc fait-il la fin : un réseau natif qui la sait faire pour finish, et la fin fondue voulue.
+  bool fused_end(const FusedFinishParams& finish) const {
+    const RifeNativeNet* net = piece_net(plan_.blocks);
+    return fused_end_ && net != nullptr && net->can_finish(plan_.blocks - 1, finish);
+  }
   const RifeNativeNet* piece_net(int piece) const {
     const auto i = static_cast<std::size_t>(piece);
     return i < route_.size() && route_[i] >= 0 ? natives_[static_cast<std::size_t>(route_[i])].get()
@@ -188,7 +254,10 @@ class RifeFusedEngine final : public Engine {
   std::vector<int> route_;
   bool native_on_ = false;             // un morceau au moins est natif
   std::int64_t native_workspace_ = 0;  // la plus grande zone de travail des réseaux aiguillés
-  std::uintptr_t route_code_ = 0;      // l'aiguillage dans la clé des graphes : 3 bits par morceau
+  std::uintptr_t route_code_ = 0;      // l'aiguillage dans la clé des graphes : 3 bits par morceau, puis
+                                       // kSeparateEnd
+  bool fused_end_ = true;              // set_fused_end
+  static constexpr std::uintptr_t kSeparateEnd = std::uintptr_t{1} << 18U;  // au-delà de 6 morceaux
   kernels::RifeFusedPlan plan_;
   int height_ = 0;
   int width_ = 0;

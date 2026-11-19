@@ -6,8 +6,10 @@
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
+#include <span>
 #include <vector>
 
+#include "gpu/cuda/backend/rife_fused_kernels.h"
 #include "gpu/cuda/backend/rife_native_kernels.cuh"
 #include "gpu/cuda/backend/rife_native_net.h"
 
@@ -66,6 +68,36 @@ std::vector<Config> configs(RifeNativeSums sums, Kind kind, const Extent& extent
 const char* sums_name(RifeNativeSums sums);
 // La fin d'une couche à K découpé (reduce_kernel), width : canaux de la grille z.
 void launch_reduce(bool phase, int width, cudaStream_t stream, const Params& p);
+
+// La première couche du dernier bloc, quand il est en pleine résolution (d = 1) : une convolution 3 × 3 de
+// pas 2 sur les 28 canaux de X (32 rangés), que rife_native_glue.cu calcule à la volée au lieu de les lire
+// (la colle, rife_glue.cuh). La tuile d'entrée d'une ligne par warp fait 65 × 9 pixels ; le relèvement de
+// chaque source (le Y d'un bloc précédent, d'échelle scale) y prend au plus glue_capacity(scale) pixels de Y
+// : sur len + 1 points pleine résolution, le Z agrandi couvre au plus ⌈len / scale⌉ + 2 points (coarse_span),
+// le Y la moitié arrondie au-dessus, plus un.
+__host__ __device__ constexpr int glue_span(int len, int scale) {
+  const int z = (len + scale - 1) / scale + 1;
+  return (z + 1) / 2 + 1;
+}
+__host__ __device__ constexpr int glue_capacity(int scale) {
+  return glue_span(64, scale) * glue_span(8, scale);
+}
+using GlueLaunch = void (*)(dim3 grid, int smem, cudaStream_t stream, const Params& p,
+                            const FusedGlueParams& g);
+// Le noyau de cette première couche : flows blocs d'avant (3 ou 4), une tuile de ct sorties (16 ou 32, la
+// couche entière) ; nul sinon. Sa grille : (⌈ow / 32⌉, ⌈oh / 4⌉, 1).
+GlueLaunch pick_glue(RifeNativeSums sums, int flows, int ct);
+// Ses octets de mémoire partagée, pour des sources d'échelles scales (la dernière porte 52 canaux).
+int glue_smem(std::span<const int> scales);
+
+// La dernière couche du dernier bloc (la transposée), fin comprise (rife_native_finish.cu) : sa première
+// tuile de 32 canaux seulement (le flot du bloc et le masque y sont), puis fused_finish dans son épilogue au
+// lieu d'écrire Y. Le noyau de la tranche kc et de rows lignes par warp, pour des sommes de tête (f16 ou f32,
+// une ligne par warp en f16 seulement) ; nul sinon. Sa grille : (⌈ow / 32⌉, ⌈oh / (4 · rows)⌉, 4) ; ses
+// paramètres ceux de la couche, poids rangés pour une tuile de 32, sans découpe de K.
+using FinishLaunch = void (*)(dim3 grid, int smem, cudaStream_t stream, const Params& p,
+                              const FusedFinishParams& f);
+FinishLaunch pick_finish(RifeNativeSums sums, int kc, int rows);
 
 // Les poids d'une couche en FP16, [phase][cout][prise][cin] (cout et cin complétés à 16 par des zéros), le
 // bêta d'un résiduel replié (w · s, b · s), et ses biais [phase][cout]. Une seule phase hors transposée de

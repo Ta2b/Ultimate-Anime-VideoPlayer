@@ -85,6 +85,18 @@ struct FusedFinishParams {
   int window_height = 0;
 };
 
+// La fenêtre de p, ou le tenseur entier si elle est vide (l'appelant ne la connaît pas) : sans ce repli, la
+// prise bornait à [0, -1] et lisait avant le plan. Pour la fin et pour la dernière couche native qui la fait.
+inline FusedFinishParams with_window(FusedFinishParams p) {
+  if (p.window_width <= 0 || p.window_height <= 0) {
+    p.window_left = 0;
+    p.window_top = 0;
+    p.window_width = p.width;
+    p.window_height = p.height;
+  }
+  return p;
+}
+
 cudaError_t launch_fused_entry(const FusedEntryParams& params, cudaStream_t stream);
 cudaError_t launch_fused_glue(const FusedGlueParams& params, cudaStream_t stream);
 cudaError_t launch_fused_finish(const FusedFinishParams& params, cudaStream_t stream);
