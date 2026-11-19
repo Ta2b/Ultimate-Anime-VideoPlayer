@@ -12,6 +12,8 @@
 #include <expected>
 #include <format>
 #include <limits>
+#include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -128,6 +130,29 @@ std::expected<std::vector<double>, Refusal> times(cudaStream_t stream, std::size
     std::ranges::sort(of);
     out.push_back(of[of.size() / 2]);
   }
+  return out;
+}
+
+// Ce que retient la mesure : la variante (0 : TensorRT) et la ligne des temps.
+struct Choice {
+  std::size_t best = 0;
+  std::string speed;
+};
+
+// nets[0] vide (TensorRT), puis les variantes natives qui tiennent le seuil ; pass(v) met en file une passe
+// de la variante v. La plus rapide des natives n'est retenue que si elle bat TensorRT d'au moins kMinGain.
+template <typename Net, typename Pass>
+std::expected<Choice, Refusal> choose(cudaStream_t stream, const std::vector<std::unique_ptr<Net>>& nets,
+                                      Pass&& pass) {
+  auto ms = times(stream, nets.size(), std::forward<Pass>(pass));
+  if (!ms) return std::unexpected(std::move(ms.error()));
+  Choice out{.speed = std::format("TensorRT {:.2f} ms", (*ms)[0])};
+  std::size_t fastest = 0;
+  for (std::size_t v = 1; v < nets.size(); ++v) {
+    out.speed += std::format(", {} {:.2f} ms", sums_name(nets[v]->sums()), (*ms)[v]);
+    if (fastest == 0 || (*ms)[v] < (*ms)[fastest]) fastest = v;
+  }
+  if (fastest != 0 && (*ms)[fastest] <= (*ms)[0] * (1.0 - kMinGain)) out.best = fastest;
   return out;
 }
 

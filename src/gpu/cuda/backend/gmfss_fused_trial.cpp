@@ -146,24 +146,18 @@ std::expected<std::string, Refusal> GmfssFusedEngine::try_native(
     native_on_ = false;
     return ok;
   };
-  auto times = gmfss_trial::times(scratch.stream, nets.size(), pass);
-  if (!times) {
+  auto choice = gmfss_trial::choose(scratch.stream, nets, pass);
+  if (!choice) {
     settle(nullptr);
-    return std::unexpected(std::move(times.error()));
+    return std::unexpected(std::move(choice.error()));
   }
-  std::string speed = std::format("TensorRT {:.2f} ms", (*times)[0]);
-  std::size_t best = 0;
-  for (std::size_t v = 1; v < nets.size(); ++v) {
-    speed += std::format(", {} {:.2f} ms", gmfss_trial::sums_name(nets[v]->sums()), (*times)[v]);
-    if (best == 0 || (*times)[v] < (*times)[best]) best = v;
-  }
-  const bool faster = (*times)[best] <= (*times)[0] * (1.0 - gmfss_trial::kMinGain);
+  const std::size_t best = choice->best;
   const std::string verdict =
-      faster ? std::format("GMFSS natif retenu pour la fusion, sommes {} (zone {} Mio)",
-                           gmfss_trial::sums_name(nets[best]->sums()), nets[best]->workspace_bytes() >> 20)
-             : std::string("GMFSS natif écarté, TensorRT plus rapide pour la fusion");
-  settle(faster ? std::move(nets[best]) : nullptr);
-  return std::format("{} ({} ; une passe : {})", verdict, where, speed);
+      best != 0 ? std::format("GMFSS natif retenu pour la fusion, sommes {} (zone {} Mio)",
+                              gmfss_trial::sums_name(nets[best]->sums()), nets[best]->workspace_bytes() >> 20)
+                : std::string("GMFSS natif écarté, TensorRT plus rapide pour la fusion");
+  settle(best != 0 ? std::move(nets[best]) : nullptr);
+  return std::format("{} ({} ; une passe : {})", verdict, where, choice->speed);
 }
 
 }  // namespace kirari::gpu::cuda

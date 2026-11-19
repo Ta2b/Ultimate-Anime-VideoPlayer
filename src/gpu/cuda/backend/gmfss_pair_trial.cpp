@@ -9,7 +9,7 @@
 #include <cuda_fp16.h>
 #include <format>
 #include <limits>
-#include <string_view>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -45,6 +45,36 @@ double peak_of(const std::vector<__half>& values) {
   float peak = 1.F;
   for (const __half v : values) peak = std::max(peak, std::abs(__half2float(v)));
   return peak;
+}
+
+using Planes = std::vector<std::vector<__half>>;
+
+// Les sorties de la passe, relues sur l'hôte.
+std::expected<Planes, Refusal> fetch_all(std::span<const Tensor> outputs) {
+  Planes out;
+  for (const Tensor& t : outputs) {
+    std::vector<__half> host(elements(t.shape));
+    if (auto ok =
+            cuda_check(cudaMemcpy(host.data(), fused_address(t), host.size() * 2, cudaMemcpyDeviceToHost),
+                       "GMFSS natif : copie de l'essai");
+        !ok)
+      return std::unexpected(std::move(ok.error()));
+    out.push_back(std::move(host));
+  }
+  return out;
+}
+
+// La pire sortie contre la référence, l'écart rapporté à l'étendue de la référence ; at reçoit sa place.
+double worst_of(const Planes& reference, const Planes& got, std::size_t& at) {
+  double worst = std::numeric_limits<double>::infinity();
+  for (std::size_t i = 0; i < reference.size(); ++i) {
+    const double db = gmfss_trial::psnr(reference[i], got[i], peak_of(reference[i]));
+    if (db < worst) {
+      worst = db;
+      at = i;
+    }
+  }
+  return worst;
 }
 
 }  // namespace
@@ -95,23 +125,10 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_native(
     }
     return {};
   };
-  const auto fetch = [&](std::size_t i) -> std::expected<std::vector<__half>, Refusal> {
-    std::vector<__half> host(elements(outputs[i].shape));
-    if (auto ok = cuda_check(
-            cudaMemcpy(host.data(), fused_address(outputs[i]), host.size() * 2, cudaMemcpyDeviceToHost),
-            "GMFSS natif : copie de l'essai");
-        !ok)
-      return std::unexpected(std::move(ok.error()));
-    return host;
-  };
   native_on_ = false;
   if (auto ok = run(); !ok) return std::unexpected(std::move(ok.error()));
-  std::vector<std::vector<__half>> reference(kOutputs);
-  for (std::size_t i = 0; i < kOutputs; ++i) {
-    auto got = fetch(i);
-    if (!got) return std::unexpected(std::move(got.error()));
-    reference[i] = std::move(*got);
-  }
+  auto reference = fetch_all(outputs);
+  if (!reference) return std::unexpected(std::move(reference.error()));
   // Quoi qu'il arrive, l'essai laisse la paire à TensorRT ou à la variante retenue.
   const auto settle = [&](std::unique_ptr<GmfssPairNativeNet> keep) {
     native_ = std::move(keep);
@@ -133,19 +150,12 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_native(
     auto ran = run();
     native_on_ = false;
     if (!ran) return give_up(std::move(ran.error()));
-    double worst = std::numeric_limits<double>::infinity();
-    std::string_view worst_name;
-    for (std::size_t i = 0; i < kOutputs; ++i) {
-      auto got = fetch(i);
-      if (!got) return give_up(std::move(got.error()));
-      const double db = gmfss_trial::psnr(reference[i], *got, peak_of(reference[i]));
-      if (db < worst) {
-        worst = db;
-        worst_name = output_names()[i];
-      }
-    }
+    auto got = fetch_all(outputs);
+    if (!got) return give_up(std::move(got.error()));
+    std::size_t at = 0;
+    const double worst = worst_of(*reference, *got, at);
     quality += std::format("{}{} {:.1f} dB au pire ({})", quality.empty() ? "" : ", ",
-                           gmfss_trial::sums_name(sums), worst, worst_name);
+                           gmfss_trial::sums_name(sums), worst, output_names()[at]);
     if (worst >= min_db) nets.push_back(std::move(native_));
     native_.reset();
   }
@@ -164,21 +174,15 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_native(
     native_on_ = false;
     return ok;
   };
-  auto times = gmfss_trial::times(scratch.stream, nets.size(), pass);
-  if (!times) return give_up(std::move(times.error()));
-  std::string speed = std::format("TensorRT {:.2f} ms", (*times)[0]);
-  std::size_t best = 0;
-  for (std::size_t v = 1; v < nets.size(); ++v) {
-    speed += std::format(", {} {:.2f} ms", gmfss_trial::sums_name(nets[v]->sums()), (*times)[v]);
-    if (best == 0 || (*times)[v] < (*times)[best]) best = v;
-  }
-  const bool faster = (*times)[best] <= (*times)[0] * (1.0 - gmfss_trial::kMinGain);
+  auto choice = gmfss_trial::choose(scratch.stream, nets, pass);
+  if (!choice) return give_up(std::move(choice.error()));
+  const std::size_t best = choice->best;
   const std::string verdict =
-      faster ? std::format("GMFSS natif retenu pour la paire, sommes {} (zone {} Mio)",
-                           gmfss_trial::sums_name(nets[best]->sums()), nets[best]->workspace_bytes() >> 20)
-             : std::string("GMFSS natif écarté, TensorRT plus rapide pour la paire");
-  settle(faster ? std::move(nets[best]) : nullptr);
-  return std::format("{} ({} ; une passe : {})", verdict, where, speed);
+      best != 0 ? std::format("GMFSS natif retenu pour la paire, sommes {} (zone {} Mio)",
+                              gmfss_trial::sums_name(nets[best]->sums()), nets[best]->workspace_bytes() >> 20)
+                : std::string("GMFSS natif écarté, TensorRT plus rapide pour la paire");
+  settle(best != 0 ? std::move(nets[best]) : nullptr);
+  return std::format("{} ({} ; une passe : {})", verdict, where, choice->speed);
 }
 
 }  // namespace kirari::gpu::cuda

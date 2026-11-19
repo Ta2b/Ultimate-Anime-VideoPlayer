@@ -3,9 +3,9 @@
 // (prepare/gmfss_pair_split.h). Les entrées et les sorties sont celles de la paire, en plans FP16, pour que
 // les splats et la fusion les lisent comme avant. En-tête sans std::expected : il est lu par nvcc en C++20.
 //
-// Les caractéristiques d'une image ne dépendent que d'elle : features() tourne une fois par image, et ce
-// qu'il écrit pour la seconde image d'une paire sert de première image à la paire suivante (au moteur de
-// garder les deux jeux de sorties et d'échanger leurs rôles).
+// Les caractéristiques d'une image ne dépendent que d'elle : features() tourne une fois par image. Ce qu'il
+// écrit pour la seconde image d'une paire pourrait servir de première image à la paire suivante ; le moteur
+// (gmfss_pair_engine.cpp) ne le fait pas encore et tourne les deux.
 #pragma once
 
 #include <array>
