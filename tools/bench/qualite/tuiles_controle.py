@@ -2,7 +2,7 @@
 """Le contrôle des tuiles de SPAN (--span-tiles-check) rejoué sur processeur : la sortie que les tuiles composent
 contre un calcul complet, image par image, sur les décisions écrites par tuiles_rejeu --masques.
 
-  build/tuiles_rejeu/tuiles_rejeu --diviseur 2 --ancre-composee --masques MASQUES < taches.tsv
+  build/tuiles_rejeu/tuiles_rejeu --diviseur 2 --masques MASQUES < taches.tsv  # le lecteur (--span-tiles)
   python3 -I tools/bench/qualite/tuiles_controle.py --dossier EXTRAIT --masques MASQUES \\
       --modele tools/upscale/models/2x_ArtCNN_C4F32_rgb_fp16.onnx [--diviseur 2] [--images 80]
 

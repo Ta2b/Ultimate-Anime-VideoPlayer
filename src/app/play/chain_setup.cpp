@@ -370,7 +370,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
   c.span_reuse = o.span_reuse;
-  c.span_tiles = o.span_tiles;
+  c.span_tiles = o.span_tiles || o.span_tiles_check;  // le contrôle n'a rien à voir sans tuiles
   c.span_tiles_check = o.span_tiles_check;
   c.shot_plan = o.shot_plan;
   c.pair_triage = o.pair_triage;

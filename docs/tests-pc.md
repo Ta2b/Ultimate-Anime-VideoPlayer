@@ -127,8 +127,9 @@ caches relevés avant `c7` (tolérance de P2.45) sont ignorés par le script : i
   ligne « attente des mesures de la paire » doit rester vers 0 ms (la paire se mesure en avance).
   ABAB : `kirari --debug play --no-span-reuse …` passe SPAN sur chaque image (charge GPU, puissance).
   Sur le dialogue d'un BD (Spy×Family 13 : 0,8 % après #901, presque chaque paire a un bloc au-delà de
-  5 niveaux), le gain vient des tuiles (`docs/tuiles-span.md`) : `--scene-map`, SPAN natif (cran Équilibre),
-  lignes « SPAN par tuiles » et, avec `--span-tiles-check`, l'écart contre un calcul complet.
+  5 niveaux), les tuiles (`docs/tuiles-span.md`) n'y gagnent rien non plus : c'est un panoramique. Elles se
+  mesurent sur Re:Zero : `--span-tiles`, SPAN natif (cran Équilibre), ligne « SPAN par tuiles » et, avec
+  `--span-tiles-check`, l'écart contre un calcul complet.
 - **Graphes CUDA de TensorRT** : même lecture qu'avant, coût CPU du thread gpu plus bas. Si un
   moteur refuse la capture, il repasse en lancements directs sans message ; un écran noir ou une
   image figée serait un bug de capture (désactiver en revenant au commit d'avant pour comparer).
