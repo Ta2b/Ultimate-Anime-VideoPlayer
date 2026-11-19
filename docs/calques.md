@@ -3,8 +3,8 @@
 Phase 4 du plan du flux NVIDIA (« Usages du flux optique matériel NVIDIA »). Aucun modèle nouveau : RIFE et
 SPAN tels quels, plus un warp par le mouvement de caméra que donne la carte de la scène (`kernels/spec/scene_flow.h`,
 `PairFacts::scene`). Sans option de ligne de commande, les deux se règlent dans `play.toml` et sont allumés par
-défaut depuis les essais du 19 novembre (un `play.toml` qui les a éteints les garde éteints). Les deux ne tournent qu'avec la carte, donc avec l'option d'essai `--scene-map` (sans
-elle, une ligne au journal le dit). En lecture seulement : l'export rejoue la chaîne au bit près, et la carte
+défaut depuis les essais du 19 novembre (un `play.toml` qui les a éteints les garde éteints). Les deux ne tournent qu'avec la carte, allumée par défaut elle aussi depuis la première release (`--no-scene-map`,
+essai, l'éteint ; sans elle, une ligne au journal le dit). En lecture seulement : l'export rejoue la chaîne au bit près, et la carte
 arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
 
 ## Ce que ça fait

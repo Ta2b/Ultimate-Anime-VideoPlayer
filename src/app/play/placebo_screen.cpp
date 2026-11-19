@@ -118,8 +118,9 @@ void PlaceboScreen::snapshot_next(std::filesystem::path path, int count) {
 }
 
 // Prise à la présentation suivante (ready_grade, select_grade).
-void PlaceboScreen::set_effect_view(bool on) {
+void PlaceboScreen::set_effect_view(bool on, bool glow) {
   impl_->effects_view = on;
+  impl_->effects_glow = glow;
 }
 
 void PlaceboScreen::release_ui(ImGuiPlatformIO& platform) {

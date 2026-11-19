@@ -1,6 +1,6 @@
 // La carte de la scène (kernels/spec/scene_flow.h) sur des flux synthétiques : caméra seule, dessin qui
 // bouge sur un décor qui défile, aplat, coupe, fondu, image tenue, et le lissage des classes d'une paire à
-// l'autre (animation en deux comprise).
+// l'autre (animation en deux comprise, effet tenu sur une image fixe).
 // Un seul cas, comme le veut la consigne des tests groupés.
 #include "kernels/ref/scene_flow.h"
 
@@ -177,7 +177,28 @@ TEST_CASE("carte de la scène sur des flux synthétiques", "[scene_flow]") {
     CHECK_FALSE(m.camera_fit);
     CHECK_FALSE(m.drawing_held);
     CHECK(history.cols == 0);
-    CHECK(count(m, SceneClass::Effect) == static_cast<int>(m.tiles.size()));
+    // La paire qui enjambe la coupe ne dit rien des deux plans : ni effet ni dessin.
+    CHECK(count(m, SceneClass::Uncertain) == static_cast<int>(m.tiles.size()));
+    for (const SceneTile& t : m.tiles) CHECK(t.changed);
+  }
+
+  SECTION("un saut de luminosité sur une seule paire est une coupe, pas un fondu") {
+    Pair pair;  // vecteurs qui correspondent : seul le saut le dit
+    for (std::uint8_t& v : pair.b.data) v = static_cast<std::uint8_t>(std::max(0, v - 50));
+    history.cols = 16;
+    const SceneMotion m = pair.map(history);
+    CHECK(m.cut_likely);
+    CHECK_FALSE(m.fade);
+    CHECK_FALSE(m.camera_fit);
+    CHECK(history.cols == 0);
+    CHECK(count(m, SceneClass::Uncertain) == static_cast<int>(m.tiles.size()));
+    SceneMotion marked = Pair{}.map(history);  // une coupe dite par le lecteur
+    REQUIRE(marked.camera_fit);
+    ref::mark_cut(marked);
+    CHECK(marked.cut_likely);
+    CHECK_FALSE(marked.camera_fit);
+    CHECK_FALSE(marked.drawing_held);
+    CHECK(count(marked, SceneClass::Uncertain) == static_cast<int>(marked.tiles.size()));
   }
 
   SECTION("fondu : la luminosité glisse partout, ce n'est pas une coupe") {
@@ -215,6 +236,21 @@ TEST_CASE("carte de la scène sur des flux synthétiques", "[scene_flow]") {
     CHECK(again.at(5, 3).kind == SceneClass::Drawing);
     CHECK_FALSE(again.at(5, 3).changed);
     CHECK(again.drawing_held);  // brut : rien ne bouge à cette paire
+  }
+
+  SECTION("un effet ne tient que deux images fixes, puis la tuile reprend sa classe brute") {
+    Pair lit;
+    lit.unmatch(16, 8, 32, 20);
+    const Pair held;
+    CHECK(lit.map(history).at(5, 3).kind == SceneClass::Effect);
+    for (int k = 0; k < scene::kEffectIdlePairs; ++k) {
+      CAPTURE(k);
+      const SceneMotion still = held.map(history);
+      CHECK_FALSE(still.at(5, 3).changed);
+      CHECK(still.at(5, 3).kind == SceneClass::Effect);  // une animation en trois : l'effet tient
+    }
+    CHECK(held.map(history).at(5, 3).kind == SceneClass::Background);
+    CHECK(lit.map(history).at(5, 3).kind == SceneClass::Effect);  // vu deux paires de suite
   }
 
   SECTION("aplat : décor s'il suit la caméra et ne change pas, sinon incertain") {

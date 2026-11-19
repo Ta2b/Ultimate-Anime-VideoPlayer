@@ -11,13 +11,22 @@ entraînement.
 - Cartes : NVIDIA RTX 30 et après (la carte de coût de NVOF n'existe pas sur Turing). AMD, Intel, Turing, un
   pilote sans `libnvidia-opticalflow.so.1` (ou `nvofapi64.dll`) : une ligne au journal, puis la chaîne
   exactement comme sans la carte.
-- Interrupteur : `--scene-map` (essai). Éteint par défaut tant que la porte 2.2 n'est pas passée.
+- Interrupteur : allumée par défaut depuis la première release (la caméra, le décor et l'affinage à l'heure ont
+  passé leurs mesures, pour les calques et la plaque de décor) ; `--no-scene-map` (essai) l'éteint. Les éclats
+  sur ses effets (classe Effet) restent éteints par défaut (`--effect-highlights`, essai, les rallume) ; les
+  lueurs vues dans l'image par le grade n'en dépendent pas (`docs/hdr-anime.md`).
+  Chantier en pause depuis le 19 novembre (Tatoub) : la classe Effet reste calculée, mais rien ne la rallume
+  sans son accord. Pour reprendre : étiqueter des lueurs qui changent, lire la table « Lumières » de
+  `carte_lecteur.py`, régler `kLightKept` sans rouvrir les faux effets, puis juger sur `--effect-mask-view`.
 - Journal de fin : `carte de la scène : N paires lancées, N relues, N posées sur leur paire ; N sautées (NVOF
-  occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, N pas
-  lancés), N coupes probables, N fondus ; hôte : N µs pour lancer une paire, N µs pour tirer une carte, en
-  moyenne`. « Posées » est ce qui compte : avec RIFE, presque toutes les paires lancées. « Trop tard » : la
-  carte n'était pas relue quand l'étage a décidé de sa paire ; « affinages trop tard » : elle l'était, mais
-  pas sa caméra affinée (la carte part avec celle de NVOF). Les temps de l'hôte sont ceux du thread du lecteur.
+  occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, dont N
+  relus ensuite, N pas lancés ; N lancés derrière le flux depuis la caméra du plan, N écartés), N coupes
+  probables, N fondus ; hôte : N µs pour lancer une paire, N µs pour tirer une carte, en moyenne`. « Posées »
+  est ce qui compte : avec RIFE, presque toutes les paires lancées. « Trop tard » : la carte n'était pas relue
+  quand l'étage a décidé de sa paire ; « affinages trop tard » : elle l'était, mais pas sa caméra affinée (la
+  carte part avec celle de NVOF ; l'affinage, relu ensuite, va aux calques par `SceneMap::last_refined`).
+  « Lancés derrière le flux » : l'affinage parti au lancement de la paire (plus bas) ; « écartés » : de
+  ceux-là, ceux qui ont dû repartir de la caméra de NVOF. Les temps de l'hôte sont ceux du thread du lecteur.
 - Profil GPU de fin, quatre étapes. « carte de la scène : lumas », sur la voie, « carte de la scène :
   tuiles », la réduction sur les SM, et « carte de la scène : caméra », l'affinage sur les SM : avec les
   temps de l'hôte, c'est tout ce que la carte ajoute à chaque image. « carte de la scène : flux (NVOFA) » : le bloc matériel du flux optique, qui tourne à côté des SM ;
@@ -85,15 +94,84 @@ Méthode de la porte 2.1 (banc `tools/bench/qualite/nvof_mesures.py` : `camera`,
   lumas floutées, un histogramme des écarts (la médiane du poids de Huber), les sommes pondérées, et un fil qui
   résout. Les lumas de la paire restent dans leurs tampons jusqu'à l'affinage : une paire plus récente qui les
   réécrirait attend (« relâché » reposé après l'affinage), et un affinage demandé trop tard n'est pas lancé.
-- **Vérification**, celle que mesure la porte : sur chaque tuile du décor, deux pas de Lucas-Kanade sur le
+- **Affinage à l'heure** (`app/play/scene_map.cpp`) : dans un plan, l'affinage part dès le lancement de la
+  paire, enfilé derrière son flux sur la file de NVOF, depuis la dernière caméra du plan (affinée si elle est
+  relue, sinon celle de NVOF de la paire d'avant) : il n'attend plus que l'hôte relise les tuiles, et finit
+  avec elles. Lancé seulement après la relecture, il arrivait trop tard sur un tiers des paires au passage du
+  19 novembre (177 sur 473 sans calques). Il est gardé si sa vérification sur l'image (`SceneCamera::check`)
+  reste sous 0,05 pixel du flux, ou sous deux fois celle de la dernière caméra affinée du plan sans passer
+  0,15, et s'il reste à 16 pixels du flux de la caméra de NVOF de sa paire ; sinon il repart des tuiles
+  relues, depuis la caméra de NVOF, comme la première paire d'un plan. Rejeu de dix extraits (`carte_rejeu`,
+  ligne `tot`, 1 590 paires, 1 479 départs) : 1 346 gardés, dont 3 vérifiés à plus de 0,05 pixel au-delà de
+  l'affinage parti de NVOF. Garder ceux qui restent à 2 pixels de NVOF, sans regarder l'image, en gardait
+  1 416 dont 46 ainsi faux (un départ qui glisse vers une autre solution, souvent une image sur trois sur un
+  dessin en trois), et écartait des départs justes là où NVOF biaise la caméra de 2 à 9 pixels. Un affinage
+  pas fini quand l'étage décide de sa paire est relu plus tard (`SceneMap::last_refined`, pixels de travail) :
+  les calques reprennent la caméra d'une paire voisine. Sur la RTX 4070 Ti (19 novembre, RIFE 4.25 Auto et
+  SPAN, trois tours de 60 s) : caméra affinée sur toutes les paires ajustées (Re:Zero 16:00, 1 339 sur 1 339 ;
+  panoramique, 424 sur 424), aucun affinage perdu (les 57 et 22 arrivés trop tard sont tous relus ensuite),
+  calques sur 74 à 83 % des paires. L'affinage coûte 0,85 ms en médiane (p95 1,95 ms) sur la file de NVOF,
+  l'hôte 69 µs par paire lancée et 214 µs par carte tirée ; la lecture avec la carte reste à 131 i/s contre
+  130 sans (p95 du retard 2,0 à 2,5 ms contre 2,4 à 2,5).
+- **Vérification**, celle que mesure la porte : sur chaque tuile (décor ou non), deux pas de Lucas-Kanade sur le
   décalage qui reste ; une tuile texturée dans un seul sens se mesure en travers du bord. `SceneMotion::residual`
-  est alors la médiane de ces décalages (`residual_tiles` tuiles), sinon l'écart des vecteurs.
+  est alors la médiane de ces décalages sur les tuiles du décor (`residual_tiles` tuiles), sinon l'écart des
+  vecteurs. Sur les autres tuiles, la même mesure sépare le dessin du décor (« Par l'image », plus bas).
 
 ## Les classes des tuiles
 
 Décor : la tuile suit le modèle de la caméra. Dessin : elle s'en écarte, ou ses vecteurs s'éparpillent. Effet :
-elle ne correspond plus et change fort. Incertain : le flux ne tranche pas (vecteurs sans correspondance sans
-effet, mouvement sans caméra ajustée, et les aplats ci-dessous).
+elle ne correspond plus et change fort, ou une lumière y change sur place. Incertain : le flux ne tranche pas
+(vecteurs sans correspondance sans effet, mouvement sans caméra ajustée, et les aplats ci-dessous).
+
+- **Par l'image**, quand la caméra est affinée (le cas courant) : l'écart après la caméra de chaque tuile tranche,
+  quoi que disent ses vecteurs. Deuxième passage de la porte 2.3 : sur les dialogues, les personnages finissaient
+  en décor, parce qu'une bouche ou des yeux qui changent ne déplacent pas le vecteur moyen de NVOF. Au premier
+  pas de la vérification, sur le modèle seul, un pixel bouge si son écart |e| dépasse ce qu'un décalage d'un
+  demi-pixel à 720p explique (`kMovingCodes` + 0,5 × |∇|, `spec/scene_camera.h`). La tuile bouge hors de la
+  caméra si au moins `kMovingShare` (10 %) de ses pixels bougent, ou si Lucas-Kanade la recale d'au moins
+  `kShiftMoving` (1 pixel à 720p) dans un sens mesurable. Elle bouge : effet si ses vecteurs coûtent (coût moyen
+  d'au moins `kEffectCost`) sur au moins `kEffectShare` de pixels qui bougent, dessin sinon. Elle ne bouge pas :
+  décor, aplat compris. Une tuile qui bouge compte aussi pour « changée » : sous une caméra tenue, la paire où la
+  bouche change n'est plus une paire sans preuve. Un personnage entièrement immobile reste décor : rien n'y
+  bouge, la chaîne le traite comme le décor sans rien perdre. Seuils réglés sans mesure, à revoir sur la table
+  « Écart après la caméra » de `carte_lecteur.py` (le décor y donne le bruit). Sans affinage relu (affinage trop
+  tard, trop peu de décor, coupe), les règles des vecteurs ci-dessous restent.
+
+- **Lumières** (effets lumineux, avant toute autre règle, jamais sur un fondu). Instantanés de Re:Zero à 16:20
+  et 16:43 (une lueur, une aura) : aucune tuile en effet, alors que les éclats HDR en dépendent
+  (`app/play/effect_book.cpp`). Une lueur coûte peu à NVOF et ne déplace pas son vecteur ; seule la règle du coût
+  la voyait, presque jamais. La vérification compte aussi, parmi les pixels qui bougent, ceux qui
+  s'éclaircissent et ceux qui changent d'un bord net (|∇a − ∇b| d'au moins `kSharpEdge`, 8 codes par pixel), et
+  l'écart qui reste au dernier pas, après le recalage de la tuile (`settled`). Une tuile est une lumière (effet,
+  de confiance l'accord) si :
+  - au moins `kMovingShare` de ses pixels bougent, et presque tous dans le même sens : l'accord
+    |éclaircis − assombris| / qui bougent atteint `kLightAgree` (0,6, 80 % d'un côté). Un dessin qui se
+    déplace assombrit d'un côté ce qu'il éclaircit de l'autre ;
+  - ni elle ni ses huit voisines ne changent d'un bord net (plus de `kLightSharp`, 25 %, de leurs pixels qui
+    bougent) : une bouche qui s'ouvre ou un œil qui cligne vont aussi d'un seul sens, sur place, mais d'un bord
+    net ; le cœur d'une grande bouche change sans bord, les tuiles de son bord le trahissent ;
+  - le recalage n'explique pas le changement (au moins `kLightKept`, la moitié, de l'écart reste) : un dégradé
+    qui glisse va lui aussi d'un seul sens sur une tuile ;
+  - son vecteur suit la caméra : un objet clair qui entre dans une tuile sombre l'éclaircit aussi, mais il
+    entraîne ses vecteurs.
+
+  Une lueur tout à fait immobile ne se voit pas ainsi : rien n'y change d'une image à l'autre. C'est une limite
+  tenue, pas un défaut à corriger : sur les captures étiquetées du 19 novembre, la corne et le halo de Re:Zero
+  sont parfaitement fixes, et la bougie se recale (1,7 pixel) assez pour que le test `kLightKept` l'écarte.
+  Relâcher les règles pour les attraper faisait environ 2 400 faux effets sans voir la bougie. Les éclats
+  fixes, c'est le grade qui les trouve lui-même (`docs/hdr-anime.md`) ; la carte ne donne que les lumières qui
+  changent. Seuils réglés sans mesure, à revoir sur la table « Lumières » de `carte_lecteur.py`.
+
+- **Coupes** (`cut_likely`). Une paire qui enjambe une coupe ne dit rien de la scène : ses vecteurs relient deux
+  plans sans rapport. La carte la juge coupée si la luminosité saute partout d'au moins `kCutJump` (32 codes, ce
+  qu'aucun fondu ne fait d'une image à l'autre) ou si, hors fondu, au moins `kCutUnmatched` des vecteurs sont
+  sans correspondance ; la chaîne peut aussi la dire coupée (`SceneMap::cut`, depuis `UpscaleStage`).
+  `ref::mark_cut` pose alors une carte neutre : pas de caméra, toutes les tuiles incertaines et changées, aucun
+  drapeau tenu. Avant, une coupe de Re:Zero passait pour un fondu (la luminosité glissait d’un seul sens) et ses
+  vecteurs inventaient un effet vert sur un menton, que le masque des éclats gardait 700 ms ; corrigé, le PC
+  ne le voit plus (commit 9fff1e32). Au rejeu, 5 coupes trouvées sur les extraits (aucune avant), et les
+  effets de la lueur et de l'aura passent de 600 à 374 et de 330 à 183 tuiles : le reste venait des coupes.
 
 - **Aplats** (texture sous `kTextureFloor`). NVOF n'y voit rien, mais rien n'y bouge de visible : un aplat qui
   ne contredit pas la caméra est décor, pleinement sûr sous `kStillDiff` d'écart |b − a|, plus du tout à
@@ -107,6 +185,9 @@ effet, mouvement sans caméra ajustée, et les aplats ci-dessous).
 Les drapeaux (`drawing_held`, `changed`) restent bruts, non lissés.
 
 ## La porte (groupe de tests 2, sur CachyOS)
+
+Les commandes des mesures du PC (banc A/B, captures des éclats, carte sur les extraits) :
+[`reports/carte-de-la-scene-mesures-pc-2026-11-19.md`](reports/carte-de-la-scene-mesures-pc-2026-11-19.md).
 
 Pendant une lecture SPAN + RIFE, le temps par image ne monte pas de plus de 0,3 ms avec `--scene-map` (preuve
 que le bloc NVOFA tourne à côté). Sur les extraits du banc 2.1 (porte 2.3) : classe décor contre dessin juste
@@ -129,3 +210,11 @@ au-dessus de 3 codes ; le banc 2.1 y ajuste sa caméra sur tout bloc où la luma
 prend maintenant les tuiles dès 1,5 code (`kFitTexture`) sur 3 % de l'image, l'aplat est sous 3 codes. Et aucun
 vecteur n'était « sans correspondance » : NVOF ne donne presque jamais un coût au-dessus de 32 (99e centile 20,
 99,9e 30), le seuil était à 160 ; il est à 24.
+
+Passage du 19 novembre au soir (RTX 4070 Ti, commit 9baf5c9c, les 8 extraits plus la lueur de 16:17 et l'aura
+de 16:40) : 80 à 99,6 % de tuiles sûres (23 à 67 % au passage précédent), 0 à 19 % d'incertain, bascule de 0 à
+2,1 % ; dessin 25 % sur le premier panoramique, 17 % sur le cinquième, 0 sur les dialogues ; caméra affinée
+sur toutes les paires ajustées, écart sur l'image de 0,00 à 0,12 pixel. Les effets sont là, mais sur peu de
+l'image : 0,1 à 0,3 % des tuiles, sur 17 paires sur 159 de l'aura et 34 de la lueur au rejeu des mêmes
+vecteurs ; le tableau de `carte_lecteur.py` les arrondissait à 0, il les donne maintenant au dixième, avec
+la part des paires qui en ont. Reste, pour la porte, à juger sur les vues la classe des tuiles sûres.

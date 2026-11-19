@@ -186,6 +186,8 @@ ExportGraded graded_export(const Player& p, const ExportJob& job) {
     log_channel("app")->warn("export : grade refusé, image de la chaîne telle quelle");
     return ExportGraded{};
   }
+  // Les lueurs vues dans l'image montent comme à l'écran (pas de carte ici), --effect-highlights compris.
+  out.params->fx_glow = p.options.effect_highlights ? 1.0 : 0.0;
   if (out.look == ExportGrade::Hdr10)
     out.looks = load_looks(s, paths::luts(p.paths)).luts;  // le SDR la coupe
   return out;

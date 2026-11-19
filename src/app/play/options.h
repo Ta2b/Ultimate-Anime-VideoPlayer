@@ -157,9 +157,15 @@ struct PlayOptions {
   // (anime_shots.h) ; --no-anime-shots garde le relèvement fixe. Sans effet en sortie HDR
   // (render::steady_hdr).
   bool anime_shots = true;  // par défaut (jugé à l'image)
-  // Éclats HDR sur les seuls effets (render/effect_mask.h), là où la carte de la scène existe (NVIDIA) ;
-  // --no-effect-highlights garde la marge des éclats sur toute lumière, comme sans carte.
+  // Éclats HDR : les lueurs vues dans l'image montent comme un effet sûr (GradeParams::fx_glow), à l'écran et
+  // à l'export ; --no-effect-highlights les coupe, avec les effets de la carte.
   bool effect_highlights = true;
+  // --effect-highlights (essai) : éclats aussi sur les effets de la carte de la scène (render/effect_mask.h,
+  // NVIDIA). Éteints par défaut pour la première release : la marge des éclats reste alors sur toute
+  // lumière hors des lueurs, comme sans carte.
+  bool map_effects = false;
+  // Le masque des effets de la carte ne part que si les deux sont vrais.
+  bool map_highlights() const { return effect_highlights && map_effects; }
   // --effect-mask-view (essai) : le grade peint le masque au lieu de l'image (lumières en rouge, effets sûrs
   // en vert, marge retenue en bleu), pour le voir sur un instantané.
   bool effect_mask_view = false;
@@ -226,10 +232,11 @@ struct PlayOptions {
   // --rife-at-slot (mesure) : chaque passe RIFE d'une paire forte attend le slot de son image, au lieu d'être
   // enfilée à l'arrivée de la paire ; la sortie est la même (UpscaleSetup::rife_at_slot). Pour l'ABAB.
   bool rife_at_slot = false;
-  // --scene-map (essai) : la carte de la scène par le flux optique de NVIDIA (UpscaleSetup::scene_map,
-  // scene_map.h). Sans client, la sortie est la même ; la ligne « carte de la scène » du journal de fin dit
-  // ce qu'elle a fait.
-  bool scene_map = false;
+  // La carte de la scène par le flux optique de NVIDIA (UpscaleSetup::scene_map, scene_map.h), allumée par
+  // défaut pour la caméra, les calques et la plaque de décor ; --no-scene-map (essai) l'éteint. Sans NVOF
+  // (AMD, Intel, avant RTX 30), elle se refuse et rien ne change ; la ligne « carte de la scène » du journal
+  // de fin dit ce qu'elle a fait.
+  bool scene_map = true;
   // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3
   // à 4.5). Éteint par défaut jusqu'à sa validation sur l'écran.
   bool skip_held = false;
