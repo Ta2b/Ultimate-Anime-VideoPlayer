@@ -1,7 +1,7 @@
 // GMFSS Fortuna Union (kernels/spec/gmfss.h) : ses deux graphes ONNX, exportés par
-// tools/gmfss/export_gmfss.py (poids de la roue vsgmfss_fortuna 1.0.0, MIT ; flot entier) et rangés dans un
-// dossier des modèles RIFE, puis leurs variantes aux tailles fixées pour les plans remplis de la lecture
-// (derived_model.h), que TensorRT construit sans profil.
+// tools/gmfss/export_gmfss.py (poids de la roue vsgmfss_fortuna 1.0.0, MIT ; flot entier) et rangés dans le
+// dossier de --gmfss-dir, un dossier des modèles RIFE ou son voisin « gmfss », puis leurs variantes aux
+// tailles fixées pour les plans remplis de la lecture (derived_model.h), que TensorRT construit sans profil.
 #pragma once
 
 #include <expected>
@@ -28,8 +28,12 @@ struct GmfssModels {
   std::filesystem::path half_pair;  // vide sans le graphe au demi-flot à côté des deux autres
 };
 
-// Les deux graphes du premier de ces dossiers qui les a tous les deux, et la paire au demi-flot de ce
-// dossier si elle y est.
+// Où chercher les graphes : chaque dossier, puis son voisin « gmfss » (~/kirari/models/gmfss à côté de
+// ~/kirari/models/rife, le --out que propose tools/gmfss/export_gmfss.py), sans doublon.
+std::vector<std::filesystem::path> gmfss_places(std::span<const std::filesystem::path> dirs);
+
+// Les deux graphes du premier dossier de gmfss_places(dirs) qui les a tous les deux, et la paire au demi-flot
+// de ce dossier si elle y est.
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs);
 
 // Les dimensions nommées des deux graphes pour des plans remplis de padded_width × padded_height (multiples

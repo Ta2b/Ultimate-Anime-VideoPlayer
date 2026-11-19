@@ -152,7 +152,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   if (auto found = choose_rife_model(h.options, h.paths.home, running, rife_preference(gpu_facts(h.screen)),
                                      h.paths.models))
     rife = std::move(*found);
-  const std::vector<std::filesystem::path> places = motion_model_dirs(h.paths, rife);
+  const std::vector<std::filesystem::path> places = motion_model_dirs(h.paths, rife, h.options.gmfss_dir);
   const std::optional<DrbaModel> drba_file = find_distil_drba(places);
   const bool drba = drba_file.has_value();
   const std::optional<GmfssModels> gmfss = find_gmfss(places);

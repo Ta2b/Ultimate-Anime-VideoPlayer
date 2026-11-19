@@ -205,6 +205,8 @@ gpu::PairScores FakeBackend::scores_of(const gpu::Tensor& a, const gpu::Tensor& 
   scores.right = right->second;
   if (const auto given = scores_.find({scores.left.value, scores.right.value}); given != scores_.end())
     scores = given->second;
+  scores.blocks = blocks_;
+  scores.blocks_x = blocks_x_;
   return scores;
 }
 

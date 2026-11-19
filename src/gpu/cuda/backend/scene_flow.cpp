@@ -28,7 +28,7 @@ SceneFlow::~SceneFlow() {
   for (const Read& read : reads_) {
     if (read.done != nullptr) static_cast<void>(cudaEventDestroy(read.done));
   }
-  for (Refine& refine : refines_) {
+  for (const Refine& refine : refines_) {
     if (refine.done != nullptr) static_cast<void>(cudaEventDestroy(refine.done));
   }
 }

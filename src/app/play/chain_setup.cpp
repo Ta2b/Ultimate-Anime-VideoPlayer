@@ -370,7 +370,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
   c.span_reuse = o.span_reuse;
-  c.span_tiles = o.span_tiles;
+  c.span_tiles = o.span_tiles || o.span_tiles_check;  // le contrôle n'a rien à voir sans tuiles
   c.span_tiles_check = o.span_tiles_check;
   c.shot_plan = o.shot_plan;
   c.pair_triage = o.pair_triage;
@@ -699,7 +699,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   auto rife_found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models);
   if (rife_found) c.rife_choice = std::move(*rife_found);
   if (c.rife_choice) c.rife_model = c.rife_choice->path;
-  c.model_places = motion_model_dirs(p.paths, c.rife_choice);
+  c.model_places = motion_model_dirs(p.paths, c.rife_choice, p.options.gmfss_dir);
   c.drba_found = find_distil_drba(c.model_places).has_value();
   const bool shots_drba = drba_for_shots(c, settings);  // l'Auto plan par plan, en plus de RIFE
   const bool want_drba =

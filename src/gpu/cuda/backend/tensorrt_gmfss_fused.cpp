@@ -93,7 +93,8 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_gmfss_fused(const ModelS
     return refuse(
         RefusalCode::ShapeInvalid,
         std::format("GMFSS natif : forme fixe 1×3×{}×{} attendue, demandée {}", h, w, shape_text(shapes)));
-  // L'IFNet, un RIFE 4.26 à GridSample, prend les réglages de RIFE.
+  // L'IFNet, un RIFE à GridSample (4.26 par ifnet_rife.py, celui d'union par export_gmfss.py), prend les
+  // réglages de RIFE.
   auto engines = build_gmfss_pieces(model.onnx_path.parent_path(), manifest->pieces, manifest->digests,
                                     expected, true, progress);
   if (!engines) return std::unexpected(std::move(engines.error()));

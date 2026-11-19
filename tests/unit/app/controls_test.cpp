@@ -25,7 +25,8 @@ TEST_CASE("Le temps s'affiche comme dans un lecteur", "[app][controls]") {
   CHECK(format_clock(-1, 0) == "--:--");
 }
 
-TEST_CASE("--pause-at : la première image source à l'instant demandé, pas un instant interpolé",
+// Un nom de cas ne commence pas par « -- » : CTest le passe à Catch2, qui le lirait comme une option.
+TEST_CASE("Pause à --pause-at : la première image source à l'instant demandé, pas un instant interpolé",
           "[app][controls]") {
   ControlsView view{.position_us = 980 * kS + 20 * kMs, .on_source = false};
   CHECK_FALSE(pause_reached(view, 980 * kS));  // interpolée : la lecture continue

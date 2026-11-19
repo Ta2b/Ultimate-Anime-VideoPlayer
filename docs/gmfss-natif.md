@@ -14,7 +14,8 @@ chacune derrière `--gmfss-native` (éteint par défaut, essai) :
 
 ## Le GridNet de la fusion
 
-La fusion exportée par `tools/gmfss/export_gmfss.py` est l'IFNet de RIFE 4.26 (half0, half1, time → « rife ») suivi
+La fusion exportée par `tools/gmfss/export_gmfss.py` est l'IFNet d'union (half0, half1, time → l'image de l'IFNet),
+remplacé par RIFE 4.26 dans celle de `tools/gmfss/ifnet_rife.py` (l'image s'y appelle « rife »), suivi
 du GridNet de FusionNet_u : 21 blocs (têtes, résiduels, descentes, montées par transposée 4 × 4 de pas 2, chacun
 PReLU, convolution, PReLU, convolution) sur trois lignes (64, 128 et 192 canaux à la moitié, au quart et au
 huitième des plans remplis), puis la queue (convolution et PReLU, convolution 64 → 256 et PixelShuffle(2),
@@ -22,7 +23,11 @@ convolution 64 → 3, bornée à [0, 1]). Environ 750 GFLOP par fusion en sortie
 
 Sous `--gmfss-native`, le lecteur ne construit plus la fusion seule mais un manifeste « .gmfssfused »
 (`prepare/gmfss_fused.h`) : la fusion entière (le même moteur qu'avant, repris du cache) et son IFNet extrait en un
-petit modèle, que trtexec construit avec les réglages de RIFE (c'est un RIFE 4.26). Au chargement (`tensorrt_gmfss_fused.cpp`), les poids
+petit modèle, que trtexec construit avec les réglages de RIFE. L'image de l'IFNet se trouve par la structure, pas
+par son nom : la deuxième des trois images du Concat que lit la première convolution du GridNet
+(`gmfss_ifnet_tensor`) ; la coupe est exacte sur les deux exports (écart nul sous ONNX Runtime). Jusqu'au
+19 novembre 2026, seule la fusion d'`ifnet_rife.py` se coupait : celle du 20 octobre du PC restait entière à
+TensorRT (« « rife » n'est ni une entrée du morceau… »). Au chargement (`tensorrt_gmfss_fused.cpp`), les poids
 du GridNet sont lus dans la fusion entière (`prepare/gmfss_native.h` : initialiseurs `gmfss.fusionnet.*`, pentes des
 PReLU exportés en Relu, Neg, Relu, Mul, Sub) et le GridNet natif est essayé contre la fusion TensorRT entière.
 L'étage (`upscale_gmfss.cpp`) ne voit pas la différence : mêmes entrées, même sortie.

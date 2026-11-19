@@ -224,6 +224,8 @@ std::expected<void, Refusal> VulkanKernelOps::pair_launch(PairRead& slot, const 
 }
 
 std::expected<PairScores, Refusal> VulkanKernelOps::pair_read(const PairRead& slot) {
+  if (!slot.sums || !slot.worst)
+    return refuse_slice(RefusalCode::SequenceOrder, "pair_read : mesure jamais lancée");
   // Attente hôte voulue : la décision de lancer RIFE dépend de cette paire (kernels/spec/detect.h).
   // Elle ne couvre que la mesure, pas ce que la file a reçu depuis.
   if (auto ok = context_.wait_on_host(queue_.at(slot.value), std::chrono::seconds(10), kQueryBeforeWait); !ok)

@@ -256,7 +256,7 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
 void PlaceboScreen::Impl::note_look_path(const render::GradeParams& params) {
   if (std::ranges::none_of(params.look_mixes, [](double mix) { return mix > 0.0; })) return;
   const bool wanted = params.look_table > 0.5;
-  const bool active = grade->look_table_active();
+  const bool active = grade && grade->look_table_active();  // appelée sous « if (grade && params) »
   const int path = active ? 0 : wanted ? 1 : 2;
   if (std::exchange(look_path_noted, path) == path) return;
   if (active) {

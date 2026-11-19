@@ -253,6 +253,7 @@ std::expected<std::vector<std::string>, Refusal> RifeNativeTrial::profile_piece(
     }
     if (e != cudaSuccess) return failed(e, "profil");
   }
+  lines.reserve(layers);
   for (std::size_t i = 0; i < layers; ++i)
     lines.push_back(std::format("RIFE natif {}, {} couche {} : {:.3f} ms ({})", name, piece_name(p), i,
                                 best[i], net.layer_label(p, static_cast<int>(i))));

@@ -76,6 +76,10 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   const auto calm = parse({"épisode.mkv", "--rife-calm-model=rife_v4.22_lite.onnx"});
   REQUIRE(calm);
   CHECK(calm->rife_calm_model == std::filesystem::path("rife_v4.22_lite.onnx"));
+  CHECK_FALSE(options->gmfss_dir);
+  const auto gmfss = parse({"épisode.mkv", "--gmfss-dir=gmfss-out"});
+  REQUIRE(gmfss);
+  CHECK(gmfss->gmfss_dir == std::filesystem::path("gmfss-out"));
   CHECK(options->ring_watcher);
   const auto watcher = parse({"épisode.mkv", "--ring-watcher"});
   REQUIRE(watcher);
@@ -405,6 +409,10 @@ TEST_CASE("kirari play : l'aide ne cite aucune option inconnue de l'analyseur", 
   // Le tri des paires ne vaut qu'avec la carte de la scène, une option d'essai : essai lui aussi.
   CHECK_FALSE(parse_play_options(std::vector<std::string_view>{"video.mkv", "--pair-triage"}));
   CHECK(parse({"video.mkv", "--scene-map", "--pair-triage"})->pair_triage);
+  // Les tuiles de SPAN : éteintes par défaut, --span-tiles les demande, --no-span-tiles reste accepté.
+  CHECK_FALSE(parse({"video.mkv"})->span_tiles);
+  CHECK(parse({"video.mkv", "--span-tiles"})->span_tiles);
+  CHECK_FALSE(parse({"video.mkv", "--span-tiles", "--no-span-tiles"})->span_tiles);
 }
 
 }  // namespace kirari::app::play

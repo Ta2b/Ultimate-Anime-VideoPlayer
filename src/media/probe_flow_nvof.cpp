@@ -85,8 +85,8 @@ struct ProbeFlow::Session {
     if (driver == nullptr) return;
     // Une exécution refusée a pu laisser une copie en route sur le flux : elle finit avant que ses tampons
     // soient rendus.
-    if (stream != 0) (void)driver->synchronize(context.context, stream);
-    (void)driver->in_context(context.context, [this] {
+    if (stream != 0) std::ignore = driver->synchronize(context.context, stream);
+    std::ignore = driver->in_context(context.context, [this] {
       for (const Buffer* buffer : {&input, &reference, &flow})
         if (buffer->handle != nullptr) calls.nvOFDestroyGPUBufferCuda(buffer->handle);
       if (handle != nullptr) calls.nvOFDestroy(handle);
@@ -150,7 +150,7 @@ struct ProbeFlow::Session {
   }
 
   // Un tampon de desc, ses lignes d'au moins row octets ; un message d'erreur, vide si tout va.
-  std::string create_buffer(const NV_OF_BUFFER_DESCRIPTOR& desc, std::size_t row, Buffer& into) {
+  std::string create_buffer(const NV_OF_BUFFER_DESCRIPTOR& desc, std::size_t row, Buffer& into) const {
     if (const auto status =
             calls.nvOFCreateGPUBufferCuda(handle, &desc, NV_OF_CUDA_BUFFER_TYPE_CUDEVICEPTR, &into.handle);
         status != NV_OF_SUCCESS)

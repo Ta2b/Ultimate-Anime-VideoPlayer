@@ -128,7 +128,7 @@ struct ChainEngines {
   // RIFE cherché même sans interpolation : le menu peut l'allumer.
   std::optional<ModelChoice> rife_choice;
   std::optional<std::filesystem::path> rife_model;
-  std::vector<std::filesystem::path> model_places;  // dossiers du graphe de DistilDRBA
+  std::vector<std::filesystem::path> model_places;  // dossiers des graphes de DistilDRBA et de GMFSS
   bool drba_found = false;
   int drba_align = 64;                   // multiple des plans remplis de DistilDRBA : 128 au demi-flot
   WorkSize rife_size;                    // où RIFE mouvement estime (720p pour une sortie 4K), sinon work
@@ -138,7 +138,7 @@ struct ChainEngines {
   int rife_planes = kernels::kRifeInputChannels;
   bool skip_held = false;               // --skip-held (UpscaleSetup::skip_held)
   bool span_reuse = true;               // --no-span-reuse (UpscaleSetup::span_reuse)
-  bool span_tiles = true;               // --no-span-tiles (UpscaleSetup::span_reuse)
+  bool span_tiles = false;              // --span-tiles (UpscaleSetup::span_reuse)
   bool span_tiles_check = false;        // --span-tiles-check (UpscaleSetup::span_reuse)
   bool one_lane = false;                // --one-lane (UpscaleSetup::one_lane)
   bool rife_warm = false;               // --rife-warm (UpscaleSetup::rife_warm)

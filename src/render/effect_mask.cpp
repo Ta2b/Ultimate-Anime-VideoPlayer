@@ -56,8 +56,9 @@ void blur(const std::vector<float>& level, int cols, int rows, std::vector<float
           const int c = col + dx;
           const int r = row + dy;
           if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
-          const float w =
-              kWeights[static_cast<std::size_t>(dx + 1)] * kWeights[static_cast<std::size_t>(dy + 1)];
+          const int wx = dx + 1;
+          const int wy = dy + 1;
+          const float w = kWeights[static_cast<std::size_t>(wx)] * kWeights[static_cast<std::size_t>(wy)];
           sum += w * level[at(c, r, cols)];
           weight += w;
         }

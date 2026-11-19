@@ -1,5 +1,5 @@
 // La fusion de GMFSS Fortuna Union coupée pour les noyaux natifs (--gmfss-native, docs/gmfss-natif.md) : son
-// IFNet (RIFE 4.26 : half0, half1, time → « rife ») extrait en un petit modèle que TensorRT construit, le
+// IFNet (half0, half1, time → l'image de l'IFNet) extrait en un petit modèle que TensorRT construit, le
 // GridNet refait par les noyaux CUDA avec les poids de la fusion entière. La fusion entière reste construite
 // : elle est la référence de l'essai au chargement et le repli quand le natif est écarté.
 #pragma once
@@ -29,17 +29,20 @@ struct GmfssFusedManifest {
   std::vector<std::string> digests;
 };
 
-// Le nom de la sortie de l'IFNet dans la fusion exportée par tools/gmfss/export_gmfss.py.
-inline constexpr std::string_view kGmfssRifeTensor = "rife";
-
 std::string format_gmfss_manifest(const GmfssFusedManifest& manifest);
 // Refus : FieldOutOfRange (champ absent ou inconnu, taille hors des multiples de 32, morceaux en nombre).
 std::expected<GmfssFusedManifest, Refusal> parse_gmfss_manifest(std::string_view text);
 
 bool is_gmfss_fused_manifest(const std::filesystem::path& path);
 
-// L'IFNet d'une fusion de height × width : half0 et half1 (1 × 3 × h × w), time (1 × 1 × 1 × 1) vers « rife
-// ». Refus : ceux d'extract_subgraph.
+// L'image de l'IFNet dans la fusion, quel que soit son export : la deuxième des trois images du Concat que
+// lit la première convolution du GridNet (residual_model_head0, après son PReLU) : [image0, IFNet, image1],
+// tools/gmfss/gmfss_graph.py Fusion.grid. « rife » pour ifnet_rife.py, « /ifnet/Add_16_output_0 » pour
+// export_gmfss.py. Refus : ceux de read_onnx_graph, FieldMissing (pas de GridNet d'union, ou pas ce Concat).
+std::expected<std::string, Refusal> gmfss_ifnet_tensor(std::span<const std::byte> fusion);
+
+// L'IFNet d'une fusion de height × width : half0 et half1 (1 × 3 × h × w), time (1 × 1 × 1 × 1) vers l'image
+// de l'IFNet (gmfss_ifnet_tensor). Refus : ceux de gmfss_ifnet_tensor et d'extract_subgraph.
 std::expected<std::vector<std::byte>, Refusal> gmfss_ifnet(std::span<const std::byte> fusion, int height,
                                                            int width);
 
