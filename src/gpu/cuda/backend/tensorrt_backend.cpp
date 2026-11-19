@@ -272,6 +272,10 @@ TensorRtBackend::~TensorRtBackend() {
   chain_span_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
   free_reads(pair_reads_);
+  for (const PairRead& read : pair_reads_) {
+    if (read.blocks_device != nullptr) cudaFree(read.blocks_device);
+    if (read.blocks_host != nullptr) cudaFreeHost(read.blocks_host);
+  }
   free_reads(flow_reads_);
   free_reads(stats_reads_);
   for (void* scratch : {static_cast<void*>(ingest_rows_), static_cast<void*>(splat_sums_), grid_motion_,

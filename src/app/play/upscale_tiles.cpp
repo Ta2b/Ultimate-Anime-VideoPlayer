@@ -8,6 +8,8 @@
 #include <format>
 #include <utility>
 
+#include "kernels/spec/detect.h"
+
 namespace kirari::app::play {
 namespace {
 
@@ -212,6 +214,7 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
       raw[i] = read.dirty[i] != 0 || stale ? 1 : 0;
     }
   }
+  blocks_into(raw, facts.blocks, shifting);
   // Le cœur : ce qui a changé, et toute sortie qui le voit ; la région : le cœur, et tout ce qu'il lit.
   std::vector<std::uint8_t> core = reach_of(raw, facts.spread_px);
   const std::vector<std::uint8_t> wide =
@@ -231,6 +234,29 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
   tiles_wide_ += last_.wide;
   tiles_seen_ += tiles_.size();
   return TilePlan{.tiled = true, .shift_x = sx, .shift_y = sy, .core = std::move(core)};
+}
+
+void SpanTiles::blocks_into(std::vector<std::uint8_t>& raw, const PairBlocks& blocks, bool shifting) {
+  if (shifting || blocks.cols == 0 || blocks.side_px <= 0.0F) return;
+  std::uint64_t added = 0;
+  const auto mark = [&raw, &added](std::size_t i) {
+    if (raw[i] == 0) ++added;
+    raw[i] = 1;
+  };
+  for (std::size_t i = 0; i < blocks.deviation.size(); ++i) {
+    if (kernels::is_held(blocks.deviation[i], kBlockChange)) continue;
+    const std::size_t col_index = i % blocks.cols, row_index = i / blocks.cols;
+    const auto col = static_cast<float>(col_index), row = static_cast<float>(row_index);
+    // Arrondi vers l'extérieur, comme Rect::moved : un bloc à cheval touche les deux tuiles.
+    const Rect at{static_cast<int>(std::floor(col * blocks.side_px)),
+                  static_cast<int>(std::floor(row * blocks.side_px)),
+                  static_cast<int>(std::ceil((col + 1.0F) * blocks.side_px)),
+                  static_cast<int>(std::ceil((row + 1.0F) * blocks.side_px))};
+    for_tiles(grid_, at, mark);
+  }
+  if (added == 0) return;
+  ++net_frames_;
+  net_tiles_ += added;
 }
 
 void SpanTiles::held(const kernels::SceneMotion* scene) {
@@ -288,6 +314,10 @@ std::string SpanTiles::summary() const {
     line += std::format(
         ", {:.1f} % des tuiles recalculées ({:.1f} % avec le halo), {} décalées sur un panoramique",
         share(tiles_done_, tiles_seen_), share(tiles_wide_, tiles_seen_), shifted_);
+  if (net_frames_ > 0)
+    line +=
+        std::format(", le filet des blocs a vu {} tuiles que la carte ne disait pas changées, sur {} images",
+                    net_tiles_, net_frames_);
   const auto stale = [this](TileStale why) { return stale_[static_cast<std::size_t>(why)]; };
   const std::array<std::pair<std::uint64_t, const char*>, 11> reasons{{
       {no_map_, "sans carte"},

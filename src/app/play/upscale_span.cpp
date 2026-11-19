@@ -14,6 +14,7 @@
 #include "core/log.h"
 #include "core/trace.h"
 #include "kernels/ref/deband.h"
+#include "kernels/spec/detect.h"
 #include "kernels/spec/resample.h"
 
 namespace kirari::app::play {
@@ -74,6 +75,7 @@ struct TileContext {
   std::uint32_t intermediates = 0;
   bool debanded = false;  // l'entrée de SPAN de cette image
   gpu::Reduction reduce;  // et son filtre de réduction
+  float block_px = 0.0F;  // côté d'un bloc de la mesure de la paire, pixels de travail (PairBlocks)
 };
 
 // La recette de l'entrée de SPAN (TileFacts::input_key) : FNV-1a de ce qui la fait.
@@ -112,6 +114,18 @@ void tile_facts(ReuseFacts& rf, const UpscaleSetup& setup, const TileContext& at
   rf.scene = facts.scene.has_value() ? &*facts.scene : nullptr;
   rf.spread_px = at.debanded ? static_cast<int>(std::ceil(kernels::ref::kDebandRadius)) : 0;
   rf.input_key = input_recipe(at.debanded, at.reduce);
+  if (facts.scores && facts.scores->blocks_x > 0)
+    rf.blocks =
+        PairBlocks{.deviation = facts.scores->blocks, .cols = facts.scores->blocks_x, .side_px = at.block_px};
+}
+
+// Le côté d'un bloc 16 × 16 de la mesure de la paire, en pixels de l'entrée de SPAN : la mesure lit la copie
+// réduite de RIFE quand elle existe (rife_source).
+float measure_block_px(const gpu::Tensor& span_input, const gpu::Tensor& measured) {
+  const std::int64_t width = measured.shape.dims[3];  // 1 × 3 × H × W
+  if (width <= 0) return 0.0F;
+  return static_cast<float>(kernels::kHeldBlock) * static_cast<float>(span_input.shape.dims[3]) /
+         static_cast<float>(width);
 }
 
 // La sortie d'avant telle que SPAN l'a rendue, d'où l'image se calcule par tuiles : le tampon buf de la
@@ -227,7 +241,8 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
                          .output_has_source = output_has_source_,
                          .intermediates = intermediates_,
                          .debanded = debanded_,
-                         .reduce = reduce},
+                         .reduce = reduce,
+                         .block_px = measure_block_px(rgb_[current_]->tensor(), rife_source(current_))},
              facts);
   const bool candidate = rf.same_epoch && !rf.corrupt && rf.has_output && rf.pair_held;
   if (pair_measured && rf.same_epoch) reuse_.note_pair(facts.scores->worst_block);
