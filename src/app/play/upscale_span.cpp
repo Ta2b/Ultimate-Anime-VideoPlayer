@@ -334,7 +334,7 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   if (reuse_.plated[buf] && keeps_ungraded(setup_, reuse_))
     ok = keep_ungraded(*setup_.backend, results[0], buf, reuse_);
   if (ok)
-    ok = layers_.after_span(*setup_.backend, setup_.layers, inputs[0], results[0],
+    ok = layers_.after_span(*setup_.backend, setup_.layers, results[0],
                             setup_.warp == kernels::RifeWarp::CatmullRom);
   if (ok) ok = grade_spanned(span_of_[current_]);
   use_lane(back);

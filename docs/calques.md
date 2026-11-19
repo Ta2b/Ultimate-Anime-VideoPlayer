@@ -2,9 +2,8 @@
 
 Phase 4 du plan du flux NVIDIA (« Usages du flux optique matériel NVIDIA »). Aucun modèle nouveau : RIFE et
 SPAN tels quels, plus un warp par le mouvement de caméra que donne la carte de la scène (`kernels/spec/scene_flow.h`,
-`PairFacts::scene`). Sans option de ligne de commande, les deux se règlent dans `play.toml` : les calques sont
-allumés par défaut depuis le second essai du 19 novembre (un `play.toml` qui les a éteints les garde éteints),
-la plaque reste éteinte. Les deux ne tournent qu'avec la carte, donc avec l'option d'essai `--scene-map` (sans
+`PairFacts::scene`). Sans option de ligne de commande, les deux se règlent dans `play.toml` et sont allumés par
+défaut depuis les essais du 19 novembre (un `play.toml` qui les a éteints les garde éteints). Les deux ne tournent qu'avec la carte, donc avec l'option d'essai `--scene-map` (sans
 elle, une ligne au journal le dit). En lecture seulement : l'export rejoue la chaîne au bit près, et la carte
 arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
 
@@ -18,9 +17,9 @@ arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
   (le rythme par calque).
 - **Plaque de décor** (`[interpolation] background_plate = true`). Une image clé par plan ; chaque source
   suivante du plan reprend son décor de cette clé, recadrée au mouvement de caméra cumulé : il ne scintille plus
-  d'une image à l'autre (mêmes pixels, déplacés). La clé est la sortie de SPAN de l'image, quand SPAN tourne en
-  FP16 ou mieux ; en FP8 ou en INT8, elle passe par un second SPAN, le modèle tel que livré en FP16, et le décor
-  prend la précision du FP16 (une passe de SPAN de plus par clé). Une nouvelle clé
+  d'une image à l'autre (mêmes pixels, déplacés). La clé est la sortie de SPAN de l'image, à la précision de la
+  lecture : un second SPAN en FP16 sous le FP8 ou l'INT8 retardait une image à chaque clé (essai du
+  19 novembre) et a été retiré. Une nouvelle clé
   quand la plaque couvre moins des trois quarts de l'image, que le zoom a bougé de plus de 3 % ou après
   240 paires ; plus de plaque dès qu'une paire perd la caméra, jusqu'à la paire sûre suivante.
 
@@ -55,7 +54,7 @@ journal.
   (`layers_ring_direct`) : une copie de plus par image.
 - Hors du champ : DistilDRBA, GMFSS, RIFE image et le Smooth (les instants n'y sont plus ceux de la caméra)
   gardent leur chemin ; seuls les warps de RIFE mouvement sur la paire de la carte composent (`blend`,
-  `layered`). Une clé dont le SPAN de la plaque n'a pas tourné (SPAN de b repris d'un dessin tenu, ou fait en
+  `layered`). Une clé dont la copie n'a pas tourné (SPAN de b repris d'un dessin tenu, ou fait en
   avance par le Smooth) est refaite à la paire suivante. La plaque réécrit le décor de la sortie de SPAN sur
   place, comme le grade avant le warp : la sortie telle que SPAN l'a rendue est copiée juste avant
   (`SpanReuse::plated`, `keep_ungraded`), et les tuiles de SPAN de l'image suivante partent de cette copie
@@ -63,7 +62,7 @@ journal.
   toute l'image : le gain est la qualité, pas le temps.
 
 Journal de fin : `calques : N paires avec calques (dont V avec la caméra lk d'une voisine, X % de décor en
-moyenne), M images composées ; sans : … ; plaque : K clés (reprises de SPAN | SPAN FP16 de plus), P sources
+moyenne), M images composées ; sans : … ; plaque : K clés, P sources
 reprises`. Profil GPU : étapes « calques » et « plaque de décor ».
 
 ## Rejeu sur processeur
@@ -94,7 +93,7 @@ de 20 à 28 pixels). Deux essais écartés :
 Rien de cassé (aucun personnage effacé ni doublé, aucune couture), mais pas la porte : 34 % des paires avec
 calques (177 sans caméra lk : affinage trop tard sur 45 % des paires), calques 0,82 ms par appel en 4K, plaque
 0,30 ms mais un retard p95 de 4,7 à 5 ms. Le retard venait du second SPAN de la plaque sur chaque clé (37) : quand
-SPAN tourne déjà en FP16 ou mieux, la plaque reprend désormais sa sortie (`plate_copy`). Les calques n'ajoutent
+SPAN tourne déjà en FP16 ou mieux, la plaque reprend désormais sa sortie. Les calques n'ajoutent
 pas de retard (p95 0 ms, comme éteints). L'affinage à l'heure revient à la carte (`scene_map.cpp`).
 
 ## Second essai du 19 novembre (tête de #939 : #957 et l'affinage parti derrière le flux)
@@ -111,6 +110,13 @@ d'images manquées (26 contre 102, un seul tour). Elle reste éteinte. Ces 1,7 m
 (allumées par défaut depuis #962) : la plaque les coupait, et chaque image passait par SPAN entière. Elles
 partent maintenant de la copie d'avant la plaque, comme sous le grade, et la clé copiée ne se compose plus
 sur elle-même.
+
+## Troisième essai du 19 novembre (main 026f7627, plaque en Équilibre)
+
+Porte de la plaque passée : retard p95 de 0,0 ms plaque comme éteinte, aucune image sautée ni manquée ; les
+tuiles de SPAN calculent toujours environ 41 % des images ; 43 clés et 199 sources sur 200 reprises ; plaque
+0,48 ms médiane (p95 0,88 à 1,06). La plaque s'allume donc par défaut, la clé copiée de SPAN à toute
+précision : le second SPAN en FP16 est retiré.
 
 ## Essai (avec le reste, à la fin)
 
@@ -129,8 +135,8 @@ for v in eteint calques plaque; do
   for f in settings.toml user.toml play.toml; do [ -f "$D/$f" ] && cp "$D/$f" $E/$v/; done
   sed -i '/^layers = /d;/^background_plate = /d' $E/$v/play.toml
 done
-sed -i '/^\[interpolation\]/a layers = false' $E/eteint/play.toml  # allumés par défaut
-sed -i '/^\[interpolation\]/a layers = true' $E/calques/play.toml
+sed -i '/^\[interpolation\]/a layers = false\nbackground_plate = false' $E/eteint/play.toml  # allumés par défaut
+sed -i '/^\[interpolation\]/a layers = true\nbackground_plate = false' $E/calques/play.toml
 sed -i '/^\[interpolation\]/a layers = true\nbackground_plate = true' $E/plaque/play.toml
 # RIFE mouvement ×2 (les calques ne composent que ses warps), 24 présentations de suite à 10 s.
 for t in 1 2; do for v in eteint calques plaque; do
@@ -150,9 +156,8 @@ grep -h "calques\|plaque\|carte de la scène :\|profil GPU · .*SPAN" $E/*/t*.lo
 - `carte de la scène : … affinée sur …, (… affinages trop tard …)` : les paires où Lucas-Kanade arrive trop
   tard n'ont pas de calques.
 - Profil GPU : « calques » vers 0,85 ms par appel en 4K (deux lectures Catmull-Rom du décor, aux essais du
-  19 novembre ; les 0,3 ms visés d'abord n'étaient qu'une estimation), « plaque de décor » vers 0,3 ms ; le
-  SPAN de la plaque, une fois par clé, seulement quand SPAN tourne sous le FP16. Ce qui tranche : la ligne
-  suivante.
+  19 novembre ; les 0,3 ms visés d'abord n'étaient qu'une estimation), « plaque de décor » vers 0,5 ms. Ce qui
+  tranche : la ligne suivante.
 - `--stats` : pas plus d'images en retard que la variante éteinte.
 - Les 24 images de chaque variante côte à côte : les traits du décor n'ondulent plus et les aplats ne bavent
   plus au bord des personnages (calques) ; le décor ne scintille plus d'une image à l'autre (plaque) ; aucun

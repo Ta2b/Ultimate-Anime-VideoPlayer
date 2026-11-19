@@ -106,18 +106,14 @@ std::expected<void, Refusal> LayerStage::compose_pair(gpu::KernelOps& ops, const
 }
 
 std::expected<void, Refusal> LayerStage::after_span(gpu::Backend& backend, const LayerSetup& setup,
-                                                    const gpu::Tensor& rgb, const gpu::Tensor& spanned,
-                                                    bool cubic) {
+                                                    const gpu::Tensor& spanned, bool cubic) {
   if (refused_ || plate_ == nullptr || !setup.plate_on() || !pair_ || plate_step_.action == PlateAction::None)
     return {};
   KIRARI_TRACE("plaque de décor");
   const gpu::Tensor& plate = plate_->tensor();
   if (plate_step_.action == PlateAction::Refresh) {
-    const std::array inputs{rgb};
-    std::array results{plate};
-    // La sortie de SPAN copiée telle quelle (même taille : Area ne mélange rien), ou le SPAN de la plaque.
-    auto ok = setup.plate_copy ? backend.kernels()->resample(spanned, kernels::Filter::Area, plate)
-                               : backend.enqueue(*setup.plate, inputs, results);
+    // La sortie de SPAN copiée telle quelle (même taille : Area ne mélange rien).
+    auto ok = backend.kernels()->resample(spanned, kernels::Filter::Area, plate);
     if (!ok) {
       log_channel("gpu")->warn("clé de la plaque refusée ({}) : sans plaque pour la lecture",
                                ok.error().detail);
@@ -128,7 +124,7 @@ std::expected<void, Refusal> LayerStage::after_span(gpu::Backend& backend, const
     plate_ready_ = true;
     key_pending_ = false;
     ++counts_.keys;
-    if (setup.plate_copy) return {};  // la clé est la sortie de SPAN : rien à y composer
+    return {};  // la clé est la sortie de SPAN : rien à y composer
   }
   if (!plate_ready_) return {};
   const auto params = plate_params(plate_track_.key(), *pair_, plate_step_.key_to_b, width_of(spanned),
@@ -147,7 +143,6 @@ std::expected<void, Refusal> LayerStage::after_span(gpu::Backend& backend, const
 
 bool LayerStage::rewrites(const LayerSetup& setup) const {
   if (refused_ || plate_ == nullptr || !setup.plate_on() || !pair_) return false;
-  if (plate_step_.action == PlateAction::Refresh) return !setup.plate_copy;
   return plate_step_.action == PlateAction::Use && plate_ready_;
 }
 
@@ -162,11 +157,10 @@ void LayerStage::log_summary(const LayerSetup& setup) const {
   const double share = counts_.pairs > 0 ? 100.0 * counts_.share / static_cast<double>(counts_.pairs) : 0.0;
   log_channel("gpu")->info(
       "calques : {} paires avec calques (dont {} avec la caméra lk d'une voisine, {:.0f} % de décor en "
-      "moyenne), {} images composées ; sans : {}{} ; plaque : {} clés{}, {} sources reprises{}",
+      "moyenne), {} images composées ; sans : {}{} ; plaque : {} clés, {} sources reprises{}",
       counts_.pairs, counts_.borrowed, share, counts_.composed,
       skipped.empty() ? std::string("aucune") : skipped,
       counts_.smooth > 0 ? std::format(", Smooth {}", counts_.smooth) : std::string(), counts_.keys,
-      setup.plate_copy ? " (reprises de SPAN)" : (setup.plate != nullptr ? " (SPAN FP16 de plus)" : ""),
       counts_.plated, refused_ ? " ; coupés par un refus du backend" : "");
 }
 

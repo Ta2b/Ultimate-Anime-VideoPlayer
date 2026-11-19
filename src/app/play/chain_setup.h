@@ -149,8 +149,7 @@ struct ChainEngines {
   bool temporal_fix_whole = false;      // --no-tfix-cache (chain_temporal.cpp)
   bool pair_triage = false;             // --pair-triage (UpscaleSetup::pair_triage)
   bool layers = false;                  // calques (UpscaleSetup::layers, layer_stage.h)
-  std::unique_ptr<gpu::Engine> plate;   // SPAN de la plaque de décor (chain_layers.cpp) ; nul : sans
-  bool plate_copy = false;              // la plaque reprend la sortie de SPAN, déjà en FP16 ou mieux
+  bool plate = false;                   // plaque de décor (UpscaleSetup::layers, chain_layers.cpp)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   // La stabilisation temporelle avant SPAN (chain_temporal.cpp), à la taille de travail : la fenêtre et
   // l'encodeur de ses images (prepare/onnx_cache.h) ; nuls : éteinte ou refusée.
@@ -282,20 +281,14 @@ std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, C
                                       const PlaySettings& settings, InnerFallbacks& inner,
                                       const std::string& library);
 
-// La plaque de décor (chain_layers.cpp), quand settings.background_plate le veut et que SPAN tourne. SPAN de
-// la lecture déjà en FP16 ou mieux : la plaque reprend sa sortie sur l'image clé (c.plate_copy). En FP8 ou
-// en INT8 : le modèle de SPAN tel que livré (FP16, le réseau de référence) aux formes de travail dans
-// c.plate. Rien si l'utilisateur ferme la fenêtre ; un refus laisse la lecture sans plaque, la raison au
-// journal.
-std::optional<bool> load_plate(Player& p, const gpu::BackendInit& init, ChainEngines& c,
-                               const PlaySettings& settings);
+// La plaque de décor (chain_layers.cpp), quand settings.background_plate le veut, que SPAN tourne et que la
+// carte de la scène est là : la sortie de SPAN de l'image clé, quelle que soit sa précision (un second SPAN
+// en FP16 retardait une image à chaque clé, essai du 19 novembre).
+void plan_plate(ChainEngines& c, const PlaySettings& settings);
 // Calques et plaque pour l'étage gpu (chain_layers.cpp) : en lecture seulement (l'export rejoue la chaîne au
 // bit près, la carte arrive quand elle peut), avec la carte de la scène (--scene-map) ; les calques avec RIFE
 // mouvement seul (ses warps sont ceux de la paire de la carte).
 LayerSetup layer_setup(const ChainEngines& c, const MasterClock* clock);
-// La variante de SPAN chargée (c.span_int8 ; aucune : le FP16 tel que livré) calcule-t-elle sous le FP16 ?
-// Alors seulement la plaque a besoin de son propre SPAN.
-bool span_below_fp16(const std::optional<SpanInt8>& variant);
 
 // RIFE (chain_rife.cpp) : c.rife_size, la géométrie, puis le fusionné, la variante mouvement ou RIFE image,
 // au cran de précision de settings. Faux : la fenêtre fermée pendant une construction ; un refus de l'étage
