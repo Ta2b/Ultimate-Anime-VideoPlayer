@@ -2,6 +2,7 @@
 // « .tfixfused » lance trtexec sur chacun des morceaux qu'il nomme (l'encodeur, ou les trois blocs et la tête
 // de confiance), à forme fixe ; « charger » les charge ensemble. Tout refus ici fait reprendre l'étage sur le
 // graphe entier du cache de l'encodeur (chain_temporal.cpp).
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -26,7 +27,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_tfix_fused(const ModelSp
   if (!manifest) return std::unexpected(std::move(manifest.error()));
   const int h = manifest->height;
   const int w = manifest->width;
-  const int scale = manifest->half ? 2 : 1;
+  const std::int64_t scale = manifest->half ? 2 : 1;
   // L'étage demande la forme d'une image de travail.
   const Shape expected{.dims = {1, kernels::kTfixImage, h * scale, w * scale}};
   if (!(shapes.min == expected) || !(shapes.opt == expected) || !(shapes.max == expected)) {

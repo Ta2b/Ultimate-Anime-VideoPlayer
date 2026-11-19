@@ -215,7 +215,7 @@ __global__ void __launch_bounds__(kBlendW* kBlendH, 1) blend_kernel(TfixShape s,
     const float a = w * sk;
     const __half* image = tfix::net_image(s, kFrame[k]);
     for (int c = 0; c < kernels::kTfixImage; ++c)
-      num[c] += a * warp::rounded(tfix::zero_sample(image + c * plane, tap));
+      num[c] += a * tfix::zero_sample(image + c * plane, tap);  // GridSample en FP32, comme le graphe
     sum_a += a;
     sum_s += sk;
   }
