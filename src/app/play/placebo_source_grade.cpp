@@ -57,6 +57,8 @@ class PlaceboSourceGrader final : public SourceGrader {
           graded_, timed_ > 0 ? static_cast<double>(gpu_ns_) / 1e6 / static_cast<double>(timed_) : 0.0, left_,
           left_ > 0 ? std::format(" ({})", left_why_) : std::string());
     }
+    if (const auto line = effect_tally_line("grade avant le warp", effects_tally_))
+      log_channel("app")->info("{}", *line);
     ring_.clear(gpu_);
     pl_renderer_destroy(&renderer_);
     grade_.reset();
@@ -154,7 +156,8 @@ class PlaceboSourceGrader final : public SourceGrader {
   // l'écran le pose dans le sien (PlaceboScreen::Impl::follow_effects).
   void follow_effects(const GradedSource& source) {
     effects_.source(source.epoch, source.effects);
-    grade_->set_effect_mask(&effects_.mask());
+    const bool on = grade_->set_effect_mask(&effects_.mask());
+    effects_tally_.count(source.effects.has_value(), on, effects_.mask(), source.pts_us);
     if (const auto& refused = grade_->effect_mask_refusal(); refused && !effects_refusal_noted_) {
       effects_refusal_noted_ = true;
       log_channel("app")->warn(
@@ -202,6 +205,7 @@ class PlaceboSourceGrader final : public SourceGrader {
   pl_renderer renderer_ = nullptr;
   std::optional<render::Grade> grade_;
   EffectFollower effects_;
+  EffectTally effects_tally_;  // les sources gradées (journal de fin)
   bool effects_refusal_noted_ = false;
   std::optional<std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots>> looks_;
   std::uint64_t graded_ = 0;

@@ -569,6 +569,7 @@ std::expected<void, Refusal> UpscaleStage::make_key(std::uint32_t k, float t) {
   if (ok && setup_.grader && !setup_.yuv_slots && pair_graded()) {
     const GradedSource source{
         .epoch = head_.epoch,
+        .pts_us = head_.pts_us,
         .effects =
             setup_.live ? setup_.live->effect_book().for_source(head_.epoch, head_.pts_us) : std::nullopt};
     auto graded = setup_.grader->grade(ops, key.spanned->tensor(), debanded_, source);

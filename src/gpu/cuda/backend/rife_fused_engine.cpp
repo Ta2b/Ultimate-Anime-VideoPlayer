@@ -239,9 +239,9 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
       std::size_t{4} * static_cast<std::size_t>(h) * static_cast<std::size_t>(w) * 2U;
   const auto encode_image = [&](std::uint64_t image_offset,
                                 std::size_t encode_offset) -> std::expected<void, Refusal> {
-    if (native_on_)
-      return cuda_check(native_->encode(stream, static_cast<const std::byte*>(in) + image_offset,
-                                        at_ptr(encode_offset), arena->data()),
+    if (const RifeNativeNet* net = piece_net(0))
+      return cuda_check(net->encode(stream, static_cast<const std::byte*>(in) + image_offset,
+                                    at_ptr(encode_offset), arena->data()),
                         "RIFE natif : encodeur");
     const Tensor image = fused_tensor(input.handle, input.offset + image_offset, 3, h, w);
     const Tensor encoded = fused_tensor(at(encode_offset), 0, 4, h, w);
@@ -284,9 +284,9 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
     const kernels::FusedDims y = kernels::rife_fused_y(plan_, b, h, w);
     const Tensor block_in = fused_tensor(at(layout_.x[i]), 0, x.channels, x.height, x.width);
     const Tensor block_out = fused_tensor(at(layout_.y[i]), 0, y.channels, y.height, y.width);
-    if (native_on_) {
+    if (const RifeNativeNet* net = piece_net(b + 1)) {
       if (auto ok =
-              cuda_check(native_->block(stream, b, at_ptr(layout_.x[i]), at_ptr(layout_.y[i]), arena->data()),
+              cuda_check(net->block(stream, b, at_ptr(layout_.x[i]), at_ptr(layout_.y[i]), arena->data()),
                          "RIFE natif : bloc");
           !ok)
         return ok;
@@ -369,7 +369,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
   kept_.reset();
   ++encodes_[static_cast<std::size_t>(pass.encode)];
   // Les activations des noyaux natifs, sous les tampons de la chaîne : comme celles d'un moteur entier.
-  if (native_on_) arena->used(this, native_->workspace_bytes());
+  if (native_on_) arena->used(this, native_workspace_);
   auto queued = enqueue_chain(stream, arena, inputs, outputs, pass);
   // Ses tampons, au-dessus des activations de ses morceaux (qui se sont déclarés) : le gardien d'avant, s'il
   // était un autre moteur fusionné, les refera.
@@ -421,7 +421,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
       static_cast<std::uintptr_t>(pass.encode) | static_cast<std::uintptr_t>(pass.a_slot) << 8U |
           static_cast<std::uintptr_t>(pass.first_block) << 16U |
           static_cast<std::uintptr_t>(l2_persisting_ != 0 && l2_max_window_ != 0) << 24U |
-          static_cast<std::uintptr_t>(native_on_ ? 1 + static_cast<int>(native_->sums()) : 0) << 25U};
+          route_code_ << 25U};
   const auto chain = [&] { return run(stream, arena, inputs[0], outputs, pass); };
   if (l2_persisting_ == 0 || l2_max_window_ == 0) return graphs_.launch(stream, key, chain);
   // Les deux emplacements de l'encodage (4 plans FP16 chacun), relus par la colle de chaque bloc.

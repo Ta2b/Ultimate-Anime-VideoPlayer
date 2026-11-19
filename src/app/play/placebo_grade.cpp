@@ -8,6 +8,7 @@
 #include <format>
 #include <iterator>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -187,15 +188,49 @@ void PlaceboScreen::Impl::follow_effects(const ShowRequest& request) {
   if (!grade) return;
   const std::int64_t pts = request.frame != nullptr ? request.frame->pts_us : kNoPts;
   const bool changed = effects.show(request.effects, pts);
-  if (!changed && !effects_on) return;  // neutre et resté neutre : rien à poser
-  const bool on = grade->set_effect_mask(&effects.mask());
-  if (const auto& refused = grade->effect_mask_refusal(); refused && !effects_refusal_noted) {
-    effects_refusal_noted = true;
-    channel->warn("éclats sur les effets : passe du masque refusée ({}), marge des éclats sur toute lumière",
-                  refused->detail);
+  if (changed || effects_on) {  // neutre et resté neutre : rien à poser
+    const bool on = grade->set_effect_mask(&effects.mask());
+    if (const auto& refused = grade->effect_mask_refusal(); refused && !effects_refusal_noted) {
+      effects_refusal_noted = true;
+      channel->warn(
+          "éclats sur les effets : passe du masque refusée ({}), marge des éclats sur toute lumière",
+          refused->detail);
+    }
+    if (changed || on != effects_on) ++grade_serial;  // la composition gardée ne vaut plus
+    effects_on = on;
   }
-  if (changed || on != effects_on) ++grade_serial;  // la composition gardée ne vaut plus
-  effects_on = on;
+  // Les images que l'écran grade lui-même (pas celles gradées avant le warp), une fois chacune.
+  if (request.frame != nullptr && !request.frame->graded && pts != effects_tally_pts) {
+    effects_tally_pts = pts;
+    effects_tally.count(request.effects.has_value(), effects_on, effects.mask(), pts);
+  }
+}
+
+namespace {
+
+// 83 s : « 1:23 » ; au-delà d'une heure, « 1:02:03 ». Le pts de l'image, depuis le début du flux.
+std::string clock_of(std::int64_t pts_us) {
+  const std::int64_t s = std::max<std::int64_t>(pts_us, 0) / 1'000'000;
+  if (s >= 3600) return std::format("{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60);
+  return std::format("{}:{:02}", s / 60, s % 60);
+}
+
+}  // namespace
+
+std::optional<std::string> effect_tally_line(std::string_view where, const EffectTally& tally) {
+  if (tally.noted() == 0) return std::nullopt;
+  std::string seen;
+  for (const EffectTally::Moment& m : tally.moments()) {
+    if (m.held <= 0.0) continue;
+    seen += std::format("{}{} ({:.0f} %)", seen.empty() ? "" : ", ", clock_of(m.pts_us), m.held * 100.0);
+  }
+  const double share = 100.0 * static_cast<double>(tally.masked()) / static_cast<double>(tally.images());
+  return std::format(
+      "éclats sur les effets ({}) : {} images gradées, {} avec la carte de la scène, "
+      "{} avec le masque ({:.0f} %), marge des éclats retenue hors effet {:.0f} % en "
+      "moyenne ; à voir : {}",
+      where, tally.images(), tally.noted(), tally.masked(), share, tally.held() * 100.0,
+      seen.empty() ? "aucun moment marqué" : seen);
 }
 
 void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {

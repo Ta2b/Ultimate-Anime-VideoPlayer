@@ -78,15 +78,14 @@ std::optional<PathMember> path_option(std::string_view name) {
   return std::nullopt;
 }
 
+// Dans l'ordre de MotionChoice.
 std::expected<void, Refusal> motion(std::string_view text, PlayOptions& options) {
-  if (text == "rife") {
-    options.motion = MotionChoice::Rife;
-  } else if (text == "drba") {
-    options.motion = MotionChoice::DistilDrba;
-  } else {
+  constexpr std::array<std::string_view, 3> kNames{"rife", "drba", "gmfss"};
+  const auto found = std::ranges::find(kNames, text);
+  if (found == kNames.end())
     return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("--motion: \"{}\" is neither rife nor drba", text));
-  }
+                  std::format("--motion: \"{}\" is not rife, drba or gmfss", text));
+  options.motion = static_cast<MotionChoice>(found - kNames.begin());
   return {};
 }
 

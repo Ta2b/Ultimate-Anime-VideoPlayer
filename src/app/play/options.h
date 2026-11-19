@@ -71,8 +71,8 @@ enum class Registration : std::uint8_t { None, Register, Unregister };
 
 inline constexpr double kDefaultKdeSdrNits = 200.0;  // la luminosité SDR de KDE par défaut
 
-// --motion : RIFE ou DistilDRBA (settings.h : MotionEngine, que ce fichier ne voit pas).
-enum class MotionChoice : std::uint8_t { Rife, DistilDrba };
+// --motion : RIFE, DistilDRBA ou GMFSS union seul (settings.h : MotionEngine, que ce fichier ne voit pas).
+enum class MotionChoice : std::uint8_t { Rife, DistilDrba, Gmfss };
 
 enum class RelaunchedFor : std::uint8_t { None, GpuLost, EngineUpdated, Settings };
 // Le texte de --relaunched= ; vide pour None.
