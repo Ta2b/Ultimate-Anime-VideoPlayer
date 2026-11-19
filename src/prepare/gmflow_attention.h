@@ -31,11 +31,9 @@ struct GmflowAttentionLayer {
 
 // Une opération du plan, sur des tenseurs de jetons [lot][hauteur][largeur][128] FP16.
 //  - kAttention : la couche layer, q lu dans query, k et v dans keys (dans l'autre moitié du lot si
-//  other_half :
-//    le jeton du lot (b + lot/2) mod lot), out = query + LN si residual, LN sinon.
-//  - kMlp : le MLP fondu de la PR 3, out = query + LN2(MLP([query, message])) ; ses poids ne sont pas lus
-//  ici,
-//    l'opération dit seulement où le bloc se ferme.
+//    other_half : le jeton du lot (b + lot/2) mod lot), out = query + LN si residual, LN sinon.
+//  - kMlp : le MLP fondu de la PR 3, out = query + LN2(MLP([query, message])) ; ses poids ne sont pas
+//    lus ici, l'opération dit seulement où le bloc se ferme.
 enum class GmflowAttnOpKind : int { kAttention, kMlp };
 struct GmflowAttnOp {
   GmflowAttnOpKind kind = GmflowAttnOpKind::kAttention;

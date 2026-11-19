@@ -27,7 +27,8 @@ class GmflowMlpNet {
   static std::unique_ptr<GmflowMlpNet> create(const prepare::GmflowMlp& mlp, long max_tokens,
                                               GmflowMlpBlock block, std::string& error);
   virtual std::int64_t workspace_bytes() const = 0;
-  // La couche layer sur tokens jetons, x, message et out en [tokens][128] FP16 :
+  // La couche layer sur tokens jetons, x, message et out en [tokens][128] FP16 alignés sur 16 octets (sinon
+  // cudaErrorInvalidValue) :
   // out = x + LayerNorm(W2 · GELU(W1 · [x, message])). out peut être x. Capturable dans un graphe CUDA.
   virtual cudaError_t run(cudaStream_t stream, int layer, const void* x, const void* message, void* out,
                           long tokens) const = 0;

@@ -23,6 +23,12 @@ static_assert(gm::kChannels == prepare::kGmflowMlpChannels &&
               gm::kHiddenTile == prepare::kGmflowMlpHiddenTile);
 
 constexpr int kMaxSplits = 8;
+
+// Le noyau lit et écrit les jetons par 16 octets (cp.async, uint4) : un tampon décalé dans un espace de
+// travail partagé doit le rester.
+bool aligned16(const void* p) {
+  return reinterpret_cast<std::uintptr_t>(p) % 16 == 0;
+}
 constexpr int kDefaultSmem = 48 * 1024;
 
 // Mémoire d'appareil possédée.
@@ -165,7 +171,8 @@ class Net final : public GmflowMlpNet {
   cudaError_t run(cudaStream_t stream, int layer, const void* x, const void* message, void* out,
                   long tokens) const override {
     if (layer < 0 || layer >= static_cast<int>(layers_.size()) || x == nullptr || message == nullptr ||
-        out == nullptr || tokens < 1 || tokens > max_tokens_)
+        out == nullptr || tokens < 1 || tokens > max_tokens_ || !aligned16(x) || !aligned16(message) ||
+        !aligned16(out))
       return cudaErrorInvalidValue;
     const Layer& l = layers_[static_cast<std::size_t>(layer)];
     const long blocks = (tokens + tokens_per_block() - 1) / tokens_per_block();

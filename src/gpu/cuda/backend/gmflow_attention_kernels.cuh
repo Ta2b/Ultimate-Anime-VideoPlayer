@@ -4,22 +4,21 @@
 // sm_80).
 //
 // Les jetons sont rangés [lot][hauteur · largeur][128] FP16. Une couche, c'est deux lancements :
-//  1. qkv_kernel : la GEMM 128 → 384 (q, k, v d'un coup), sommes selon Acc. q se lit dans query au lot b, k
-//  et v
-//     dans keys au lot (b + key_shift) mod lot : en cross-attention, l'autre moitié du lot, par l'indice,
-//     sans copie. Sortie [lot][jetons][384] FP16 (q | k | v).
-//  2. attention_kernel : l'attention par fenêtres, fondue à la FlashAttention-2. Un bloc de 4 warps prend 64
-//     requêtes d'une fenêtre (16 par warp) ; K et V de la fenêtre passent par tuiles de 64 clés en mémoire
-//     partagée (cp.async, K et V chacun dans son tampon : V de la tuile se charge pendant S = QKᵀ, K de la
-//     suivante pendant P · V). S en mma FP16 à sommes f32, facteur et masque en f32 (en base 2 : exp2),
-//     maximum et somme courants en registres, P arrondi en FP16 pour le mma P · V à sommes f32. Le décalage
-//     de Swin est une arithmétique d'adresses : le jeton t de la fenêtre (wy, wx) est à ((wy · wh + t / ww +
-//     sh) mod H, (wx · ww + t mod ww + sw) mod W), la sortie s'écrit à la place de sa requête ; le masque
-//     compare les régions (trois par axe, au bord moins une fenêtre et au bord moins un décalage) calculées
-//     au chargement. Épilogue sans mémoire : O / l arrondi en FP16 devient le fragment A de la fusion 128 ×
-//     128 (poids rangés pour le mma, lus en L1), la LayerNorm se fait sur la ligne tenue par les quatre fils
-//     d'un groupe (moyenne, puis variance des écarts, en f32), puis le résiduel (self) et une seule écriture
-//     FP16.
+//  1. qkv_kernel : la GEMM 128 → 384 (q, k, v d'un coup), sommes selon Acc. q se lit dans query au lot
+//     b, k et v dans keys au lot (b + key_shift) mod lot : en cross-attention, l'autre moitié du lot, par
+//     l'indice, sans copie. Sortie [lot][jetons][384] FP16 (q | k | v).
+//  2. attention_kernel : l'attention par fenêtres, fondue à la FlashAttention-2. Un bloc de 4 warps prend
+//     64 requêtes d'une fenêtre (16 par warp) ; K et V de la fenêtre passent par tuiles de 64 clés en
+//     mémoire partagée (cp.async, K et V chacun dans son tampon : V de la tuile se charge pendant S = QKᵀ,
+//     K de la suivante pendant P · V). S en mma FP16 à sommes f32, facteur et masque en f32 (en base 2 :
+//     exp2), maximum et somme courants en registres, P arrondi en FP16 pour le mma P · V à sommes f32. Le
+//     décalage de Swin est une arithmétique d'adresses : le jeton t de la fenêtre (wy, wx) est à
+//     ((wy · wh + t / ww + sh) mod H, (wx · ww + t mod ww + sw) mod W), la sortie s'écrit à la place de sa
+//     requête ; le masque compare les régions (trois par axe, au bord moins une fenêtre et au bord moins
+//     un décalage) calculées au chargement. Épilogue sans mémoire : O / l arrondi en FP16 devient le
+//     fragment A de la fusion 128 × 128 (poids rangés pour le mma, lus en L1), la LayerNorm se fait sur la
+//     ligne tenue par les quatre fils d'un groupe (moyenne, puis variance des écarts, en f32), puis le
+//     résiduel (self) et une seule écriture FP16.
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>

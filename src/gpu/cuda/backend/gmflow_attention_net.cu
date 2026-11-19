@@ -20,6 +20,12 @@ using prepare::GmflowAttentionLayer;
 
 static_assert(ga::kD == prepare::kGmflowModel && ga::kQkv == prepare::kGmflowQkv);
 
+// Les noyaux lisent et écrivent les jetons par 16 octets (cp.async, uint4) : un tampon décalé dans un espace
+// de travail partagé doit le rester.
+bool aligned16(const void* p) {
+  return reinterpret_cast<std::uintptr_t>(p) % 16 == 0;
+}
+
 // Mémoire d'appareil possédée.
 class Buffer {
  public:
@@ -111,7 +117,8 @@ class Net final : public GmflowAttentionNet {
   cudaError_t run_layer(cudaStream_t stream, int layer, const void* query, const void* keys,
                         void* out) const override {
     if (layer < 0 || layer >= static_cast<int>(layers_.size()) || query == nullptr || keys == nullptr ||
-        out == nullptr || out == query || out == keys)
+        out == nullptr || out == query || out == keys || !aligned16(query) || !aligned16(keys) ||
+        !aligned16(out))
       return cudaErrorInvalidValue;
     const Layer& l = layers_[static_cast<std::size_t>(layer)];
     ga::QkvParams q;

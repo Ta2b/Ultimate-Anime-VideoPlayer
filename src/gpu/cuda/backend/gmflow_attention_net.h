@@ -25,8 +25,9 @@ class GmflowAttentionNet {
   // Le tampon de q, k, v : [batch][height · width][384] FP16.
   virtual std::int64_t workspace_bytes() const = 0;
   // La couche layer (0 à 11) : query et keys [batch][height · width][128] FP16, out de même (distinct des
-  // deux). Self : keys = query, out = query + LN. Cross : keys est l'entrée du bloc (k et v lus dans l'autre
-  // moitié du lot), out = LN, le message du MLP. Capturable dans un graphe CUDA.
+  // deux), alignés sur 16 octets (sinon cudaErrorInvalidValue). Self : keys = query, out = query + LN. Cross
+  // : keys est l'entrée du bloc (k et v lus dans l'autre moitié du lot), out = LN, le message du MLP.
+  // Capturable dans un graphe CUDA.
   virtual cudaError_t run_layer(cudaStream_t stream, int layer, const void* query, const void* keys,
                                 void* out) const = 0;
 };
