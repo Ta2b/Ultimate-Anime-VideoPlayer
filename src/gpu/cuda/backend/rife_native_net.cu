@@ -39,7 +39,7 @@ struct Entry {
 
 class Net final : public RifeNativeNet {
  public:
-  explicit Net(RifeNativePrecision precision) : precision_(precision) {
+  Net(RifeNativePrecision precision, cudaStream_t loading) : precision_(precision), loading_(loading) {
     int device = 0;
     if (cudaGetDevice(&device) == cudaSuccess)
       static_cast<void>(cudaDeviceGetAttribute(&sms_, cudaDevAttrMultiProcessorCount, device));
@@ -155,9 +155,10 @@ class Net final : public RifeNativeNet {
     if (layer.activation) {
       std::vector<float> slope(static_cast<std::size_t>(pad16(conv.cout)), 0.F);
       std::copy(conv.slope.begin(), conv.slope.end(), slope.begin());
-      if (!sent(layer.slope.upload(slope.data(), slope.size() * sizeof(float)), error)) return false;
+      if (!sent(layer.slope.upload(slope.data(), slope.size() * sizeof(float), loading_), error))
+        return false;
     }
-    return sent(layer.bias.upload(dense.bias.data(), dense.bias.size() * sizeof(float)), error);
+    return sent(layer.bias.upload(dense.bias.data(), dense.bias.size() * sizeof(float), loading_), error);
   }
 
   static bool sent(cudaError_t result, std::string& error) {
@@ -167,9 +168,9 @@ class Net final : public RifeNativeNet {
     return false;
   }
 
-  static bool upload_weights(rn::Buffer& to, const rn::Dense& dense, int ct, std::string& error) {
+  bool upload_weights(rn::Buffer& to, const rn::Dense& dense, int ct, std::string& error) const {
     const std::vector<std::uint32_t> packed = rn::packed_weights(dense, ct);
-    return sent(to.upload(packed.data(), packed.size() * sizeof(std::uint32_t)), error);
+    return sent(to.upload(packed.data(), packed.size() * sizeof(std::uint32_t), loading_), error);
   }
 
   struct Tuning {
@@ -261,6 +262,7 @@ class Net final : public RifeNativeNet {
   }
 
   RifeNativePrecision precision_;
+  cudaStream_t loading_;  // la voie du chargement : envois et banc
   int sms_ = 1;
   std::int64_t peak_ = 0;
   std::int64_t partial_ = 0;  // sommes partielles de la plus grande couche à K découpé
@@ -283,7 +285,7 @@ std::unique_ptr<RifeNativeNet> RifeNativeNet::create(const std::vector<RifeNativ
     error = "événements CUDA du réglage";
     return nullptr;
   }
-  auto net = std::make_unique<Net>(precision);
+  auto net = std::make_unique<Net>(precision, stream);
   const Entry image{.ih = height, .iw = width, .in_ld = 0, .out_h = height, .out_w = width, .encoder = true};
   if (!net->plan(pieces[0], image, bench, tuned, error)) {
     error = "encodeur : " + error;
@@ -302,6 +304,12 @@ std::unique_ptr<RifeNativeNet> RifeNativeNet::create(const std::vector<RifeNativ
       error = "bloc " + std::to_string(k) + " : " + error;
       return nullptr;
     }
+  }
+  // Les envois sur stream finis avant qu'une autre voie (la lecture) lance le réseau.
+  if (const cudaError_t result = cudaStreamSynchronize(stream); result != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    error = std::string("chargement : ") + cudaGetErrorString(result);
+    return nullptr;
   }
   return net;
 }

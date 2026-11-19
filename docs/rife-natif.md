@@ -100,17 +100,20 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
 
 1. **quatre réseaux natifs**, du plus rapide au plus juste : sommes f16 ; f16 et tête f32 ; mixtes et tête f32 ;
    f32. Chaque couche de chacun prend sa forme au banc (`rife_native_bench.cu`) : sur une entrée de valeurs
-   variées, chaque forme qu'un noyau fait est lancée une fois, sa sortie comparée à celle de la forme la plus
-   simple (tranche et tuile de 16, sans découpe de K) et écartée si elle s'en écarte de plus de 1/16 du pic (un
-   défaut de rangement ne passe pas : il se voit au journal, « formes écartées »), puis chronométrée en graphe
-   (trois lancements, le meilleur de trois rejeux). Une couche de mêmes sommes reprend la forme déjà réglée pour
-   un réseau d'avant ;
+   variées, chaque forme qu'un noyau fait est lancée une fois sur une sortie remplie de NaN (une valeur non
+   écrite ne passe pas), sa sortie comparée à celle de la forme la plus simple (tranche et tuile de 16, sans
+   découpe de K) et écartée si elle s'en écarte de plus que l'ordre des sommes ne l'explique : 1/16 du pic en
+   f16, 1/32 en mixte, 1/128 en f32 (un défaut de rangement ne passe pas : il se voit au journal, « formes
+   écartées »), puis chronométrée en graphe (trois lancements, le meilleur de trois rejeux). Les poids partent
+   sur la voie du banc, qui les attend. Une couche de mêmes sommes reprend la forme déjà réglée pour un réseau
+   d'avant ;
 2. une paire de test (ondes et carrés, B décalée de (5, 3) pixels, instant 0,5) passe par la chaîne avec
    TensorRT : la référence ;
 3. **chaque morceau seul** (l'encodeur sur l'image A, chaque bloc sur le X_k que TensorRT a laissé dans la zone),
    par TensorRT et par chaque réseau (`rife_native_trial.cpp`) : sa sortie contre celle de TensorRT, en dB, et son
-   temps (un graphe de deux passes, cinq tours intercalés, la médiane). Le profil couche par couche du réseau f16
-   va au journal ;
+   temps (un graphe de deux passes, cinq tours intercalés, la médiane ; ces passes lancées une à une si la
+   capture est refusée, ce que le journal dit). Le profil couche par couche du réseau f16 va au journal ; un
+   profil qui échoue n'y laisse qu'une ligne, l'essai continue ;
 4. **le mélange** (`rife_native_mix.cpp`) : chaque morceau prend son option la plus rapide (TensorRT compris).
    Tant que la sortie de la chaîne ne tient pas 45 dB contre TensorRT (images au pic 1 ; flot au pic de son plus
    grand écart, masque à part), le morceau natif le moins juste monte d'un cran ; un cran plus lent que TensorRT

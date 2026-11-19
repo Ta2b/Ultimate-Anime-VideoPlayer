@@ -325,6 +325,7 @@ std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
       std::format("RIFE natif : {} réseaux réglés couche par couche en {:.2f} s", natives_.size(), tuning)};
   std::ranges::move(piece_lines(*times, *quality), std::back_inserter(lines));
   lines.insert(lines.end(), profile->begin(), profile->end());
+  lines.insert(lines.end(), trial.notes().begin(), trial.notes().end());
 
   const Options fastest = fastest_options(*times);
   const auto judge = [&](const std::vector<float>& got) {

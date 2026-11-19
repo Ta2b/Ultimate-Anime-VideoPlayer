@@ -80,10 +80,20 @@ bool Bench::reserve(const Layer& layer, std::string& error) {
   return result == cudaSuccess || failed("mémoire", result, error);
 }
 
+// Les sorties partent de NaN (0xFFFF en FP16) : une valeur qu'une forme n'écrit pas ne passe pas la
+// comparaison.
+cudaError_t Bench::poison(const Buffer& out, const Layer& layer) {
+  return cudaMemsetAsync(out.as<void>(), 0xFF, static_cast<std::size_t>(layer.out_bytes()), stream_);
+}
+
 bool Bench::reference(const Layer& layer, const void* w, std::string& error) {
   if (!reserve(layer, error)) return false;
-  enqueue(layer, stream_, params(layer, in_.as<const __half>(), ref_.as<__half>(), partial_.as<float>(), w));
-  const cudaError_t result = cudaGetLastError();
+  cudaError_t result = poison(ref_, layer);
+  if (result == cudaSuccess) {
+    enqueue(layer, stream_,
+            params(layer, in_.as<const __half>(), ref_.as<__half>(), partial_.as<float>(), w));
+    result = cudaGetLastError();
+  }
   return result == cudaSuccess || failed("forme de référence", result, error);
 }
 
@@ -103,14 +113,23 @@ std::optional<bool> Bench::differs(const Layer& layer, std::string& error) {
     failed("comparaison", result, error);
     return std::nullopt;
   }
+  // Un défaut de rangement ou de lecture s'écarte de l'ordre du pic. L'ordre des sommes, d'un arrondi f16 par
+  // terme au plus en f16, d'un par prise en mixte, du seul arrondi de la sortie en f32 : la marge suit.
+  const float margin = layer.sums == RifeNativeSums::kF16     ? 16.F
+                       : layer.sums == RifeNativeSums::kMixed ? 32.F
+                                                              : 128.F;
   const float peak = std::max(std::bit_cast<float>(stats[0]), 1e-3F);
-  return !(std::bit_cast<float>(stats[1]) <= peak / 16.F);
+  return !(std::bit_cast<float>(stats[1]) <= peak / margin);
 }
 
 std::optional<Bench::Timing> Bench::time(const Layer& layer, const void* w, std::string& error) {
   constexpr int kBatch = 3;
   if (!reserve(layer, error)) return std::nullopt;
   const Params p = params(layer, in_.as<const __half>(), out_.as<__half>(), partial_.as<float>(), w);
+  if (const cudaError_t result = poison(out_, layer); result != cudaSuccess) {
+    failed("sortie", result, error);
+    return std::nullopt;
+  }
   enqueue(layer, stream_, p);
   if (cudaGetLastError() != cudaSuccess) {
     if (cudaPeekAtLastError() == cudaSuccess) return Timing{};  // ressources : la forme ne se lance pas

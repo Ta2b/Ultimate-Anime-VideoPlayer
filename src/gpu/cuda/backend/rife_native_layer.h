@@ -32,9 +32,11 @@ class Buffer {
     if (error != cudaSuccess) ptr_ = nullptr;
     return error;
   }
-  cudaError_t upload(const void* host, std::size_t bytes) {
+  // Sur la voie stream, que les noyaux du banc suivent : une copie synchrone depuis la mémoire paginée peut
+  // rendre la main avant la fin de son transfert, qu'une voie non bloquante ne suit pas.
+  cudaError_t upload(const void* host, std::size_t bytes, cudaStream_t stream) {
     const cudaError_t error = allocate(bytes);
-    return error != cudaSuccess ? error : cudaMemcpy(ptr_, host, bytes, cudaMemcpyHostToDevice);
+    return error != cudaSuccess ? error : cudaMemcpyAsync(ptr_, host, bytes, cudaMemcpyHostToDevice, stream);
   }
   template <class T>
   T* as() const {
@@ -144,7 +146,7 @@ class Bench {
  public:
   struct Timing {
     float ms = std::numeric_limits<float>::infinity();  // infini : la forme ne se lance pas (ressources)
-    bool differs = false;  // sa sortie s'écarte de la référence de plus de 1/16 du pic de celle-ci
+    bool differs = false;  // sa sortie s'écarte de la référence plus que l'ordre des sommes ne l'explique
   };
   explicit Bench(cudaStream_t stream) : stream_(stream) {}
   bool ready() const { return start_.get() != nullptr && stop_.get() != nullptr; }
@@ -157,6 +159,7 @@ class Bench {
 
  private:
   bool reserve(const Layer& layer, std::string& error);
+  cudaError_t poison(const Buffer& out, const Layer& layer);
   // La sortie du dernier lancement s'écarte-t-elle de la référence ? Rien sur une erreur CUDA.
   std::optional<bool> differs(const Layer& layer, std::string& error);
   static bool failed(const char* what, cudaError_t result, std::string& error);

@@ -35,8 +35,10 @@ class RifeNativeTrial {
   // Le temps seul de chaque morceau, en millisecondes : [morceau][option], l'option 0 TensorRT, puis nets.
   std::expected<std::vector<std::vector<double>>, Refusal> times(std::span<const RifeNativeNet* const> nets);
   // Le temps de chaque couche de net (rejoué en graphe, le meilleur de trois) : une ligne de journal par
-  // couche, name nommant le réseau.
+  // couche, name nommant le réseau ; une ligne par morceau dont le profil échoue sans perte du contexte.
   std::expected<std::vector<std::string>, Refusal> profile(const RifeNativeNet& net, std::string_view name);
+  // Ce que l'essai a dû changer à sa mesure (un morceau chronométré sans graphe) : des lignes de journal.
+  const std::vector<std::string>& notes() const { return notes_; }
 
  private:
   struct ExecDelete {
@@ -51,15 +53,19 @@ class RifeNativeTrial {
   Io io(int piece) const;
   // La sortie du morceau par net (nul : TensorRT), ses canaux utiles copiés vers l'hôte.
   std::expected<std::vector<float>, Refusal> output(int piece, const RifeNativeNet* net);
-  // Un graphe de kReps passes du morceau par net.
+  // Un graphe de kReps passes du morceau par net ; nul si la capture est refusée sans perte du contexte.
   std::expected<Exec, Refusal> capture(int piece, const RifeNativeNet* net);
-  // Le temps d'une passe du graphe : un lancement de chauffe, puis deux entre deux événements.
-  std::expected<double, Refusal> time(cudaGraphExec_t exec);
+  // Le temps d'une passe du morceau par net : un lot de chauffe, puis deux entre deux événements ; un lot,
+  // le graphe exec, ou ses kReps passes lancées une à une s'il est nul.
+  std::expected<double, Refusal> time(int piece, const RifeNativeNet* net, cudaGraphExec_t exec);
+  std::expected<std::vector<std::string>, Refusal> profile_piece(const RifeNativeNet& net,
+                                                                 std::string_view name, int p);
 
   RifeFusedEngine& engine_;
   cudaStream_t stream_;
   std::shared_ptr<SharedActivations> shared_;
   Tensor input_;
+  std::vector<std::string> notes_;
 };
 
 }  // namespace kirari::gpu::cuda

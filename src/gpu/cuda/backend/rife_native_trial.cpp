@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cuda_fp16.h>
 #include <format>
+#include <iterator>
 #include <limits>
 #include <utility>
 
@@ -128,24 +129,42 @@ std::expected<RifeNativeTrial::Exec, Refusal> RifeNativeTrial::capture(int piece
   cudaGraphExec_t exec = nullptr;
   if (queued && e == cudaSuccess) e = cudaGraphInstantiate(&exec, graph, 0);
   if (graph != nullptr) static_cast<void>(cudaGraphDestroy(graph));
-  if (!queued) return std::unexpected(std::move(queued.error()));
-  if (e != cudaSuccess) return failed(e, "capture");
-  return Exec(exec);
+  if (queued && e == cudaSuccess) return Exec(exec);
+  // Une capture refusée sans perte du contexte : le morceau se chronomètre en passes directes.
+  if (!queued && queued.error().code == RefusalCode::DeviceLost)
+    return std::unexpected(std::move(queued.error()));
+  if (sticky(e)) return failed(e, "capture");
+  static_cast<void>(cudaGetLastError());
+  notes_.push_back(std::format("RIFE natif : {} chronométré sans graphe par {} (capture refusée : {})",
+                               piece_name(piece), net == nullptr ? "TensorRT" : "un réseau natif",
+                               queued ? cudaGetErrorName(e) : queued.error().detail));
+  return Exec(nullptr);
 }
 
-std::expected<double, Refusal> RifeNativeTrial::time(cudaGraphExec_t exec) {
+std::expected<double, Refusal> RifeNativeTrial::time(int piece, const RifeNativeNet* net,
+                                                     cudaGraphExec_t exec) {
   Event start;
   Event stop;
   for (Event* event : {&start, &stop})
     if (const cudaError_t e = cudaEventCreate(&event->event); e != cudaSuccess) return failed(e, "événement");
-  cudaError_t e = cudaGraphLaunch(exec, stream_);
-  if (e == cudaSuccess) e = cudaEventRecord(start.event, stream_);
-  for (int i = 0; i < 2 && e == cudaSuccess; ++i) e = cudaGraphLaunch(exec, stream_);
-  if (e == cudaSuccess) e = cudaEventRecord(stop.event, stream_);
-  if (e == cudaSuccess) e = cudaEventSynchronize(stop.event);
+  // Une passe de mesure : le graphe de kReps passes du morceau, ou ces passes lancées une à une.
+  const auto batch = [&]() -> std::expected<void, Refusal> {
+    if (exec != nullptr) return cuda_check(cudaGraphLaunch(exec, stream_), "RIFE natif : essai par morceau");
+    std::expected<void, Refusal> ok;
+    for (int r = 0; r < kReps && ok; ++r) ok = engine_.run_piece(stream_, shared_, input_, piece, net);
+    return ok;
+  };
+  std::expected<void, Refusal> ok = batch();
+  cudaError_t e = ok ? cudaEventRecord(start.event, stream_) : cudaSuccess;
+  for (int i = 0; i < 2 && ok && e == cudaSuccess; ++i) ok = batch();
+  if (ok && e == cudaSuccess) e = cudaEventRecord(stop.event, stream_);
+  if (ok && e == cudaSuccess) e = cudaEventSynchronize(stop.event);
   float ms = 0.F;
-  if (e == cudaSuccess) e = cudaEventElapsedTime(&ms, start.event, stop.event);
+  if (ok && e == cudaSuccess) e = cudaEventElapsedTime(&ms, start.event, stop.event);
+  if (!ok) return std::unexpected(std::move(ok.error()));
   if (e != cudaSuccess) return failed(e, "chrono");
+  if (!(ms > 0.F) || !std::isfinite(ms))
+    return refuse(RefusalCode::VendorCallFailed, "RIFE natif : morceau mesuré à 0 ms");
   return static_cast<double>(ms) / (2 * kReps);
 }
 
@@ -168,7 +187,7 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
       for (std::size_t i = 0; i < options.size(); ++i) {
         const std::size_t o =
             round % 2 == 0 ? i : options.size() - 1 - i;  // TensorRT, natifs, puis l'inverse
-        auto ms = time(execs[p][o].get());
+        auto ms = time(static_cast<int>(p), options[o], execs[p][o].get());
         if (!ms) return std::unexpected(std::move(ms.error()));
         rounds[p][o].push_back(*ms);
       }
@@ -184,43 +203,59 @@ std::expected<std::vector<std::string>, Refusal> RifeNativeTrial::profile(const 
                                                                           std::string_view name) {
   std::vector<std::string> lines;
   for (int p = 0; p < pieces(); ++p) {
-    const auto layers = static_cast<std::size_t>(net.layers(p));
-    std::vector<Event> marks(layers + 1);
-    std::vector<cudaEvent_t> handles;
-    for (Event& mark : marks) {
-      if (const cudaError_t e = cudaEventCreate(&mark.event); e != cudaSuccess) return failed(e, "événement");
-      handles.push_back(mark.event);
-    }
-    // Les marques enregistrées dans un graphe (nœuds d'événement) : les couches se suivent comme en lecture.
-    const Io at = io(p);
-    shared_->used(&engine_, net.workspace_bytes());
-    cudaGraph_t graph = nullptr;
-    cudaError_t e = cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal);
-    if (e == cudaSuccess) {
-      const cudaError_t queued = net.profile(stream_, p, at.in, at.out, shared_->data(), handles);
-      e = cudaStreamEndCapture(stream_, &graph);
-      if (queued != cudaSuccess) e = queued;
-    }
-    cudaGraphExec_t raw = nullptr;
-    if (e == cudaSuccess) e = cudaGraphInstantiate(&raw, graph, 0);
-    if (graph != nullptr) static_cast<void>(cudaGraphDestroy(graph));
-    if (e != cudaSuccess) return failed(e, "capture du profil");
-    const Exec exec(raw);
-    std::vector<float> best(layers, std::numeric_limits<float>::infinity());
-    for (int run = 0; run < kProfileRuns; ++run) {
-      e = cudaGraphLaunch(exec.get(), stream_);
-      if (e == cudaSuccess) e = cudaStreamSynchronize(stream_);
-      for (std::size_t i = 0; i < layers && e == cudaSuccess; ++i) {
-        float ms = 0.F;
-        e = cudaEventElapsedTime(&ms, handles[i], handles[i + 1]);
-        best[i] = std::min(best[i], ms);
-      }
-      if (e != cudaSuccess) return failed(e, "profil");
-    }
-    for (std::size_t i = 0; i < layers; ++i)
-      lines.push_back(std::format("RIFE natif {}, {} couche {} : {:.3f} ms ({})", name, piece_name(p), i,
-                                  best[i], net.layer_label(p, static_cast<int>(i))));
+    auto piece = profile_piece(net, name, p);
+    // Le profil n'éclaire que le journal : seule la perte du contexte arrête l'essai.
+    if (!piece && piece.error().code == RefusalCode::DeviceLost)
+      return std::unexpected(std::move(piece.error()));
+    if (piece)
+      std::ranges::move(*piece, std::back_inserter(lines));
+    else
+      lines.push_back(
+          std::format("RIFE natif {}, {} : pas de profil ({})", name, piece_name(p), piece.error().detail));
   }
+  return lines;
+}
+
+std::expected<std::vector<std::string>, Refusal> RifeNativeTrial::profile_piece(const RifeNativeNet& net,
+                                                                                std::string_view name,
+                                                                                int p) {
+  std::vector<std::string> lines;
+  const auto layers = static_cast<std::size_t>(net.layers(p));
+  std::vector<Event> marks(layers + 1);
+  std::vector<cudaEvent_t> handles;
+  for (Event& mark : marks) {
+    if (const cudaError_t e = cudaEventCreate(&mark.event); e != cudaSuccess) return failed(e, "événement");
+    handles.push_back(mark.event);
+  }
+  // Les marques enregistrées dans un graphe (nœuds d'événement) : les couches se suivent comme en lecture.
+  const Io at = io(p);
+  shared_->used(&engine_, net.workspace_bytes());
+  cudaGraph_t graph = nullptr;
+  cudaError_t e = cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal);
+  if (e == cudaSuccess) {
+    const cudaError_t queued = net.profile(stream_, p, at.in, at.out, shared_->data(), handles);
+    e = cudaStreamEndCapture(stream_, &graph);
+    if (queued != cudaSuccess) e = queued;
+  }
+  cudaGraphExec_t raw = nullptr;
+  if (e == cudaSuccess) e = cudaGraphInstantiate(&raw, graph, 0);
+  if (graph != nullptr) static_cast<void>(cudaGraphDestroy(graph));
+  if (e != cudaSuccess) return failed(e, "capture du profil");
+  const Exec exec(raw);
+  std::vector<float> best(layers, std::numeric_limits<float>::infinity());
+  for (int run = 0; run < kProfileRuns; ++run) {
+    e = cudaGraphLaunch(exec.get(), stream_);
+    if (e == cudaSuccess) e = cudaStreamSynchronize(stream_);
+    for (std::size_t i = 0; i < layers && e == cudaSuccess; ++i) {
+      float ms = 0.F;
+      e = cudaEventElapsedTime(&ms, handles[i], handles[i + 1]);
+      best[i] = std::min(best[i], ms);
+    }
+    if (e != cudaSuccess) return failed(e, "profil");
+  }
+  for (std::size_t i = 0; i < layers; ++i)
+    lines.push_back(std::format("RIFE natif {}, {} couche {} : {:.3f} ms ({})", name, piece_name(p), i,
+                                best[i], net.layer_label(p, static_cast<int>(i))));
   return lines;
 }
 
