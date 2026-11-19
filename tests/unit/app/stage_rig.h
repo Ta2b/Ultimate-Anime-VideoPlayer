@@ -96,6 +96,12 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
  public:
   // Mesures de la paire (left, right) ; sans entrée, une paire qui bouge (ni coupe ni dessin tenu).
   void score(SourceId left, SourceId right, double scene_score, std::uint32_t worst_block);
+  // L'écart de chaque bloc (PairScores::blocks), donné à chaque paire mesurée ; vide par défaut.
+  void offer_blocks(std::vector<std::uint32_t> blocks, std::uint32_t cols) {
+    const std::scoped_lock lock(mutex_);
+    blocks_ = std::move(blocks);
+    blocks_x_ = cols;
+  }
   // scores_start et scores_take offerts ; faux : refusés comme par un backend qui ne les a pas.
   void offer_ahead(bool on) { ahead_ = on; }
   // Le nombre de voies de calcul que disent les capacités ; 1 par défaut.
@@ -376,6 +382,8 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::vector<YuvWritten> yuv_written_;
   std::map<std::uintptr_t, SourceId> ingested_;  // tenseur → dernière image ingérée dedans
   std::map<PairKey, gpu::PairScores> scores_;
+  std::vector<std::uint32_t> blocks_;
+  std::uint32_t blocks_x_ = 0;
   std::map<std::uint64_t, gpu::PairScores> tickets_;
   std::vector<int> scored_heights_;
   std::map<std::uint64_t, float> flow_tickets_;

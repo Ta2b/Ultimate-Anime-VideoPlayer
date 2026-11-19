@@ -22,7 +22,9 @@
 //
 // La décision rend une sorte (ReuseKind) et non un booléen. Quand l'image n'est pas reprise entière, les
 // tuiles qui bougent (upscale_tiles.h, phase 3 du plan « flux optique ») peuvent ne recalculer que les tuiles
-// changées, lues sur la carte de la scène : sorte Tiles, et le plan dans SpanReuse::tile_plan.
+// changées, lues sur l'écart des blocs de la mesure de la paire : sorte Tiles, et le plan dans
+// SpanReuse::tile_plan. Après une image par tuiles, la reprise entière demande aussi que chaque bloc reste au
+// seuil (SpanTiles::holds) : la sortie y mêle des tuiles d'images différentes.
 #pragma once
 
 #include <array>
@@ -33,7 +35,6 @@
 
 #include "app/play/upscale_tiles.h"
 #include "gpu/backend.h"
-#include "kernels/spec/scene_flow.h"
 
 namespace kirari::app::play {
 
@@ -50,12 +51,8 @@ struct ReuseFacts {
   bool pair_held = false;           // la paire (précédente, image) tenue ; vrai si seule l'ancre est mesurée
   std::optional<AnchorGap> anchor;  // mesure ancre → image ; absente au début d'une série mesurée par paire
   // Tuiles qui bougent (upscale_tiles.h). tiles_stale : ce qui empêche l'étage de les suivre pour cette image
-  // (None : sortie d'avant à jour, ni TemporalFix, ni grade sur place sans copie, ni export, ni Smooth) ;
-  // can_shift : la sortie d'avant est dans un autre tampon ; scene : la carte de la paire (précédente,
-  // image), nulle sans carte.
+  // (None : sortie d'avant à jour, ni TemporalFix, ni grade sur place sans copie, ni export, ni Smooth).
   TileStale tiles_stale = TileStale::Chain;
-  bool can_shift = false;
-  const kernels::SceneMotion* scene = nullptr;
   int spread_px = 0;            // TileFacts::spread_px
   std::uint64_t input_key = 0;  // TileFacts::input_key
   PairBlocks blocks;            // TileFacts::blocks
@@ -64,7 +61,7 @@ struct ReuseFacts {
 // Ce que l'étage règle au démarrage (UpscaleSetup::span_reuse).
 struct SpanReuseSetup {
   bool whole = true;   // --no-span-reuse : SPAN sur chaque image
-  bool tiles = true;   // --no-span-tiles : jamais par tuiles
+  bool tiles = false;  // --span-tiles : par tuiles quand l'image n'est pas reprise entière (essai)
   bool check = false;  // --span-tiles-check : une image par tuiles sur 24 comparée à un calcul complet
 };
 
@@ -133,6 +130,7 @@ class SpanReuse {
   std::uint64_t longest_ = 0;
   std::uint64_t stopped_limit_ = 0;
   std::uint64_t stopped_anchor_ = 0;  // paire tenue, mais l'écart à l'ancre passe le seuil
+  std::uint64_t stopped_tiles_ = 0;   // tenue, mais un bloc d'une sortie par tuiles passe le seuil
   std::uint64_t corrupt_ = 0;
   // Les paires mesurées par pire bloc : jusqu'à 0,7, 1, 1,5, 2, 3 et 5 niveaux, puis au-delà (note_pair).
   std::array<std::uint64_t, 7> pairs_{};

@@ -1,7 +1,9 @@
 // Essai de tuiles_rejeu (--ancre-composee) : les tuiles de SPAN décidées sur les pixels, sans NVOF.
 //
-// Le lecteur juge une tuile inchangée sur la carte de la scène (app/play/upscale_tiles.h) : vecteurs de NVOF
-// et leur dérive cumulée, au budget de kStillDrift (0,025 pixel de travail). Sur les extraits du PC
+// Le lecteur jugeait une tuile inchangée sur la carte de la scène : vecteurs de NVOF et leur dérive cumulée,
+// au budget de kStillDrift (0,025 pixel de travail). Il suit maintenant la variante summed ci-dessous
+// (app/play/upscale_tiles.h, --span-tiles), à une différence près : la somme d'un bloc ne repart de zéro que
+// quand toute sortie qui le voit a été recalculée, pas ses seules tuiles. Sur les extraits du PC
 // (flux-carte, 19 novembre), la moyenne des vecteurs d'une tuile de la carte vaut 0,12 pixel de travail en
 // médiane sur les plans à caméra tenue (0,55 au 90e centile) : le bruit de NVOF est cinq fois le budget, et
 // la dérive y passe dès la première paire sur 90 % des tuiles.
