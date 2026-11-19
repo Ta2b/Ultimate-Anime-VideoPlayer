@@ -150,6 +150,9 @@ struct PlayOptions {
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;
+  // La pré-analyse départage les coupes par le flux optique de NVIDIA (media/probe_flow.h), par défaut ;
+  // --no-probe-flow : la découpe des autres cartes, sans lui.
+  bool probe_flow = true;
   // --profile-dispatches : temps GPU et nombre de dispatchs par shader des réseaux Vulkan, au journal
   // quand un réseau se décharge (BackendInit::profile_dispatches).
   bool profile_dispatches = false;
