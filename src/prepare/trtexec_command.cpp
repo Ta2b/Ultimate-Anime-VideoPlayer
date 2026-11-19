@@ -21,12 +21,12 @@ bool is_fixed(const gpu::ShapeSet& shapes) {
 }
 
 // « input:1x3x1080x1920 », suivi des jumelles (« ,input_1:1x3x1080x1920 ») : les mêmes formes, chacune avec
-// ses canaux.
+// ses canaux (ceux de input s'ils sont libres).
 std::string shape_list(std::string_view input, std::span<const ShapeTwin> twins, const gpu::Shape& shape) {
   std::string list = std::format("{}:{}", input, shape_text(shape));
   for (const ShapeTwin& twin : twins) {
     gpu::Shape own = shape;
-    own.dims[1] = twin.channels;
+    if (twin.channels > 0) own.dims[1] = twin.channels;
     list += std::format(",{}:{}", twin.name, shape_text(own));
   }
   return list;

@@ -145,13 +145,15 @@ std::vector<OnnxInput>::const_iterator shape_input(const std::vector<OnnxInput>&
   return all_static || all_twins ? inputs.begin() : inputs.end();
 }
 
-// Les autres entrées libres jumelles de input, avec leurs canaux (ModelSource::twins).
+// Les autres entrées libres jumelles de input, avec leurs canaux s'ils sont fixés (ModelSource::twins) ; des
+// canaux libres (0) suivent ceux de input.
 std::vector<ShapeTwin> twins_of(const std::vector<OnnxInput>& inputs, const OnnxInput& input) {
   std::vector<ShapeTwin> twins;
   if (input.is_static()) return twins;
   for (const OnnxInput& each : inputs) {
-    if (each.name != input.name && twin_dims(each, input))
-      twins.push_back(ShapeTwin{.name = each.name, .channels = each.dims.size() > 1 ? each.dims[1] : 0});
+    if (each.name == input.name || !twin_dims(each, input)) continue;
+    const std::int64_t channels = each.dims.size() > 1 ? each.dims[1] : 0;
+    twins.push_back(ShapeTwin{.name = each.name, .channels = std::max<std::int64_t>(channels, 0)});
   }
   return twins;
 }

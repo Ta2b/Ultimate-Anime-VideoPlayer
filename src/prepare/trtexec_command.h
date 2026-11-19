@@ -51,7 +51,7 @@ std::expected<void, Refusal> check_shapes(const gpu::ShapeSet& shapes);
 // (les traits gardés de la stabilisation temporelle, prepare/onnx_cache.h).
 struct ShapeTwin {
   std::string name;
-  std::int64_t channels = 0;
+  std::int64_t channels = 0;  // 0 : libres dans le graphe, ceux de l'entrée nommée
   bool operator==(const ShapeTwin&) const = default;
 };
 

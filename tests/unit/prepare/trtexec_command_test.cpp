@@ -44,7 +44,8 @@ TEST_CASE("engine_settings : les entrées jumelles suivent le profil de la premi
   const kirari::gpu::ShapeSet loose{
       .min = {{1, 3, 1080, 1912}}, .opt = {{1, 3, 1080, 1920}}, .max = {{1, 3, 1080, 1920}}};
   // Les traits gardés de TemporalFix (prepare/onnx_cache.h) : mêmes formes, leurs propres canaux.
-  const std::vector<ShapeTwin> twins{{.name = "input_1", .channels = 3},
+  // Des canaux libres (0) suivent ceux de l'entrée nommée.
+  const std::vector<ShapeTwin> twins{{.name = "input_1", .channels = 0},
                                      {.name = "features_0", .channels = 4}};
   CHECK(engine_settings(Recipe::Fp32Islands, "input_0", loose, twins) ==
         "--stronglyTyped --minShapes=input_0:1x3x1080x1912,input_1:1x3x1080x1912,features_0:1x4x1080x1912 "
