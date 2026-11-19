@@ -215,6 +215,7 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
   CHECK(gmfss.sort(moving(lost, true), true) == PairSort::Fade);
   CHECK(gmfss.camera() == kernels::kCameraStill);
   kernels::SceneMotion pan = calm_scene();
+  for (kernels::SceneTile& t : pan.tiles) t = {.kind = kernels::SceneClass::Background, .confidence = 0.9F};
   pan.drawing_held = true;
   pan.camera = {12.0, 1.0, 0.0, -3.0, 0.0, 1.0};
   pan.residual = 0.4;
@@ -234,8 +235,16 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
   loose.residual = 3.0;
   CHECK_FALSE(flow_pan(loose));
   kernels::SceneMotion sparks = pan;
-  sparks.tiles[5] = {.kind = kernels::SceneClass::Effect, .confidence = 0.3F, .changed = true};
+  sparks.tiles[5] = {.kind = kernels::SceneClass::Effect, .confidence = 0.3F};
   CHECK_FALSE(flow_pan(sparks));
+  // Une seule tuile de personnage qui marche pendant le panoramique (sous la part de drawing_held) : la
+  // fusion, pas la caméra, qui le ferait saccader.
+  kernels::SceneMotion walker = pan;
+  walker.tiles[20] = {.kind = kernels::SceneClass::Drawing, .confidence = 0.6F, .dx = 15.0F, .changed = true};
+  CHECK(walker.drawing_held);
+  CHECK_FALSE(flow_pan(walker));
+  CHECK(gmfss.sort(moving(walker, true), true) == PairSort::Today);
+  CHECK(gmfss.counts().panned == 1);
   // RIFE ne prend jamais le panoramique : la même carte y reste à RIFE tel quel.
   CHECK(triage.sort(moving(pan, true), true) == PairSort::Today);
 }

@@ -60,8 +60,9 @@ inline constexpr double kPanUnmatched = 0.1;
 // change.
 bool flow_held(const kernels::SceneMotion& scene);
 
-// Vrai si la carte dit un panoramique pur : la caméra ajustée bouge, aucun dessin ne bouge par rapport à
-// elle, ni fondu ni coupe, peu de vecteurs sans correspondance et un décor qui suit le modèle.
+// Vrai si la carte dit un panoramique pur : la caméra ajustée bouge, aucune tuile de dessin (qui bouge hors
+// de la caméra) ni d'effet, ni fondu ni coupe, peu de vecteurs sans correspondance et un décor qui suit le
+// modèle.
 bool flow_pan(const kernels::SceneMotion& scene);
 
 // Le doute brut de chaque tuile de la carte, dans [0, 1] : 1 pour un effet qui change, 1 − confiance / seuil

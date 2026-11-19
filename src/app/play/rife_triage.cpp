@@ -61,9 +61,12 @@ bool flow_pan(const kernels::SceneMotion& scene) {
   if (!scene.camera_fit || !scene.drawing_held || scene.background_held || scene.fade || scene.cut_likely)
     return false;
   if (scene.residual > triage::kPanResidual || scene.unmatched > triage::kPanUnmatched) return false;
-  // Un effet qui change (fumée, éclair) n'est pas dans la caméra : la fusion le fait.
+  // Pas une seule tuile de dessin (la carte n'en classe qu'une tuile sûre, assez texturée et qui correspond,
+  // qui bouge hors du modèle de la caméra) ni d'effet. L'erreur coûte inégalement : un petit personnage qui
+  // marche pendant le panoramique, décalé avec la caméra, saccade aussitôt ; un vrai panoramique laissé à la
+  // fusion ne coûte que du calcul.
   return std::ranges::none_of(scene.tiles, [](const kernels::SceneTile& t) {
-    return t.changed && t.kind == kernels::SceneClass::Effect;
+    return t.kind == kernels::SceneClass::Drawing || t.kind == kernels::SceneClass::Effect;
   });
 }
 
