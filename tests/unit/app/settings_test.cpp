@@ -667,18 +667,18 @@ TEST_CASE("play.toml : le limiteur de flashs, activé par défaut et dans un fic
   CHECK_FALSE(off->flash_guard);
 }
 
-TEST_CASE("play.toml : le look en une table, allumé par défaut, l'ancienne clé d'essai ignorée",
+TEST_CASE("play.toml : le look en une table et le grade avant le warp, sans clé, un ancien fichier relu",
           "[app][settings]") {
-  CHECK(kirari::app::play::PlaySettings{}.look_table);
-  // La rc.12 et la rc.13 écrivaient look_table = false (l'essai éteint) : ignoré, le défaut l'emporte.
-  const auto old = kirari::app::play::parse_settings("[grade]\nlook_table = false\n");
+  // Toujours pris depuis novembre 2026 : les clés d'avant (look_table de la rc.12, look_one_table,
+  // grade_before_warp), même éteintes, se lisent sans refus et ne sont plus écrites.
+  const auto old = kirari::app::play::parse_settings(
+      "[grade]\nlook_table = false\nlook_one_table = false\ngrade_before_warp = false\nflash_guard = "
+      "false\n");
   REQUIRE(old.has_value());
-  CHECK(old->look_table);
-  const auto off = kirari::app::play::parse_settings("[grade]\nlook_one_table = false\n");
-  REQUIRE(off.has_value());
-  CHECK_FALSE(off->look_table);
-  const std::string written = kirari::app::play::format_settings(kirari::app::play::PlaySettings{});
-  CHECK(written.find("look_one_table = true") != std::string::npos);
+  CHECK_FALSE(old->flash_guard);
+  const std::string written = kirari::app::play::format_settings(*old);
+  CHECK(written.find("look_one_table") == std::string::npos);
+  CHECK(written.find("grade_before_warp") == std::string::npos);
 }
 
 TEST_CASE("play.toml : la peau des visages, éteinte par défaut et dans un fichier d'avant, s'allume",

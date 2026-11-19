@@ -120,20 +120,6 @@ constexpr std::array kMenuTexts{
           "Atténue pendant une seconde les rafales de plus de trois flashs par seconde, pour les personnes "
           "photosensibles. Recommandé : activé."},
     Entry{"Grade", "Grade"},
-    Entry{"Grade before interpolation", "Grade avant l'interpolation"},
-    Entry{"Grades each source frame once instead of every displayed frame: frees the card at high "
-          "multipliers. Moving edges can show slight color differences. Speed: up to 8× less grading at ×8. "
-          "Quality impact: minor, on moving edges. Recommended: off.",
-          "Le grade passe une fois par image source au lieu de chaque image affichée : soulage la carte aux "
-          "grands multiplicateurs. Les bords en mouvement peuvent montrer de légers écarts de couleur. "
-          "Vitesse : jusqu'à 8× moins de grade à ×8. Impact sur la qualité : mineur, sur les bords en "
-          "mouvement. Recommandé : désactivé."},
-    Entry{"LUTs in one table", "LUT en une seule table"},
-    Entry{"Makes the HDR grade about 4 times lighter for the card, with no visible difference. Turn it off "
-          "only to compare. Speed: grading about 4× faster. Quality impact: imperceptible. Recommended: on.",
-          "Rend le grade HDR environ 4 fois plus léger pour la carte, sans différence visible. À couper "
-          "seulement pour comparer. Vitesse : grade environ 4× plus rapide. Impact sur la qualité : "
-          "imperceptible. Recommandé : activé."},
     Entry{"Warm lamps in scenes with faces light up again, instead of being toned down like skin. A trial: "
           "some faces can be missed. Quality impact: minor gain, not yet judged. Recommended: off.",
           "Les lampes chaudes des scènes avec des visages se rallument, au lieu d'être adoucies comme de la "
