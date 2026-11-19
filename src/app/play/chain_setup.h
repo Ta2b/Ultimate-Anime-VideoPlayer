@@ -71,10 +71,6 @@ void announce_playback(const Player& p, const ColorInfo& source, bool hdr_output
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan,
                                            bool nvidia_gpu = false);
 
-// Où chercher le graphe de DistilDRBA : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
-std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
-                                                     const std::optional<ModelChoice>& rife);
-
 // Images décodées tenues au plus en même temps : par le thread source, par l'étage gpu
 // (RingStage::kMaxFrames en vol) et par le backend après ingest. Autant de surfaces NVDEC rendues
 // sans copie (DecoderOptions::direct_surfaces). Le Smooth en tient plus en vol (smooth_extra_frames), la

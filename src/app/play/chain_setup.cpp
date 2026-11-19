@@ -76,17 +76,6 @@ void announce_playback(const Player& p, const ColorInfo& source, bool hdr_output
   note_playback_facts(p.video, source, describe_hdr(p.screen.window()), hdr_output, chain, p.options.file);
 }
 
-std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
-                                                     const std::optional<ModelChoice>& rife) {
-  std::vector<std::filesystem::path> dirs;
-  if (rife) dirs.push_back(rife->path.parent_path());
-  for (const std::filesystem::path& candidate : default_rife_candidates(paths.home, paths.models)) {
-    if (std::ranges::find(dirs, candidate.parent_path()) == dirs.end())
-      dirs.push_back(candidate.parent_path());
-  }
-  return dirs;
-}
-
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan,
                                            [[maybe_unused]] bool nvidia_gpu) {
   if (backend == "tensorrt") return {media::HwApi::Cuda, media::HwApi::Software};
