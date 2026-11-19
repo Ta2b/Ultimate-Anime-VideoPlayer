@@ -59,10 +59,27 @@ TEST_CASE("le drapeau d'accumulateur f16 se relit, un drapeau inconnu est refus�
   REQUIRE(back);
   CHECK(back->acc16);
   CHECK_FALSE(back->fp16);
-  bytes[36] = std::byte{0x04};  // drapeaux : magie 8 + 28 octets ; hors de la charge, le CRC tient
+  bytes[36] = std::byte{0x08};  // drapeaux : magie 8 + 28 octets ; hors de la charge, le CRC tient
   const auto unknown = parse(bytes);
   REQUIRE_FALSE(unknown);
   CHECK(unknown.error().code == RefusalCode::FormatUnsupported);
+}
+
+TEST_CASE("les sommes f32 du SPAN natif se relisent, jamais sans le FP16", "[span_fp8]") {
+  Package original = synthetic();
+  original.fp16 = true;
+  original.acc32 = true;
+  std::vector<std::byte> bytes = serialize(original);
+  const auto back = parse(bytes);
+  REQUIRE(back);
+  CHECK(back->fp16);
+  CHECK(back->acc32);
+  bytes[36] = std::byte{0x04};  // les sommes f32 seules, sur un paquet FP8
+  const auto alone = parse(bytes);
+  REQUIRE_FALSE(alone);
+  CHECK(alone.error().code == RefusalCode::FormatUnsupported);
+  original.fp16 = false;  // un FP8 ne l'écrit pas
+  CHECK_FALSE(parse(serialize(original))->acc32);
 }
 
 TEST_CASE("un paquet tronqué, abîmé ou d'une autre version est refusé", "[span_fp8]") {

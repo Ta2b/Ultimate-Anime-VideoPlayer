@@ -80,8 +80,11 @@ void put_conv(std::vector<std::byte>& out, const Conv& conv) {
 }
 
 // La version 1 n'a aucun drapeau ; l'accumulateur f16 et le FP16 n'existent qu'à partir de la 2 (B02-07).
+// Les sommes f32 ne valent que pour le FP16 natif : le FP8 a son accumulateur f16 à part.
 std::optional<std::string> flags_refusal(std::uint32_t version, std::uint32_t flags) {
-  const std::uint32_t known = version == 1 ? 0U : kFlagAcc16 | kFlagFp16;
+  const std::uint32_t known = version == 1 ? 0U : kFlagAcc16 | kFlagFp16 | kFlagAcc32;
+  if ((flags & kFlagAcc32) != 0U && (flags & kFlagFp16) == 0U)
+    return std::string("paquet SPAN FP8 : sommes f32 sans le drapeau du FP16 natif");
   if ((flags & ~known) == 0U) return std::nullopt;
   return std::format("paquet SPAN FP8 : drapeaux {:#x} inconnus en version {}", flags & ~known, version);
 }
@@ -90,6 +93,7 @@ std::optional<std::string> flags_refusal(std::uint32_t version, std::uint32_t fl
 void read_flags(std::uint32_t flags, Package& package) {
   package.acc16 = (flags & kFlagAcc16) != 0U;
   package.fp16 = (flags & kFlagFp16) != 0U;
+  package.acc32 = (flags & kFlagAcc32) != 0U;
 }
 
 }  // namespace
@@ -202,7 +206,8 @@ std::vector<std::byte> serialize(const Package& package) {
   put_u32(out, static_cast<std::uint32_t>(package.real_channels));
   put_u64(out, body.size());
   put_u32(out, crc32(body));
-  put_u32(out, (package.acc16 ? kFlagAcc16 : 0U) | (package.fp16 ? kFlagFp16 : 0U));
+  put_u32(out, (package.acc16 ? kFlagAcc16 : 0U) | (package.fp16 ? kFlagFp16 : 0U) |
+                   (package.fp16 && package.acc32 ? kFlagAcc32 : 0U));
   out.insert(out.end(), body.begin(), body.end());
   return out;
 }

@@ -137,6 +137,14 @@ PlaySettings with_language(PlaySettings wanted) {
   return wanted;
 }
 
+// Le SPAN natif présumé comme le FP8, sur une RTX 40 ou 50 avec le module TensorRT : il offre le cran
+// Qualité ; le moteur le confirme à l'ouverture d'une vidéo.
+bool native_span_here(const HomeScreen& h, bool tensorrt) {
+  const GpuFacts gpu = gpu_facts(h.screen);
+  return h.options.span_native && kSpanFp8Here && tensorrt && gpu.vendor == GpuVendor::Nvidia &&
+         span_native_presumed(gpu.name);
+}
+
 // Ce que le menu propose sans vidéo ouverte : les modèles et les moteurs du poste, la source type.
 SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const PlaySettings& running) {
   const auto model = choose_model(h.options, h.paths.home, running, h.paths.models);
@@ -179,7 +187,8 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_available = rife.has_value() || drba || offered(MotionEngine::Apple),
       .span_tiers = model
                         ? span_tiers(model->path, paths::derived_models(h.paths), fp8_engine,
-                                     fp8_facts.capability)  // les noyaux CUTLASS se présument sur une RTX 40
+                                     fp8_facts.capability,  // les noyaux CUTLASS se présument sur une RTX 40
+                                     native_span_here(h, fp8_facts.tensorrt_present))
                         : TierSupport{},
       .rife_tiers = rife ? sibling_tiers(rife->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
