@@ -260,9 +260,11 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   bougie de 16:19 est expliquée par un glissement ; aucun effet sûr, aucun gain). Un bloc qui domine
   nettement sa zone (0,20 PQ au-dessus du niveau de la zone, plein à 0,35) monte donc comme un effet sûr :
   porte plus basse, montée une fois et demie plus haute. Une lumière à peine plus claire que sa zone, le
-  fond et la peau ne changent pas (`grade_gpu_effects_test.cpp`). L'export fait de même ;
-  `--no-effect-highlights` l'éteint à l'écran.
-- **Sans carte** (AMD, Intel, NVOF refusé, `--no-effect-highlights`), le masque revient lentement au neutre
+  fond et la peau ne changent pas (`grade_gpu_effects_test.cpp`). L'export fait de même.
+- **Éteints par défaut** pour la première release, les effets de la carte comme les lueurs vues dans l'image :
+  `--effect-highlights` (essai, avec `--debug`) les rallume, à l'écran et à l'export ; `--no-effect-highlights`
+  reste accepté.
+- **Sans carte** (AMD, Intel, NVOF refusé, sans `--effect-highlights`), le masque revient lentement au neutre
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format
   échantillonnable pour sa texture), le journal le dit une fois et le grade reste celui d'aujourd'hui.
@@ -274,8 +276,8 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   scène, … avec le masque (… %), marge des éclats retenue hors effet … % en moyenne ; à voir : 1:23 (effet
   12 %, retenue 31 %), … ». Les moments « à voir » sont les trois images où l'effet sûr couvre la plus
   grande part des tuiles (2 % au moins), à 10 s l'un de l'autre au moins (`EffectTally`) : les revoir avec
-  et sans `--no-effect-highlights` montre l'écart à l'œil.
-- **Vérifier une image** : `--effect-mask-view` (essai, avec `--scene-map`) fait peindre le masque par la
+  et sans `--effect-highlights` montre l'écart à l'œil.
+- **Vérifier une image** : `--effect-mask-view` (essai, avec `--effect-highlights`) fait peindre le masque par la
   passe anime au lieu de l'image : l'image en gris sombre, les lumières (la carte des émetteurs, avant la
   part retenue) en rouge, l'effet sûr en vert, la marge retenue en bleu. Une lumière d'effet sort jaune,
   une lumière retenue magenta, un décor sans lumière bleu ; sans masque, ni vert ni bleu. La vue passe par
@@ -285,7 +287,7 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   le warp) de 60 × 34 tuiles, effet sûr sur … % d'entre elles, marge des éclats retenue sur … % », ou
   « neutre » sans carte). Après un départ ou un saut, le masque part du neutre et descend en 0,7 s : lancer
   la lecture une dizaine de secondes avant le moment voulu. Pour comparer deux lectures (avec et sans
-  `--no-effect-highlights`), `--pause-at=S` (essai) met en pause sur la première image source de pts S ou
+  `--effect-highlights`), `--pause-at=S` (essai) met en pause sur la première image source de pts S ou
   après, la même d'une lecture à l'autre ; l'instantané se prend ensuite, en pause, et son pts le
   confirme. Premier essai du PC (19/11, #926, l'écran gradait, capture 2 s après le départ à 16:41) :
   l'image de 16:43 sortait la même avec ou sans masque, sans qu'une capture puisse dire si la carte était

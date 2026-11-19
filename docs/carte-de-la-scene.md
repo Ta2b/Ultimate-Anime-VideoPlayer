@@ -11,7 +11,9 @@ entraînement.
 - Cartes : NVIDIA RTX 30 et après (la carte de coût de NVOF n'existe pas sur Turing). AMD, Intel, Turing, un
   pilote sans `libnvidia-opticalflow.so.1` (ou `nvofapi64.dll`) : une ligne au journal, puis la chaîne
   exactement comme sans la carte.
-- Interrupteur : `--scene-map` (essai). Éteint par défaut tant que la porte 2.2 n'est pas passée.
+- Interrupteur : allumée par défaut depuis la première release (la caméra, le décor et l'affinage à l'heure ont
+  passé leurs mesures, pour les calques et la plaque de décor) ; `--no-scene-map` (essai) l'éteint. Les éclats
+  sur les effets, qui lisent sa classe Effet, restent éteints par défaut (`--effect-highlights`, essai).
 - Journal de fin : `carte de la scène : N paires lancées, N relues, N posées sur leur paire ; N sautées (NVOF
   occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, dont N
   relus ensuite, N pas lancés ; N lancés derrière le flux depuis la caméra du plan, N écartés), N coupes

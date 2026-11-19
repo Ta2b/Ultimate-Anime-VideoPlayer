@@ -258,7 +258,7 @@ struct PlaySettings {
   // suit la caméra, l'image intermédiaire le reprend de a et b déplacées par la caméra au lieu du warp de
   // RIFE. Plaque de décor : chaque source reprend son décor de la sortie de SPAN d'une image clé par plan.
   // Allumés par défaut depuis les essais du 19 novembre, ils ne tournent qu'avec la carte : sans elle (AMD,
-  // Intel, NVOF refusé, --scene-map absent) rien ne change. Rechargent la chaîne.
+  // Intel, NVOF refusé, --no-scene-map) rien ne change. Rechargent la chaîne.
   bool layers = true;
   bool background_plate = true;
   // Échelle par paire (upscale_half.cpp) : une paire qui bouge fort, où RIFE passe à chaque instant, l'estime
