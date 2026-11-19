@@ -315,15 +315,18 @@ std::expected<void, Refusal> UpscaleStage::interpolate_drba_motion(std::uint32_t
     return copy_out(call.on_b ? b : a, out);
   }
   // Le warp final du graphe lit l'image du centre (flot 0-1, poids du masque) et celle du côté choisi
-  // (flot 2-3) : a puis b avant ½, b puis a à partir de ½. Le mouvement est celui de l'instant, tel quel.
+  // (flot 2-3) : a puis b avant ½, b puis a à partir de ½. Le mouvement est celui de l'instant, tel quel ;
+  // l'instant passé au warp (t depuis a, ou 1 − t depuis b) ne sert qu'au mouvement d'ensemble.
   // Estimé à la taille de RIFE dans ses plans remplis : le warp met le mouvement à l'échelle du travail.
   const kernels::RifeGeometry g = drba_geometry();
   const gpu::Motion motion{
       .flow = drba_.flow->tensor(),
       .mask = drba_.mask->tensor(),
       .area =
-          kernels::Window{.x = g.left, .y = g.top, .width = setup_.rife_width, .height = setup_.rife_height}};
-  return call.on_b ? blend(b, a, motion, 0.5F, out) : blend(a, b, motion, 0.5F, out);
+          kernels::Window{.x = g.left, .y = g.top, .width = setup_.rife_width, .height = setup_.rife_height},
+      .at_instant = true};
+  const float t = instants_[output].t;
+  return call.on_b ? blend(b, a, motion, 1.0F - t, out) : blend(a, b, motion, t, out);
 }
 
 }  // namespace ajp::app::play

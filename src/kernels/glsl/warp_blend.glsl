@@ -57,6 +57,7 @@ layout(push_constant) uniform Push {
   uint keep_poses;    // 1 : garder les poses
   uint has_previous;  // 0 : paire précédente tenue, sans mouvement
   uint pan_lock;      // 1 : mouvement d'ensemble (spec/warp_pan.h), hors garder les poses
+  uint at_instant;    // 1 : flot et masque de l'instant t (DistilDRBA, RIFE direct), lus tels quels
 } pc;
 
 // Les quatre voisins d'une lecture bilinéaire et ses fractions (spec/warp.h) : coordonnées
@@ -219,8 +220,8 @@ struct Displacement {
   float weight;
 };
 
-// Le mouvement d'ensemble : le flot lu f remplacé par la translation de la paire au milieu, en pixels de la
-// fenêtre, là où il est petit et proche d'elle (spec/warp_pan.h).
+// Le mouvement d'ensemble : le flot lu f remplacé par la translation de la paire à l'instant du flot (le milieu,
+// ou t avec at_instant), en pixels de la fenêtre, là où il est petit et proche d'elle (spec/warp_pan.h).
 // pan_lock hors garder les poses : le fondu sous un demi-pixel ; le flot n'est remplacé que si l'estimation
 // est sûre (pan.v[2]).
 bool pan_on() {
@@ -231,7 +232,8 @@ vec4 pan_flow(vec4 f) {
   float sx = float(pc.width) / float(pc.area_width);
   float sy = float(pc.height) / float(pc.area_height);
   if (pan.v[2] < 0.5) return f;
-  vec4 g = vec4(-0.5 * pan.v[0] / sx, -0.5 * pan.v[1] / sy, 0.5 * pan.v[0] / sx, 0.5 * pan.v[1] / sy);
+  float s = pc.at_instant != 0u ? params.t : 0.5;
+  vec4 g = vec4(-s * pan.v[0] / sx, -s * pan.v[1] / sy, (1.0 - s) * pan.v[0] / sx, (1.0 - s) * pan.v[1] / sy);
   vec4 af = abs(f);
   vec4 ae = abs(f - g);
   float m = max(max(af.x, af.y), max(af.z, af.w));
@@ -309,7 +311,8 @@ void main() {
     d = from_middle(u, v, pose_time_at(u, v, params.t, at_uv), at_uv);
   } else {
     if (pan_on()) at_uv = pan_flow(at_uv);
-    d = params.t == 0.5 ? estimated(at_uv, uv, params.t) : from_middle(u, v, params.t, at_uv);
+    d = params.t == 0.5 || pc.at_instant != 0u ? estimated(at_uv, uv, params.t)
+                                               : from_middle(u, v, params.t, at_uv);
   }
   precise float ax = float(x) + sx * d.to.x;
   precise float ay = float(y) + sy * d.to.y;

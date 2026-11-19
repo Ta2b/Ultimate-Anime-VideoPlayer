@@ -7,8 +7,8 @@ documents décrivent le code actuel et lesquels sont historiques.
 
 `ajp`, un lecteur vidéo C++23 pour l'anime : agrandissement SPAN ×2 (AnimeJaNai), ou Anime4K en shaders pour
 les petites cartes ([`docs/anime4k.md`](docs/anime4k.md)), stabilisation temporelle avant SPAN (TemporalFix, TensorRT,
-[`docs/temporalfix.md`](docs/temporalfix.md)), interpolation (RIFE 4.22 lite,
-DistilDRBA au choix) en mode Auto, grade HDR anime (surfaces fixes d'un plan à l'autre, marge des éclats par plan en SDR), export qui rejoue la même chaîne. Linux,
+[`docs/temporalfix.md`](docs/temporalfix.md)), interpolation (DistilDRBA v2 lite,
+RIFE 4.22 lite ou RIFE 4.25, nommés tels quels dans le menu) en mode Auto, grade HDR anime (surfaces fixes d'un plan à l'autre, marge des éclats par plan en SDR), export qui rejoue la même chaîne. Linux,
 Windows ; macOS est délaissé pour l'instant (plus construit par la CI ni par les releases, novembre 2026). Le propriétaire est Tatoub ; il écrit en français et décide des releases.
 
 Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur-simple.md)) :
@@ -26,8 +26,9 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
   `src/app/play/settings_panel.cpp`, `docs/ux-parametres.md`) ;
 - **moteurs** : Vulkan pour tout GPU (le seul pour AMD et Intel), TensorRT sur NVIDIA RTX, Core ML sur Mac.
   MIGraphX et OpenVINO sont retirés des sources : n'en remettre aucun sans une mesure face à Vulkan
-  (`docs/moteurs.md`). GMFSS union est revenu (novembre 2026, TensorRT seulement) pour les niveaux Élevé (mélange avec RIFE)
-  et Très élevé (union seul), après une mesure face à RIFE (`docs/interpolation.md`).
+  (`docs/moteurs.md`). GMFSS union reste dans le code (TensorRT seulement) mais a quitté le menu
+  en novembre 2026, comme RIFE 4.26 et 4.25 lite : un ancien `play.toml` tombe sur le plus proche
+  (`src/app/play/interp_retired.h`, `docs/interpolation.md`).
 
 ## Où est quoi
 

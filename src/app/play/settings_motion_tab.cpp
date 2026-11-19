@@ -39,15 +39,15 @@ void cubic_warp_checkbox(PlaySettings& d) {
 
 // Le mouvement d'ensemble (PlaySettings::pan_lock) : éteint par défaut.
 void pan_lock_checkbox(PlaySettings& d) {
-  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && d.motion_engine != MotionEngine::DistilDrba);
   ImGui::Checkbox(i18n::tr("Steady slow pans"), &d.pan_lock);
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Steady slow pans"),
-      i18n::tr("On slow pans, the motion of the whole picture, measured to a hundredth of a pixel, "
-               "replaces small uneven motion: backgrounds stop rippling and juddering. Speed: no "
-               "noticeable loss. Quality impact: clear gain on slow pans. Recommended: on. RIFE only."),
-      panel::Apply::Reload);
+  panel::tip(i18n::tr("Steady slow pans"),
+             i18n::tr("On slow pans, the motion of the whole picture, measured to a hundredth of a pixel, "
+                      "replaces small uneven motion: backgrounds stop rippling and juddering. Speed: no "
+                      "noticeable loss. Quality impact: clear gain on slow pans. Recommended: on. RIFE and "
+                      "DistilDRBA."),
+             panel::Apply::Reload);
 }
 
 // Le mouvement estimé sur une copie 720p (PlaySettings::motion_720p) : éteint par défaut, la taille de
@@ -59,8 +59,8 @@ void motion_720p_checkbox(PlaySettings& d) {
   panel::tip(
       i18n::tr("Estimate motion at 720p"),
       i18n::tr("Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, "
-               "but slow pans can ripple instead of moving in even steps (RIFE 4.25 lite and 4.26 "
-               "especially). Speed: about 15 % more frames in Auto (RIFE pass about 2× faster). "
+               "but slow pans can ripple instead of moving in even steps. Speed: about 15 % more frames in "
+               "Auto (RIFE pass about 2× faster). "
                "Quality impact: moderate loss on slow pans. "
                "Recommended: off. RIFE only."),
       panel::Apply::Reload);
@@ -91,35 +91,18 @@ void pair_scale_checkbox(PlaySettings& d) {
 
 std::string motion_description(const InterpChoice& choice) {
   switch (choice.level) {
-    case InterpLevel::VeryFast:
-      return i18n::tr(
-          "RIFE 4.25 lite, the lightest level. Speed: about 2× Medium. Quality impact: moderate loss (softer "
-          "in-between frames).");
-    case InterpLevel::Fast:
-      return i18n::tr(
-          "RIFE 4.22 lite: light and clean, the reference for the other levels. Recommended on graphics "
-          "cards other than NVIDIA RTX.");
-    case InterpLevel::Balanced:
-      return i18n::tr(
-          "RIFE 4.26: cleaner in-between frames. Speed: about −10 % vs Medium. Quality impact: minor gain. "
-          "Recommended on NVIDIA RTX.");
-    case InterpLevel::High:
-      return i18n::tr(
-          "RIFE 4.26 guided by 1 to 3 GMFSS key frames on fast motion only. Experimental. Speed: about −20 "
-          "to −40 % vs High, depending on the scene. Quality impact: moderate gain on fast turns and pans. "
-          "NVIDIA RTX only.");
-    case InterpLevel::GmfssUnion:
-      return i18n::tr(
-          "RIFE guided by 1 to 3 GMFSS key frames on every moving pair. Speed: about −45 % vs Balanced. "
-          "Quality impact: moderate gain, the steadiest motion. NVIDIA RTX only.");
-    case InterpLevel::Rife425:
-      return i18n::tr(
-          "RIFE 4.25: the former Balanced level. Speed: about −10 % vs Balanced. Quality impact: "
-          "imperceptible.");
     case InterpLevel::DistilDrba:
       return i18n::tr(
-          "DistilDRBA: characters animated on twos keep their rhythm; one frame of delay. Speed: about Fast "
-          "up to ×5, slower above. Quality impact: none measured over RIFE. Auto does not use it.");
+          "Keeps the rhythm of the animation: characters drawn on twos hold their poses while the background "
+          "moves. Solid on fine repeating patterns (bars, grids). Lighter than RIFE up to ×5, heavier above. "
+          "One frame of delay.");
+    case InterpLevel::Rife422Lite:
+      return i18n::tr(
+          "The lightest RIFE, with fine lines. Recommended on graphics cards other than NVIDIA RTX.");
+    case InterpLevel::Rife425:
+      return i18n::tr(
+          "The most precise RIFE, for about 15 % more computation than RIFE 4.22 lite. Recommended on NVIDIA "
+          "RTX.");
     case InterpLevel::System:
       return i18n::tr(
           "Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
@@ -162,32 +145,22 @@ void fused_state_notes(const PlaySettings& d, const SettingsChoices& choices) {
   rife_state_notes(d, choices);
 }
 
-// Le nom du niveau dans la liste : Faible, Moyen, Élevé, Élevé+ (RIFE 4.25 lite, 4.22 lite, 4.26, 4.26 avec
-// GMFSS) ; le nom du moteur pour les choix qui ne sont plus au menu mais qu'un play.toml peut porter.
+// Le nom du modèle dans la liste : plus de niveaux, les modèles par leur nom.
 std::string level_name(InterpLevel level) {
   switch (level) {
-    case InterpLevel::VeryFast:
-      return i18n::tr("Low");
-    case InterpLevel::Fast:
-      return i18n::tr("Medium");
-    case InterpLevel::Balanced:
-      return i18n::tr("High");
-    case InterpLevel::High:
-      return i18n::tr("High+");
-    case InterpLevel::GmfssUnion:
-      return std::string("GMFSS union");
+    case InterpLevel::DistilDrba:
+      return std::string("DistilDRBA v2 lite");
+    case InterpLevel::Rife422Lite:
+      return std::string("RIFE 4.22 lite");
     case InterpLevel::Rife425:
       return std::string("RIFE 4.25");
-    case InterpLevel::DistilDrba:
-      return std::string("DistilDRBA");
     case InterpLevel::System:
       return i18n::tr("System (macOS)");
   }
   return {};
 }
 
-// Le niveau se montre : son moteur est proposé ici, son modèle est là. Un niveau GMFSS sans TensorRT ni
-// ses deux graphes se montre quand même, grisé (`gmfss_missing`).
+// Le choix se montre : son moteur est proposé ici, son modèle est là.
 bool level_present(const InterpChoice& choice, const SettingsChoices& choices) {
   if (!offered(choice.engine)) return false;
   if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
@@ -196,32 +169,15 @@ bool level_present(const InterpChoice& choice, const SettingsChoices& choices) {
   return true;
 }
 
-// Ce qui manque à un niveau GMFSS pour être choisi, vide s'il ne manque rien.
-std::string gmfss_missing(const InterpChoice& choice, const SettingsChoices& choices) {
-  if ((choice.engine != MotionEngine::Gmfss && !choice.gmfss_middle) || choices.gmfss_available) return {};
-  if (choices.engine_in_use != core::EngineId::TensorRt)
-    return i18n::tr("Needs the TensorRT engine (NVIDIA RTX card).");
-  return i18n::tr("Needs the two GMFSS models in the models folder.");
-}
-
-// Les niveaux au menu : Faible, Moyen, Élevé, Élevé+, et Système sur un Mac.
-bool in_menu(const InterpChoice& choice) {
-  return !choice.advanced && choice.level != InterpLevel::GmfssUnion;
-}
-
 // Les niveaux de la liste Interpolation ; choisir un niveau quand elle est désactivée l'allume.
 template <class Text>
 void level_items(PlaySettings& d, const SettingsChoices& choices, bool exporting, bool on,
                  std::optional<InterpLevel> level_now, const Text& level_text) {
   for (const InterpChoice& choice : kInterpLevels) {
-    if (!level_present(choice, choices) || (!in_menu(choice) && level_now != choice.level)) continue;
-    const std::string missing = gmfss_missing(choice, choices);
-    ImGui::BeginDisabled(!missing.empty());
-    const bool picked = ImGui::Selectable(level_text(choice).c_str(), on && level_now == choice.level);
-    ImGui::EndDisabled();
-    if (picked) {
+    if (!level_present(choice, choices)) continue;
+    if (ImGui::Selectable(level_text(choice).c_str(), on && level_now == choice.level)) {
       d.motion_engine = choice.engine;
-      d.gmfss_middle = choice.gmfss_middle;
+      d.gmfss_middle = false;
       if (choice.engine == MotionEngine::Rife)
         d.rife_model =
             choice.rife_model == choices.default_rife_model ? std::string() : std::string(choice.rife_model);
@@ -232,8 +188,7 @@ void level_items(PlaySettings& d, const SettingsChoices& choices, bool exporting
         d.rife_factor_den = 1;
       }
     }
-    panel::tip(level_name(choice.level).c_str(),
-               missing.empty() ? motion_description(choice) : motion_description(choice) + "\n\n" + missing);
+    panel::tip(level_name(choice.level).c_str(), motion_description(choice));
   }
 }
 
@@ -246,11 +201,8 @@ void interpolation_combo(PlaySettings& d, const SettingsChoices& choices, bool e
   const bool on = now.num > now.den;
   const auto level_text = [&](const InterpChoice& choice) {
     std::string text = level_name(choice.level);
-    if (choice.engine == MotionEngine::Rife && !choice.gmfss_middle &&
-        choice.rife_model == choices.default_rife_model)
+    if (choice.engine == MotionEngine::Rife && choice.rife_model == choices.default_rife_model)
       text += i18n::tr(" (recommended)");
-    if (choice.level == InterpLevel::High || choice.level == InterpLevel::GmfssUnion)
-      text += i18n::tr(" (experimental)");
     return text;
   };
   std::string shown = level_now ? std::string() : rife_label(rife_now);
@@ -270,15 +222,11 @@ void interpolation_combo(PlaySettings& d, const SettingsChoices& choices, bool e
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  // Élevé+ (GMFSS) reste un essai : il n'est recommandé à aucune carte.
-  if (on && (level_now == InterpLevel::High || level_now == InterpLevel::GmfssUnion))
-    panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
   panel::tip(i18n::tr("Interpolation"),
              std::string(i18n::tr(
                  "Adds frames between the video's own frames for smoother motion, as many as the display "
-                 "and the graphics card allow. Higher levels make cleaner in-between frames on fast motion "
-                 "but need a stronger card. Low, Medium and High are RIFE 4.25 lite, 4.22 lite and 4.26; "
-                 "High+ adds GMFSS to High on fast motion, is still experimental and needs an NVIDIA RTX.")) +
+                 "and the graphics card allow. DistilDRBA v2 lite keeps the rhythm of the animation; RIFE "
+                 "4.22 lite is the lightest; RIFE 4.25 is the most precise RIFE.")) +
                  " " + advice_line(choices, interpolation_level_advice),
              panel::Apply::Reload);
 }
@@ -497,7 +445,7 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
   const bool four_k = d.upscale && (d.work_height == 0 || d.work_height >= choices.source_height) &&
                       choices.source_height >= 1080;
   if (d.motion_engine == MotionEngine::DistilDrba && now.num > 5 * now.den) {
-    note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter."));
+    note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: RIFE 4.22 lite is lighter."));
   }
   // La copie 720p de RIFE : la même condition que la chaîne, sur la taille de travail réellement jouée
   // (C23-04).
@@ -600,13 +548,15 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
   if (!panel::begin_boxes()) return;
   const Factor now = factor_of(d);
   const bool on = now.num > now.den && choices.rife_available;
-  // GMFSS ne sert qu'à Élevé+ : son encadré reste là, grisé aux autres niveaux.
+  // GMFSS a quitté le menu : son encadré ne se montre qu'à une chaîne qui le joue encore.
   const bool gmfss = d.motion_engine == MotionEngine::Gmfss || d.gmfss_middle;
-  panel::next_box();
-  ImGui::BeginDisabled(!on || !gmfss);
-  gmfss_options(d, choices);
-  panel::end_group();
-  ImGui::EndDisabled();
+  if (gmfss) {
+    panel::next_box();
+    ImGui::BeginDisabled(!on);
+    gmfss_options(d, choices);
+    panel::end_group();
+    ImGui::EndDisabled();
+  }
   ImGui::BeginDisabled(!on);
   panel::next_box();
   section(i18n::tr("Trials"));

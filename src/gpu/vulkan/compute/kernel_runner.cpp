@@ -166,7 +166,8 @@ Done KernelRunner::warp(Recorder& recorder, const TensorView& a, const TensorVie
                               static_cast<std::uint32_t>(area.height),
                               poses.keep ? 1U : 0U,
                               poses.previous != nullptr ? 1U : 0U,
-                              motion.pan_lock && !poses.keep ? 1U : 0U};
+                              motion.pan_lock && !poses.keep ? 1U : 0U,
+                              motion.at_instant && !poses.keep ? 1U : 0U};
   const BufferView previous = poses.previous != nullptr ? poses.previous->buffer : motion.flow.buffer;
   auto time = recorder.parameter(std::bit_cast<std::uint32_t>(t));
   if (!time) return std::unexpected(time.error());

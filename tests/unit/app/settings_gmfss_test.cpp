@@ -15,34 +15,38 @@ namespace ajp::app::play {
 
 TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GMFSS",
           "[app][settings][gmfss]") {
-  // L'ancien GMFSS (0.10.0) : « gmfss » se lit en RIFE (A22-18), « gmfss_union » en GMFSS union seul.
+  // L'ancien GMFSS (0.10.0) : « gmfss » se lit en RIFE (A22-18). GMFSS union, retiré du menu en novembre
+  // 2026, tombe sur RIFE 4.25 (interp_retired.h).
   const auto old_gmfss = parse_settings("[interpolation]\nengine = \"gmfss\"\n");
   REQUIRE(old_gmfss);
   CHECK(old_gmfss->motion_engine == MotionEngine::Rife);
   const auto old_union = parse_settings("[interpolation]\nengine = \"gmfss_union\"\n");
   REQUIRE(old_union);
-  CHECK(old_union->motion_engine == MotionEngine::Gmfss);
-  // Le niveau Élevé et son seuil se relisent ; un play.toml qui ne les nomme pas garde RIFE seul.
+  CHECK(old_union->motion_engine == MotionEngine::Rife);
+  CHECK(old_union->rife_model == "rife_v4.25.onnx");
+  // L'ancien niveau Élevé (GMFSS au milieu) tombe sur RIFE 4.25 ; son seuil se relit.
   PlaySettings high;
   high.gmfss_middle = true;
   high.gmfss_motion = 22;
   const auto high_back = parse_settings(format_settings(high));
   REQUIRE(high_back);
-  CHECK(*high_back == high);
+  CHECK_FALSE(high_back->gmfss_middle);
+  CHECK(high_back->motion_engine == MotionEngine::Rife);
+  CHECK(high_back->rife_model == "rife_v4.25.onnx");
+  CHECK(high_back->gmfss_motion == 22);
   const auto without = parse_settings("version = 1\n[interpolation]\nengine = \"rife\"\n");
   REQUIRE(without);
   CHECK_FALSE(without->gmfss_middle);
   CHECK(without->gmfss_motion == kDefaultGmfssMotion);
   CHECK_FALSE(parse_settings("version = 1\n[interpolation]\ngmfss_motion = 200\n"));
-  CHECK(interp_level(MotionEngine::Rife, "rife_v4.26.onnx", true) == InterpLevel::High);
-  CHECK(interp_level(MotionEngine::Gmfss, "") == InterpLevel::GmfssUnion);
+  CHECK_FALSE(interp_level(MotionEngine::Rife, "rife_v4.25.onnx", true));
+  CHECK_FALSE(interp_level(MotionEngine::Gmfss, ""));
   // Le demi-flot se relit ; absent (un fichier d'avant), il est pris par défaut ; éteint, il le reste.
   PlaySettings half;
   half.motion_engine = MotionEngine::Gmfss;
   half.gmfss_half_flow = false;
   const auto half_back = parse_settings(format_settings(half));
   REQUIRE(half_back);
-  CHECK(*half_back == half);
   CHECK_FALSE(half_back->gmfss_half_flow);
   CHECK(without->gmfss_half_flow);
   // La composition à la taille de travail se relit ; absente (un fichier d'avant), éteinte.
@@ -51,7 +55,7 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
   composed.gmfss_compose = true;
   const auto composed_back = parse_settings(format_settings(composed));
   REQUIRE(composed_back);
-  CHECK(*composed_back == composed);
+  CHECK(composed_back->gmfss_compose);
   CHECK_FALSE(without->gmfss_compose);
   // Le mélange léger en 540 lignes se relit ; absent, éteint.
   PlaySettings light;
@@ -59,7 +63,7 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
   light.gmfss_light = true;
   const auto light_back = parse_settings(format_settings(light));
   REQUIRE(light_back);
-  CHECK(*light_back == light);
+  CHECK(light_back->gmfss_light);
   CHECK_FALSE(without->gmfss_light);
 }
 

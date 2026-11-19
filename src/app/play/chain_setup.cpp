@@ -222,7 +222,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                 .pair_us = gmfss_pair_us},
       .warp =
           settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
-      .pan_lock = settings.pan_lock && rife_motion,
+      // Mouvement d'ensemble : le warp de RIFE mouvement et celui de DistilDRBA mouvement.
+      .pan_lock = settings.pan_lock && (rife_motion || drba_motion),
       .slots = std::move(slots)};
 }
 

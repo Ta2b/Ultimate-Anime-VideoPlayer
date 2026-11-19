@@ -106,3 +106,48 @@ TEST_CASE("mouvement d'ensemble : garder les poses n'est pas touché", "[warp][p
   REQUIRE(y);
   CHECK(*x == *y);
 }
+
+TEST_CASE("mouvement d'ensemble : un flot de l'instant de la sortie (at_instant)", "[warp][pan]") {
+  // DistilDRBA et RIFE direct : le flot est celui de t. Flot nul et pan_lock : la sortie de la translation
+  // à t, (−t D, (1 − t) D), et non au milieu.
+  const RgbImage a = pan_image(64, 48, 0.0F, 0.0F);
+  const RgbImage b = pan_image(64, 48, kPanDx, kPanDy);
+  for (const float t : {0.25F, 0.75F}) {
+    CAPTURE(t);
+    ref::Motion blind = pan_motion(64, 48, 0.0F, 0.0F, 0.0F, 0.0F);
+    ref::Motion exact =
+        pan_motion(64, 48, -t * kPanDx, -t * kPanDy, (1.0F - t) * kPanDx, (1.0F - t) * kPanDy);
+    for (ref::Motion* m : {&blind, &exact}) {
+      m->pan_lock = true;
+      m->at_instant = true;
+    }
+    const auto got = ref::warp_blend_at(a, b, blind, t);
+    const auto want = ref::warp_blend_at(a, b, exact, t);
+    REQUIRE(got);
+    REQUIRE(want);
+    CHECK(max_diff(*got, *want) < 2e-3F);
+  }
+}
+
+TEST_CASE("at_instant : flot et masque lus tels quels à tout instant", "[warp][pan]") {
+  const RgbImage a = pan_image(48, 32, 0.0F, 0.0F);
+  const RgbImage b = pan_image(48, 32, kPanDx, kPanDy);
+  ref::Motion motion = pan_motion(48, 32, -0.3F, 0.1F, 0.6F, -0.2F);
+  motion.mask = PlaneF(48, 32, 0.7F);
+  const auto mid = ref::warp_blend(a, b, motion);
+  motion.at_instant = true;
+  const auto at = ref::warp_blend_at(a, b, motion, 0.3F);
+  REQUIRE(mid);
+  REQUIRE(at);
+  CHECK(*mid == *at);
+  // Le fondu sous un demi-pixel va vers le poids 1 − t de l'instant donné.
+  RgbImage white(16, 8, 1.0F);
+  RgbImage black(16, 8, 0.0F);
+  ref::Motion still = pan_motion(16, 8, 0.0F, 0.0F, 0.0F, 0.0F);
+  still.mask = PlaneF(16, 8, 0.9F);
+  still.pan_lock = true;
+  still.at_instant = true;
+  const auto faded = ref::warp_blend_at(white, black, still, 0.3F);
+  REQUIRE(faded);
+  CHECK_THAT(faded->planes[0].at(8, 4), WithinAbs(0.7, 1e-5));
+}

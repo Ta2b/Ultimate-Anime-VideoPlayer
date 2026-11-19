@@ -19,6 +19,18 @@
 
 namespace ajp::app::play {
 
+namespace {
+
+// Le mouvement d'une passe de RIFE à l'instant même de la sortie (mode direct, paire forte) : le warp le lit
+// tel quel, et le mouvement d'ensemble le prend à cet instant (kernels/spec/warp_pan.h).
+gpu::Motion at_instant(const gpu::Motion& motion) {
+  gpu::Motion read = motion;
+  read.at_instant = true;
+  return read;
+}
+
+}  // namespace
+
 std::expected<void, Refusal> UpscaleStage::enqueue_rife(gpu::Engine& engine, std::span<gpu::Tensor> results) {
   return enqueue_on(engine, rife_in(), rife_in_images_[rife_pair_], rife_encoded_, results);
 }
@@ -167,7 +179,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_direct(std::uint32_t outp
   if (warps_spanned()) {
     if (auto ok = span_current(); !ok) return ok;
   }
-  return blend(a, b, run->motion, 0.5F, out);
+  return blend(a, b, at_instant(run->motion), t, out);
 }
 
 // Le mouvement maximal du milieu relu par l'hôte (ticket 0 : mesuré sur-le-champ), son attente au profil de
@@ -297,7 +309,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   if (const std::optional<bool> half = strong_half(t)) {
     auto run = strong_for(output, t, other, *half);
     if (!run) return std::unexpected(std::move(run.error()));
-    return blend(a, b, run->motion, 0.5F, out);
+    return blend(a, b, at_instant(run->motion), t, out);
   }
   if (strong_motion_ && t != 0.5F) ++strong_derived_;
   // Paire forte : ses autres instants sont RIFE à l'instant exact (strong_half), sans poses ; son milieu suit

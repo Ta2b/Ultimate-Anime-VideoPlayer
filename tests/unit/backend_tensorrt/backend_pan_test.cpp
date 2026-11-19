@@ -68,25 +68,32 @@ TEST_CASE("Backend TensorRT : warp avec le mouvement d'ensemble, contre la r√©f√
                           motion.flow[static_cast<std::size_t>(c)].at(0, 0));
     upload(tflow->tensor(), flow);
     upload(tmask->tensor(), std::vector<float>(static_cast<std::size_t>(w * h), 0.5F));
-    const gpu::Motion gm{
-        .flow = tflow->tensor(), .mask = tmask->tensor(), .area = motion.area, .pan_lock = true};
-    for (const float t : {0.5F, 0.25F, 0.75F}) {
-      CAPTURE(t);
-      REQUIRE(loaded.backend->kernels()->warp_blend(ta->tensor(), tb->tensor(), gm, t, out->tensor()));
-      const auto got = download(out->tensor());
-      const auto want = kernels::ref::warp_blend_at(a, b, motion, t);
-      REQUIRE(want);
-      double worst = 0.0;
-      for (int c = 0; c < 3; ++c) {
-        for (int y = 0; y < h; ++y) {
-          for (int x = 0; x < w; ++x) {
-            worst = std::max(
-                worst, static_cast<double>(std::fabs(want->planes[static_cast<std::size_t>(c)].at(x, y) -
-                                                     got[static_cast<std::size_t>((c * h + y) * w + x)])));
+    // at_instant : le flot est celui de t (DistilDRBA, RIFE direct), le mouvement d'ensemble suit t.
+    for (const bool at : {false, true}) {
+      motion.at_instant = at;
+      const gpu::Motion gm{.flow = tflow->tensor(),
+                           .mask = tmask->tensor(),
+                           .area = motion.area,
+                           .pan_lock = true,
+                           .at_instant = at};
+      for (const float t : {0.5F, 0.25F, 0.75F}) {
+        CAPTURE(at, t);
+        REQUIRE(loaded.backend->kernels()->warp_blend(ta->tensor(), tb->tensor(), gm, t, out->tensor()));
+        const auto got = download(out->tensor());
+        const auto want = kernels::ref::warp_blend_at(a, b, motion, t);
+        REQUIRE(want);
+        double worst = 0.0;
+        for (int c = 0; c < 3; ++c) {
+          for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+              worst = std::max(
+                  worst, static_cast<double>(std::fabs(want->planes[static_cast<std::size_t>(c)].at(x, y) -
+                                                       got[static_cast<std::size_t>((c * h + y) * w + x)])));
+            }
           }
         }
+        CHECK(worst < 2e-3);
       }
-      CHECK(worst < 2e-3);
     }
   }
 }

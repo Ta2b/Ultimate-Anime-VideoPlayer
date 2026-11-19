@@ -108,7 +108,8 @@ struct MotionView {
   TensorView mask;
   kernels::Window area;
   kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;  // le filtre qui lit les images (spec/warp.h)
-  bool pan_lock = false;  // mouvement d'ensemble (spec/warp_pan.h), hors garder les poses
+  bool pan_lock = false;    // mouvement d'ensemble (spec/warp_pan.h), hors garder les poses
+  bool at_instant = false;  // flot et masque de l'instant du warp (DistilDRBA, RIFE direct), lus tels quels
 };
 
 // Garder les poses (kernels/spec/poses.h) : previous est le flot au milieu de la paire précédente,
