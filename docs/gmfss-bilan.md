@@ -1,6 +1,12 @@
 # GMFSS union en temps réel : bilan du chantier natif
 
 > **Mis à jour le 19 novembre 2026, en fin de journée** :
+> - étape 0 de la séance PC faite sur `e5f56f69` : paire et fusion natives retenues, 0 forme écartée ; la forme
+>   en flux n'est retenue qu'en sommes mixtes (partie 1) ;
+> - gel avant la première release : seule l'étape 0 de la séance PC passe avant elle ; elle décide de la fusion
+>   de #959. Le reste de la séance vient après la release (partie 4) ;
+> - CI de #959 : un débordement de registres de l'attention de GMFlow en sm_120 (CUDA 13.4) et le calendrier de
+>   la forme en flux compilé sans `--expt-relaxed-constexpr`, corrigés ;
 > - GridNet : la forme en flux (chargement en double tampon) est écrite et entrée dans #959 comme candidate du
 >   réglage, avec son étape à la séance PC ; le bloc résiduel fondu est écarté pour l'instant (parties 2, 3.4, 4) ;
 > - GMFlow natif : attention fondue (PR 2) et MLP fondu (PR 3), audités et entrés dans #959 ; leurs bancs et leur
@@ -57,6 +63,21 @@ fusion coupée, où l'IFNet reste seul sous TensorRT.
 
 TensorRT FP16 lui-même n'est qu'à 67,7 dB du natif f32 sur la paire, et à 65,3 dB sur la fusion. Les écarts contre
 TensorRT mêlent donc deux arrondis.
+
+### Étape 0 de la séance PC, sur `e5f56f69` (mélange, réglage par couche et forme en flux)
+
+| Unité | TensorRT | Natif retenu | dB contre TensorRT | Chargement |
+|---|---|---|---|---|
+| Paire (demi-flot) | 22,48 ms | **19,73 ms** | 64,8 | réglage 2,0 s, essai 11,3 s |
+| Fusion | 25,83 ms | **21,63 ms** | 62,5 | zone de 337 Mio |
+
+- 0 forme écartée : chaque forme candidate a rendu la sortie de la référence.
+- Temps seuls des morceaux en f16 : FeatureNet 4,93 ms, MetricNet 1,45 ms ; GridNet ligne 0 5,90 ms, ligne 1
+  5,76 ms, ligne 2 2,71 ms, queue 2,41 ms.
+- La forme en flux n'est retenue qu'en sommes mixtes : en f16, le réglage garde la tuile.
+- Les temps d'une passe sont ceux d'avant le mélange et le réglage (19,75 et 21,90 ms) : sur cette séance, ni
+  l'un ni l'autre ne fait gagner de temps. L'écart au plafond reste à expliquer par le profil Nsight (étape 1,
+  après la release). La ligne 0 seule, 5,90 ms, est au-dessus du plafond de 3,9 ms.
 
 ### Ce qui marche par défaut
 
@@ -275,6 +296,12 @@ le coût reste à peu près celui du ×2 de GMFSS seul, plus les flots et les wa
 6. Facultatif : l'IFNet par les noyaux du RIFE natif, pour retirer la construction TensorRT de la fusion.
 
 ### Sur le PC, en dernier, une seule séance
+
+**Avant la première release, l'étape 0 seulement** (l'essai au chargement, court) : elle décide de la fusion de
+#959. Tout ce qui suit l'étape 0 vient après la release. Ce qui n'a pas passé sa porte reste éteint par défaut :
+la paire et la fusion natives ont chacune leur essai au chargement (TensorRT reprend l'unité qui perd), la forme
+en flux n'est gardée que si le banc du chargement la trouve plus rapide et juste, et GMFlow natif n'est pas
+branché.
 
 À la tête de #959 (branche `claude/project-thread-1t05iy`), avec le binaire de lecture CUDA, pas `linux-prefix` en
 Debug :
