@@ -208,7 +208,7 @@ void RifeTriage::log() const {
                         ? " (aucune carte : --scene-map, NVOF, RIFE mouvement ou GMFSS ?)"  // i18n-ok
                         : "";
   log_channel("gpu")->info(
-      "tri des paires par le flux : {} paires lues par la carte, {} dessins tenus copiés, {} paires "
+      "tri des paires par le flux : {} paires lues par la carte, {} dessins tenus copiés, {} paires "  // i18n-ok
       "impossibles fondues (dont {} sans correspondance ni caméra), {} paires fondues par endroits, {} "
       "panoramiques purs{}",
       counts_.read, counts_.held, counts_.faded, counts_.lost, counts_.masked, counts_.panned, why);
