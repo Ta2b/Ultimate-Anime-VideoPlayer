@@ -58,7 +58,8 @@ class PlaceboSourceGrader final : public SourceGrader {
     grade_.reset();
   }
 
-  std::expected<bool, Refusal> grade(gpu::KernelOps& ops, const gpu::Tensor& rgb, bool debanded) override {
+  std::expected<bool, Refusal> grade(gpu::KernelOps& ops, const gpu::Tensor& rgb, bool debanded,
+                                     const GradedSource& source) override {
     const SourceGradeState state = share_->get();
     if (!state.params) return false;
     if (rgb.shape.dims.size() != 4) return refuse(RefusalCode::ShapeInvalid, "grade avant le warp : tenseur");
@@ -66,6 +67,7 @@ class PlaceboSourceGrader final : public SourceGrader {
     const int height = static_cast<int>(rgb.shape.dims[2]);
     if (auto ok = open(width, height); !ok) return std::unexpected(std::move(ok.error()));
     if (auto ok = follow(state); !ok) return std::unexpected(std::move(ok.error()));
+    follow_effects(source);
 
     // Entrée : le backend écrit (attente de sa libération, signal impair), libplacebo la lit puis la rend.
     const std::uint64_t in_ready = in_ready_ == 0 ? 1 : in_ready_ + 2;
@@ -140,6 +142,19 @@ class PlaceboSourceGrader final : public SourceGrader {
     return {};
   }
 
+  // Éclats sur les seuls effets (effect_book.h) : le masque de cette source, posé dans le grade à part comme
+  // l'écran le pose dans le sien (PlaceboScreen::Impl::follow_effects).
+  void follow_effects(const GradedSource& source) {
+    effects_.source(source.epoch, source.effects);
+    grade_->set_effect_mask(&effects_.mask());
+    if (const auto& refused = grade_->effect_mask_refusal(); refused && !effects_refusal_noted_) {
+      effects_refusal_noted_ = true;
+      log_channel("app")->warn(
+          "grade avant le warp : passe du masque des effets refusée ({}), marge des éclats sur toute lumière",
+          refused->detail);
+    }
+  }
+
   bool render(pl_tex in, pl_tex out, const SourceGradeState& state, bool deband) {
     static const pl_deband_params kQuietDeband = [] {
       pl_deband_params quiet = pl_deband_default_params;
@@ -178,6 +193,8 @@ class PlaceboSourceGrader final : public SourceGrader {
   std::uint64_t out_free_ = 0;  // valeur où la sortie est libre (paire), 0 avant le premier rendu
   pl_renderer renderer_ = nullptr;
   std::optional<render::Grade> grade_;
+  EffectFollower effects_;
+  bool effects_refusal_noted_ = false;
   std::optional<std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots>> looks_;
   std::uint64_t graded_ = 0;
   std::uint64_t gpu_ns_ = 0;

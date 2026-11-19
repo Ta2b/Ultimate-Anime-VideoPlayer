@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "core/frame.h"
+
 namespace kirari::app::play {
 
 render::EffectTiles effect_tiles_of(const kernels::SceneMotion& scene, int work_width, int work_height,
@@ -55,6 +57,17 @@ std::optional<EffectNote> EffectBook::at(std::uint32_t epoch, std::int64_t pts_u
   return std::nullopt;
 }
 
+std::optional<EffectNote> EffectBook::for_source(std::uint32_t epoch, std::int64_t pts_us) const {
+  const std::scoped_lock lock(mutex_);
+  for (std::size_t k = 1; k <= count_; ++k) {
+    const EffectNote& note = notes_[(next_ + kKept - k) % kKept];
+    if (note.epoch != epoch) continue;
+    if (pts_us != kNoPts && pts_us - note.to_us > kEffectStaleUs) return std::nullopt;
+    return note;
+  }
+  return std::nullopt;
+}
+
 void EffectBook::clear() {
   const std::scoped_lock lock(mutex_);
   for (EffectNote& note : notes_) note.tiles.reset();
@@ -89,6 +102,20 @@ bool EffectFollower::show(const std::optional<EffectNote>& note, std::int64_t pt
   seen_ = true;
   const std::uint64_t before = mask_.serial();
   mask_.update(*note->tiles);
+  return mask_.serial() != before;
+}
+
+bool EffectFollower::source(std::uint32_t epoch, const std::optional<EffectNote>& note) {
+  const std::uint64_t before = mask_.serial();
+  if (epoch_ && *epoch_ != epoch) reset();  // saut ou rechargement : le masque d'avant ne dit rien
+  epoch_ = epoch;
+  if (note && note->tiles && note->epoch == epoch) {
+    show(note, note->to_us);
+  } else {
+    // Pas de note : une source de plus sans carte (la durée d'une image à 23,976 i/s, effect_step).
+    seen_ = false;
+    if (!mask_.neutral()) mask_.relax(0);
+  }
   return mask_.serial() != before;
 }
 

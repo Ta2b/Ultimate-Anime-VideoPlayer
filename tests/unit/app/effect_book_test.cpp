@@ -1,5 +1,5 @@
 // Éclats HDR sur les seuls effets, côté lecteur (app/play/effect_book.h) : la carte de la scène réduite pour
-// le masque, les notes par paire, et le masque que l'écran suit.
+// le masque, les notes par paire, et le masque que suivent l'écran et le grade avant le warp.
 #include "app/play/effect_book.h"
 
 #include <cstdint>
@@ -7,6 +7,8 @@
 #include <optional>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "core/frame.h"
 
 namespace kirari::app::play {
 namespace {
@@ -98,6 +100,42 @@ TEST_CASE("Éclats des effets : l'écran suit une fois par paire, puis revient a
   CHECK_FALSE(follower.show(std::nullopt, 83'416));
   for (std::int64_t pts = 125'124; !follower.mask().neutral() && pts < 60'000'000; pts += 41'708)
     follower.show(std::nullopt, pts);
+  CHECK(follower.mask().neutral());
+}
+
+TEST_CASE("Éclats des effets : la source gradée prend la note la plus récente de son époque", "[app]") {
+  EffectBook book;
+  CHECK_FALSE(book.for_source(1, 100));
+  book.add(note(0, 100, 1.0F));
+  book.add(note(100, 200, 0.0F));
+  REQUIRE(book.for_source(1, 200));
+  CHECK(book.for_source(1, 200)->to_us == 200);
+  // Agrandie en avance, la source suivante prend encore la paire en cours.
+  CHECK(book.for_source(1, 241)->to_us == 200);
+  CHECK(book.for_source(1, kNoPts)->to_us == 200);
+  CHECK_FALSE(book.for_source(2, 200));  // autre époque : rien
+  // La carte s'est tue : rien, le masque revient au neutre.
+  CHECK_FALSE(book.for_source(1, 200 + kEffectStaleUs + 1));
+}
+
+TEST_CASE("Éclats des effets : le grade avant le warp suit une fois par paire, une époque à la fois",
+          "[app]") {
+  EffectFollower follower;
+  CHECK_FALSE(follower.source(1, std::nullopt));
+  const std::optional<EffectNote> first = note(0, 41'708, 0.0F, true);
+  CHECK(follower.source(1, first));
+  CHECK_FALSE(follower.mask().neutral());
+  CHECK_FALSE(follower.source(1, first));  // la même paire pour la source agrandie en avance
+  // Sans note : un pas d'une image vers le neutre par source.
+  CHECK(follower.source(1, std::nullopt));
+  for (int i = 0; i < 400 && !follower.mask().neutral(); ++i) follower.source(1, std::nullopt);
+  CHECK(follower.mask().neutral());
+  // Une autre époque (saut) efface le masque d'avant, même sans note.
+  CHECK(follower.source(1, first));
+  CHECK(follower.source(2, std::nullopt));
+  CHECK(follower.mask().neutral());
+  // La note d'une autre époque que la source ne vaut pas.
+  CHECK_FALSE(follower.source(2, first));
   CHECK(follower.mask().neutral());
 }
 

@@ -748,7 +748,8 @@ class UpscaleStage final : public RingStage {
   std::unique_ptr<gpu::TensorBuffer> smooth_far_rgb_;    // b d'une longue tenue, à la taille de travail
   std::unique_ptr<gpu::TensorBuffer> smooth_far_small_;  // et à la taille de RIFE, si small_
   SourceId smooth_b_id_;
-  SourceId frame_id_;                                                // l'image en tête (outputs)
+  SourceId frame_id_;  // l'image en tête (outputs)
+  Previous head_;      // la même, avec son pts et son époque (éclats des effets au grade avant le warp)
   std::optional<std::pair<SourceId, gpu::PairScores>> ahead_taken_;  // (gauche, mesures de la suivante)
   std::optional<SourceId> span_ahead_;  // SPAN de cette image déjà fait (span_smooth_b), dans span_ahead_buf_
   std::uint32_t span_ahead_buf_ = 0;

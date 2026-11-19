@@ -3,9 +3,10 @@
 //   - Dessin tenu (Held) : la carte dit que rien ne bouge, ni le dessin ni la caméra, et qu'aucune tuile ne
 //     change hors du grain. RIFE ne tourne pas : b sort seul, comme un dessin tenu de la mesure des blocs
 //     (rife_plan.h), que le grain d'une source granuleuse empêche souvent de reconnaître.
-//   - Paire impossible (Fade) : le flux ne trouve de correspondance presque nulle part (fumée, éclair, plan
-//     qui se transforme) sans que ce soit une coupe. Le warp de RIFE y ferait des fantômes : tout le
-//     mouvement est remplacé par un fondu enchaîné de a et b (kernels/spec/motion_doubt.h).
+//   - Paire impossible (Fade) : le flux ne trouve de correspondance presque nulle part, pas même un décor que
+//     la caméra explique (fumée ou éclair qui couvre l'image, plan qui se transforme, coupe que RIFE n'a pas
+//     vue), ou la moitié des tuiles doute. Le warp de RIFE y ferait des fantômes : tout le mouvement est
+//     remplacé par un fondu enchaîné de a et b (kernels/spec/motion_doubt.h).
 //   - Zone douteuse (Masked) : seules les tuiles où le flux doute (effet, tuile qui change sans
 //     correspondance) passent au fondu, avec un bord adouci ; RIFE reste ailleurs.
 // GMFSS seul (for_gmfss) : le dessin tenu copié de même, la paire impossible fondue par le warp de l'étage
@@ -37,9 +38,10 @@ enum class PairSort : std::uint8_t { Today, Held, Fade, Masked, Pan };
 namespace triage {
 // Part des tuiles qui changent (hors grain) au plus d'un dessin tenu par le flux.
 inline constexpr double kHeldChanged = 0.02;
-// Part des vecteurs sans correspondance d'une paire impossible (la carte dit coupe à 0,6).
+// Part des vecteurs sans correspondance d'une paire impossible, sans caméra ajustée (la carte dit coupe à
+// 0,6).
 inline constexpr double kImpossibleUnmatched = 0.45;
-// Doute moyen de l'image à partir duquel toute la paire passe au fondu.
+// Doute moyen des tuiles (avant d'être élargi au voisinage) à partir duquel toute la paire passe au fondu.
 inline constexpr double kFadeShare = 0.5;
 // Confiance sous laquelle une tuile qui change est douteuse (proportionnellement).
 inline constexpr float kDoubtConfidence = 0.5F;
@@ -60,13 +62,20 @@ inline constexpr double kPanUnmatched = 0.1;
 // change.
 bool flow_held(const kernels::SceneMotion& scene);
 
+// Vrai si la carte ne trouve presque rien qui corresponde (coupe probable comprise) sans même un décor que la
+// caméra explique : la paire entière est impossible. Une caméra ajustée dit que le décor correspond : ce qui
+// ne correspond pas est alors local (un personnage rapide, un effet), au doute des tuiles de le dire.
+bool flow_lost(const kernels::SceneMotion& scene);
+
 // Vrai si la carte dit un panoramique pur : la caméra ajustée bouge, aucune tuile de dessin (qui bouge hors
 // de la caméra) ni d'effet, ni fondu ni coupe, peu de vecteurs sans correspondance et un décor qui suit le
 // modèle.
 bool flow_pan(const kernels::SceneMotion& scene);
 
 // Le doute brut de chaque tuile de la carte, dans [0, 1] : 1 pour un effet qui change, 1 − confiance / seuil
-// pour une tuile qui change avec une confiance basse, 0 sinon.
+// pour une tuile de dessin ou de décor qui change avec une confiance basse, 0 sinon. Une tuile Uncertain
+// (aplat sans texture, ou que le flux ne tranche pas avec peu d'écart) n'en a pas : RIFE n'y fait pas de
+// fantôme qui se voie, et un aplat qui bouge suffisait à faire douter la moitié d'une image d'anime.
 std::vector<float> tile_doubt(const kernels::SceneMotion& scene);
 
 // La grille de doute d'un champ de doutes cols × rows (tuiles) : dilatée d'une tuile puis adoucie (3 × 3),
@@ -75,7 +84,8 @@ struct DoubtGrid {
   int cols = 0;
   int rows = 0;
   std::vector<std::uint8_t> weights;
-  // Le doute moyen de l'image, dans [0, 1].
+  // Le doute moyen des tuiles mêmes, avant d'être élargi au voisinage (qui ne sert qu'au bord du fondu),
+  // dans [0, 1].
   double share = 0.0;
 };
 DoubtGrid doubt_grid(std::span<const float> doubt, int cols, int rows);
@@ -84,6 +94,7 @@ struct TriageCounts {
   std::uint64_t read = 0;     // paires où RIFE aurait tourné et que la carte décrit
   std::uint64_t held = 0;     // tenues par le flux seul
   std::uint64_t faded = 0;    // impossibles, fondues
+  std::uint64_t lost = 0;     // dont : rien qui corresponde ni caméra (flow_lost) ; le reste, par le doute
   std::uint64_t masked = 0;   // fondues par endroits
   std::uint64_t panned = 0;   // panoramiques purs par le warp de la caméra (GMFSS seul)
   std::uint64_t refused = 0;  // le backend n'a pas motion_doubt : RIFE tel quel

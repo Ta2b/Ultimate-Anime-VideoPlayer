@@ -57,6 +57,10 @@ bool flow_held(const kernels::SceneMotion& scene) {
   return static_cast<double>(changed) <= triage::kHeldChanged * static_cast<double>(scene.tiles.size());
 }
 
+bool flow_lost(const kernels::SceneMotion& scene) {
+  return scene.cut_likely || (!scene.camera_fit && scene.unmatched >= triage::kImpossibleUnmatched);
+}
+
 bool flow_pan(const kernels::SceneMotion& scene) {
   if (!scene.camera_fit || !scene.drawing_held || scene.background_held || scene.fade || scene.cut_likely)
     return false;
@@ -74,7 +78,9 @@ std::vector<float> tile_doubt(const kernels::SceneMotion& scene) {
   std::vector<float> out(scene.tiles.size(), 0.0F);
   for (std::size_t i = 0; i < scene.tiles.size(); ++i) {
     const kernels::SceneTile& t = scene.tiles[i];
-    if (!t.changed) continue;  // un aplat ou un décor qui ne change pas : RIFE n'y fait rien de mal
+    // Une tuile qui ne change pas, ou Uncertain (un aplat, ou peu d'écart sans correspondance) : RIFE n'y
+    // fait pas de fantôme qui se voie.
+    if (!t.changed || t.kind == kernels::SceneClass::Uncertain) continue;
     if (t.kind == kernels::SceneClass::Effect) {
       out[i] = 1.0F;
     } else {
@@ -87,12 +93,14 @@ std::vector<float> tile_doubt(const kernels::SceneMotion& scene) {
 DoubtGrid doubt_grid(std::span<const float> doubt, int cols, int rows) {
   DoubtGrid grid;
   if (cols < 1 || rows < 1 || doubt.size() != cell(0, rows, cols)) return grid;
+  // La part de l'image qui doute : celle des tuiles mêmes. Dilatée puis adoucie, une tuile sur trois qui
+  // doute en couvrait presque toute l'image.
+  double sum = 0.0;
+  for (const float v : doubt) sum += std::clamp(v, 0.0F, 1.0F);
+  grid.share = sum / static_cast<double>(doubt.size());
   // Dilatée d'une tuile (le fantôme déborde de la zone sans correspondance), puis adoucie : le bord du fondu
   // ne se voit pas.
   const std::vector<float> soft = neighbours(neighbours(doubt, cols, rows, false), cols, rows, true);
-  double sum = 0.0;
-  for (const float v : soft) sum += v;
-  grid.share = sum / static_cast<double>(soft.size());
   // Regroupées par le plus fort doute, au plus kDoubtMaxCells de côté.
   const int step_c = (cols + kernels::kDoubtMaxCells - 1) / kernels::kDoubtMaxCells;
   const int step_r = (rows + kernels::kDoubtMaxCells - 1) / kernels::kDoubtMaxCells;
@@ -153,9 +161,11 @@ PairSort RifeTriage::sort(const PairFacts& facts, bool runs) {
   keep_doubt(doubt, scene);
   if (gmfss_only_) return sort_gmfss(scene, doubt);
   if (refused_) return now_;
-  // Coupe probable que la mesure de RIFE n'a pas vue, ou presque rien qui corresponde : fondu entier.
-  if (scene.cut_likely || scene.unmatched >= triage::kImpossibleUnmatched) {
+  // Coupe probable que la mesure de RIFE n'a pas vue, ou presque rien qui corresponde, sans même un décor que
+  // la caméra explique : fondu entier.
+  if (flow_lost(scene)) {
     grid_ = full_fade();
+    ++counts_.lost;
   } else {
     grid_ = doubt_grid(doubt, scene.cols, scene.rows);
     if (grid_.share >= triage::kFadeShare) grid_ = full_fade();
@@ -171,12 +181,12 @@ PairSort RifeTriage::sort(const PairFacts& facts, bool runs) {
 
 PairSort RifeTriage::sort_gmfss(const kernels::SceneMotion& scene, const std::vector<float>& doubt) {
   // La paire impossible : la même règle que pour RIFE, mais toute la paire au fondu.
-  const bool impossible = scene.cut_likely || scene.unmatched >= triage::kImpossibleUnmatched ||
-                          doubt_grid(doubt, scene.cols, scene.rows).share >= triage::kFadeShare;
-  if (impossible) {
+  const bool lost = flow_lost(scene);
+  if (lost || doubt_grid(doubt, scene.cols, scene.rows).share >= triage::kFadeShare) {
     camera_ = kernels::kCameraStill;
     now_ = PairSort::Fade;
     ++counts_.faded;
+    counts_.lost += lost ? 1 : 0;
   } else if (flow_pan(scene)) {
     for (std::size_t i = 0; i < camera_.size(); ++i) camera_[i] = static_cast<float>(scene.camera[i]);
     now_ = PairSort::Pan;
@@ -199,8 +209,9 @@ void RifeTriage::log() const {
                         : "";
   log_channel("gpu")->info(
       "tri des paires par le flux : {} paires lues par la carte, {} dessins tenus copiés, {} paires "
-      "impossibles fondues, {} paires fondues par endroits, {} panoramiques purs{}",
-      counts_.read, counts_.held, counts_.faded, counts_.masked, counts_.panned, why);
+      "impossibles fondues (dont {} sans correspondance ni caméra), {} paires fondues par endroits, {} "
+      "panoramiques purs{}",
+      counts_.read, counts_.held, counts_.faded, counts_.lost, counts_.masked, counts_.panned, why);
 }
 
 gpu::Motion RifeTriage::doubted(gpu::Backend& backend, const gpu::Motion& motion, float fade) {

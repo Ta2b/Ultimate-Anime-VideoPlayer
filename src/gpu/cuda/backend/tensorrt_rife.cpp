@@ -212,15 +212,35 @@ std::expected<void, Refusal> TensorRtBackend::rife_crop(const Tensor& padded, co
 }
 
 std::expected<PairScores, Refusal> TensorRtBackend::scores_now(const Tensor& a, const Tensor& b) {
-  return scores_start(a, b).and_then([&](std::uint64_t ticket) { return scores_take(ticket); });
+  // Son propre emplacement, hors de l'anneau des tickets : une mesure immédiate ne périme aucune mesure en
+  // vol (les deux tickets de DistilDRBA après une image sautée, puis le contrôle des tuiles de SPAN).
+  PairRead& slot = pair_reads_[kPendingReadbacks];
+  if (auto ok = pair_launch(slot, a, b); !ok) return std::unexpected(std::move(ok.error()));
+  return pair_read(slot);
 }
 
 std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor& a, const Tensor& b) {
+  const std::uint64_t ticket = pair_tickets_ + 1;
+  PairRead& slot = pair_reads_[ticket % kPendingReadbacks];
+  if (auto ok = pair_launch(slot, a, b); !ok) return std::unexpected(std::move(ok.error()));
+  pair_tickets_ = ticket;
+  slot.ticket = ticket;
+  return ticket;
+}
+
+std::expected<PairScores, Refusal> TensorRtBackend::scores_take(std::uint64_t ticket) {
+  PairRead& slot = pair_reads_[ticket % kPendingReadbacks];
+  if (ticket == 0 || slot.ticket != ticket)
+    return refuse(RefusalCode::SequenceOrder, std::format("scores_take : ticket {} périmé", ticket));
+  auto scores = pair_read(slot);
+  if (scores) slot.ticket = 0;
+  return scores;
+}
+
+std::expected<void, Refusal> TensorRtBackend::pair_launch(PairRead& slot, const Tensor& a, const Tensor& b) {
   if (!fp16_planes(a, 3) || !fp16_planes(b, 3) || a.shape.dims != b.shape.dims) {
     return refuse(RefusalCode::ShapeInvalid, "scores_start : deux images RGB FP16 de même taille attendues");
   }
-  const std::uint64_t ticket = pair_tickets_ + 1;
-  PairRead& slot = pair_reads_[ticket % pair_reads_.size()];
   std::expected<void, Refusal> ready = bind();
   if (ready) ready = reserve_readback(slot, sizeof(PairSums));
   // Le flux ordonne les emplacements : un ticket périmé n'est plus relu, rien n'est à attendre.
@@ -248,23 +268,17 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor
                    "cudaMemcpyAsync");
   }
   if (ready) ready = cuda_check(cudaEventRecord(slot.done, stream_), "cudaEventRecord");
-  if (!ready) return std::unexpected(std::move(ready.error()));
+  if (!ready) return ready;
   const kernels::RifeGeometry g = kernels::rife_geometry(width_of(a), height_of(a));
-  pair_tickets_ = ticket;
-  slot.ticket = ticket;
   slot.area = static_cast<double>(g.padded_width) * static_cast<double>(g.padded_height);
   slot.levels = pair_levels_;
-  return ticket;
+  return {};
 }
 
-std::expected<PairScores, Refusal> TensorRtBackend::scores_take(std::uint64_t ticket) {
-  PairRead& slot = pair_reads_[ticket % pair_reads_.size()];
-  if (ticket == 0 || slot.ticket != ticket)
-    return refuse(RefusalCode::SequenceOrder, std::format("scores_take : ticket {} périmé", ticket));
+std::expected<PairScores, Refusal> TensorRtBackend::pair_read(const PairRead& slot) {
   // Attente hôte voulue : la décision de lancer RIFE dépend de cette paire (kernels/spec/detect.h).
   // Elle ne couvre que la mesure, pas ce que le flux a reçu depuis.
   if (auto ok = wait_event(slot.done); !ok) return std::unexpected(std::move(ok.error()));
-  slot.ticket = 0;
   // Σ |ΔY| × (pas 8 bits / 255) sur l'aire remplie de RIFE, avec le pas de la mesure comme pour le pire bloc
   // (kernels::pair_scene_score, C50-01).
   const double scene = kernels::pair_scene_score(slot.host->total, slot.levels, slot.area);

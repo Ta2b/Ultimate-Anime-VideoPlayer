@@ -143,9 +143,9 @@ inline constexpr std::uint32_t kTrialWarpL2 = 1U << 3U;
 // colle écrivant et lisant ce format : plus de copies de reformatage (41 % du dernier bloc). Même calcul, au
 // rangement près. Lu par le backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialRifeHwc8 = 1U << 4U;
-// --span-native : le SPAN FP8 prend conv_1 (dégroupage fondu), conv_cat et to_pixel aux noyaux du FP16 natif
-// (docs/span-native16.md) ; le FP16 natif lui-même passe par son paquet (SpanVariantKind::Fp16Cutlass). Lu
-// par le backend TensorRT ; sans effet ailleurs.
+// --span-native-edges : le SPAN FP8 prend conv_1 (dégroupage fondu), conv_cat et to_pixel aux noyaux du FP16
+// natif (docs/span-native16.md) ; le SPAN natif lui-même passe par son paquet (SpanVariantKind::Fp16Cutlass,
+// Fp32Native). Lu par le backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialSpanNative = 1U << 5U;
 // --rife-native : l'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux
 // (docs/rife-natif.md) au lieu des moteurs TensorRT, gardés s'ils tiennent 45 dB contre eux à l'essai au
@@ -201,8 +201,8 @@ struct BackendCaps {
   // Le SPAN entier en FP8 par noyaux CUTLASS (paquet « .span8 » à la place de l'ONNX) : sm 8.9 seulement,
   // dans un backend construit avec CUTLASS.
   bool span_fp8_cutlass = false;
-  // Le SPAN FP16 natif par les mêmes noyaux (paquet « .span8 » au drapeau fp16, --span-native) : sm 8.6, 8.9
-  // et 12.0 (SpanFp8Net::supported_fp16_device), jugé sur la carte au chargement.
+  // Le SPAN FP16 natif par nos noyaux (paquet « .span8 » au drapeau fp16 ; sommes f32 au cran Qualité) :
+  // sm 8.9 et 12.0 (SpanFp8Net::supported_fp16_device), jugé sur la carte au chargement.
   bool span_fp16_cutlass = false;
   // L'architecture de l'appareil (« sm_89 ») et la version des noyaux du SPAN FP8
   // (SpanFp8Net::kKernelsVersion) : un reçu v2 n'est pris que sur les mêmes (étape 3.7b).
