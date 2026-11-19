@@ -266,8 +266,8 @@ suivi.
 - **Vérifier une image** : `--effect-mask-view` (essai, avec `--scene-map`) fait peindre le masque par la
   passe anime au lieu de l'image : l'image en gris sombre, les lumières (la carte des émetteurs, avant la
   part retenue) en rouge, l'effet sûr en vert, la marge retenue en bleu. Une lumière d'effet sort jaune,
-  une lumière retenue magenta, un décor sans lumière bleu ; sans masque, ni vert ni bleu. La vue saute la
-  pile de LUT, qui la recolorait (deuxième essai du PC : une image verte, sans trace du masque). Chaque
+  une lumière retenue magenta, un décor sans lumière bleu ; sans masque, ni vert ni bleu. La vue passe par
+  la pile de LUT du lecteur et s'y lit (`grade_gpu_effects_test.cpp`). Chaque
   instantané dit au journal son image et le masque de celle-ci, celui de l'écran ou celui du grade avant
   le warp, retrouvé par son pts (« instantané … (image source à 16:20,042) : masque des effets (grade avant
   le warp) de 60 × 34 tuiles, effet sûr sur … % d'entre elles, marge des éclats retenue sur … % », ou
@@ -277,7 +277,13 @@ suivi.
   après, la même d'une lecture à l'autre ; l'instantané se prend ensuite, en pause, et son pts le
   confirme. Premier essai du PC (19/11, #926, l'écran gradait, capture 2 s après le départ à 16:41) :
   l'image de 16:43 sortait la même avec ou sans masque, sans qu'une capture puisse dire si la carte était
-  là. Deuxième (#943) : la carte ne classait aucune tuile en effet (règle de la carte, reprise à part).
+  là. Deuxième (#943) : la carte ne classait aucune tuile en effet (règle de la carte, reprise à part), et la
+  vue sortait verte partout. Ces deux essais ont joué sans la passe du masque : libplacebo écartait le hook
+  après la première image (« User hook tried resizing non-resizable stage! » au journal) partout où l'image
+  arrivait sans passe de mise à l'échelle à part, donc toujours au grade avant le warp (taille égale) et à
+  l'écran sauf en agrandissant par spline36 ou EWA. L'alpha restait à 1 : la marge entière avant #943, puis
+  « effet sûr partout ». La passe pose désormais sa taille (`effect_pass.cpp`), et les tests de rendu
+  échouent dès qu'un hook est écarté (`graded_image`).
 
 Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintillement de plus, le temps du
 grade ne monte pas de plus de 0,3 ms, et le test à l'aveugle est gagné sur des scènes d'explosion et de
