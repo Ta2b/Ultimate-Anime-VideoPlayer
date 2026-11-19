@@ -128,7 +128,7 @@ std::expected<bool, Refusal> UpscaleStage::ingest_source(const DecodedFrame& fra
   }
   bool mirrored = false;
   const std::array<std::size_t, kTemporalFixFrames> chosen = window.window(*center, &mirrored);
-  std::array<gpu::Tensor, 2 * kTemporalFixFrames> slots{};
+  std::array<gpu::Tensor, 2 * static_cast<std::size_t>(kTemporalFixFrames)> slots{};
   const std::span<gpu::Tensor> inputs(slots.data(), setup_.temporal_fix->input_names().size());
   for (std::size_t k = 0; k < inputs.size(); ++k) {
     const std::size_t slot = temporal_.inputs[k];

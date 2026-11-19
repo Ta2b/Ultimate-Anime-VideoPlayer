@@ -133,7 +133,7 @@ std::expected<void, Refusal> fold_pointwise(Walk& walk, const onnx::Node& node, 
   const auto cout = static_cast<std::size_t>(weight.dims[0]);
   if (last.transposed || static_cast<std::size_t>(weight.dims[1]) != mid)
     return unknown(node.name + " : 1 × 1 qui ne suit pas une convolution 3 × 3");
-  const auto row = static_cast<std::size_t>(9 * last.cin);
+  const std::size_t row = 9U * static_cast<std::size_t>(last.cin);
   std::vector<float> folded(cout * row);
   std::vector<float> folded_bias(cout);
   for (std::size_t o = 0; o < cout; ++o) {
@@ -197,7 +197,7 @@ std::expected<void, Refusal> add_conv(Walk& walk, const onnx::Node& node, const 
   const onnx::Tensor* weight = node.inputs.size() >= 2 ? walk.constant(node.inputs[1]) : nullptr;
   bool depthwise = false;
   const auto kernel = conv_shape(node, weight, layer, depthwise);
-  if (!kernel) return std::unexpected(std::move(kernel.error()));
+  if (!kernel) return std::unexpected(kernel.error());
   auto bias = conv_bias(walk, node, static_cast<std::size_t>(layer.cout));
   if (!bias) return std::unexpected(std::move(bias.error()));
   if (*kernel == 1 && walk.stage == Stage::Conv && !walk.layers.empty())

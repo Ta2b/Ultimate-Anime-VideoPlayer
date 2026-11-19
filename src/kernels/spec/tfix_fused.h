@@ -158,14 +158,14 @@ constexpr TfixLayout tfix_layout(int height, int width, bool half, bool native =
     const auto i = static_cast<std::size_t>(b);
     const TfixDims x = tfix_block_x(b, height, width);
     const TfixDims y = tfix_block_y(b, height, width);
-    layout.x[i] = take(kTfixSupports * tfix_in_ld(x.channels, native) * x.plane());
-    layout.y[i] = take(kTfixSupports * tfix_out_ld(y.channels, native) * y.plane());
+    layout.x[i] = take(std::int64_t{kTfixSupports} * tfix_in_ld(x.channels, native) * x.plane());
+    layout.y[i] = take(std::int64_t{kTfixSupports} * tfix_out_ld(y.channels, native) * y.plane());
   }
   const TfixDims half_level = tfix_level(2, height, width, 1);
   layout.conf_in =
       take(static_cast<std::int64_t>(kTfixSupports) * tfix_in_ld(kTfixConf, native) * half_level.plane());
   layout.mask_half = take(kTfixSupports * half_level.plane());
-  layout.conf_out = take(kTfixSupports * tfix_out_ld(1, native) * half_level.plane());
+  layout.conf_out = take(std::int64_t{kTfixSupports} * tfix_out_ld(1, native) * half_level.plane());
   if (half) layout.net_out = take(TfixDims{kTfixImage, height, width}.elements());
   layout.elements = at;
   return layout;
