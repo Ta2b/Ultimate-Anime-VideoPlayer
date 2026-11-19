@@ -39,10 +39,10 @@ DistilDRBA absent), DistilDRBA n'est pas chargé ou est rendu, et seul TemporalF
 n'a pas pu se charger du tout (et sans GMFSS), DistilDRBA reste seul moteur plutôt que rien. Le journal le dit
 (« plan par plan : … »).
 
-Sous DistilDRBA, la carte de la scène du flux NVIDIA (`--scene-map`, `docs/carte-de-la-scene.md`) tourne
+Sous DistilDRBA, la carte de la scène du flux NVIDIA (allumée par défaut, `docs/carte-de-la-scene.md`) tourne
 comme avec DistilDRBA choisi au menu : `scene_pair` lance la paire à son arrivée (`rgb_[current_ ^ 1U]` tient
 l'image d'avant après `drba_arrive`, aussi à la bascule), et sa carte n'arrive qu'à l'image suivante
-(`SceneMap::latest`), pas dans `PairFacts`. Les éclats sur les effets la lisent avec une image de retard ;
+(`SceneMap::latest`), pas dans `PairFacts`. Les éclats sur les effets (`--effect-highlights`, éteints par défaut) la lisent avec une image de retard ;
 le tri des paires ne sert que RIFE. À une bascule de RIFE vers DistilDRBA, la paire déjà lancée par la
 lecture en avance de RIFE garde sa carte (une paire n'est lancée qu'une fois).
 

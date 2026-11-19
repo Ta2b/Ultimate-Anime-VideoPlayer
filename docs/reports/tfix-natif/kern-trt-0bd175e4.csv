@@ -1,0 +1,47 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+16.0,857187740,1392,615795.8,215232.0,76832,1724159,676087.9,sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x32x32_stage1_warpsize4x1x1_g1_tensor16x8x8_t1r3s3_fused
+14.2,761371323,696,1093924.3,1574991.0,120032,1598911,672151.9,sm80_xmma_fprop_implicit_gemm_indexed_wo_smem_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x32x64_stage1_warpsize4x1x1_g1_tensor16x8x16_aligna4_alignc2_execute_kernel_trt
+12.2,656040959,696,942587.6,915759.5,382208,2514143,381676.7,kirari::gpu::cuda::<unnamed>::conf_kernel(kirari::gpu::cuda::TfixShape)
+7.1,378451149,1392,271875.8,227136.0,77568,1737695,277935.2,sm80_xmma_fprop_implicit_gemm_indexed_wo_smem_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x32x64_stage1_warpsize4x1x1_g1_tensor16x8x16_aligna8_alignc8_execute_kernel_trt
+6.4,340839835,1392,244856.2,142624.0,48576,2383455,429163.9,sm80_xmma_fprop_implicit_gemm_indexed_wo_smem_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x16x64_stage1_warpsize4x1x1_g1_tensor16x8x16_alignc4_execute_kernel_trt
+6.0,322047495,1392,231356.0,127471.5,34848,417344,148817.5,"kirari::gpu::cuda::<unnamed>::glue_kernel(kirari::gpu::cuda::TfixShape, int)"
+5.3,284224157,1392,204184.0,179327.5,73376,2308926,297663.1,__myl_MoveConc_0xbbf6e3a2d581d1b8d0d4784d0932e36f
+5.1,271171569,696,389614.3,427584.0,210976,434880,69185.0,"void genericReformat::copyPackedKernel<__half, __half, (bool)1, (bool)1, genericReformat::ArrayN<(int)4>, (int)4>(unsigned int, unsigned int, const void *, genericReformat::ArrayN<T6>, genericReformat::ArrayNWithReducedDivisors<T6>, genericReformat::ArrayN<T6>, int, int, int, const float *, void *, genericReformat::ArrayN<T6>, genericReformat::ArrayNWithReducedDivisors<T6>, genericReformat::ArrayNWithReducedDivisors<T6>, genericReformat::ArrayN<T6>, int, int, int, const float *, T5)"
+3.1,164239221,1392,117987.9,120512.0,39584,1596735,124057.9,__myl_AddMulMax_0x7ed9088c6af0b5f19c4595eb0cf4efdd
+2.7,145798822,696,209481.1,210815.5,73536,1566495,148979.1,"kirari::gpu::cuda::<unnamed>::blend_kernel(kirari::gpu::cuda::TfixShape, __half *)"
+2.7,143845324,5568,25834.3,12032.0,4192,1858175,111467.2,sm50_xmma_convolution_depthwiseHMMA_FP16NHWCx8_TR3_TS3_STRIDEH1_STRIDEW1_execute_kernel_trt
+2.3,121031424,6966,17374.6,9920.0,1760,1815103,95852.2,generatedNativePointwise
+1.6,85826798,2784,30828.6,23648.0,8192,1815839,122680.1,sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x64x32_stage1_warpsize2x2x1_g1_tensor16x8x8_t1r1s1_execute_kernel_trt
+1.4,77113112,696,110794.7,106080.0,43296,1470079,123423.8,kirari::gpu::cuda::<unnamed>::half_out_kernel(kirari::gpu::cuda::TfixShape)
+1.4,73842983,699,105640.9,116864.0,39647,121920,21338.9,kirari::gpu::cuda::<unnamed>::ingest(kirari::gpu::cuda::IngestParams)
+1.3,69604475,3480,20001.3,23008.0,6432,24224,5157.5,sm80_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize64x128x32_stage5_warpsize2x2x1_g1_tensor16x8x16_t1r3s3_linkable_execute_kernel_trt
+1.2,62500288,699,89413.9,100640.0,34272,104160,22104.8,"kirari::gpu::cuda::<unnamed>::pyramid_kernel(const __half *, const __half *, __half *, int, int, unsigned long long, unsigned long long, unsigned long long)"
+1.1,60163006,696,86441.1,53440.0,17568,1434783,228973.3,sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x64x32_stage1_warpsize2x2x1_g1_tensor16x8x8_t1r3s3_execute_kernel_trt
+1.0,51233095,737,69515.7,63872.0,3360,2001599,187555.4,ConvertNV12BLtoNV12
+0.8,45275372,1398,32385.8,36320.0,12352,37888,7862.5,sm80_xmma_fprop_implicit_gemm_indexed_wo_smem_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x16x32_stage1_warpsize4x1x1_g1_tensor16x8x16_alignc8_execute_kernel_trt
+0.8,44280546,1392,31810.7,14560.0,4640,1512223,90169.0,sm80_xmma_fprop_implicit_gemm_indexed_wo_smem_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x16x64_stage1_warpsize4x1x1_g1_tensor16x8x16_alignc8_execute_kernel_trt
+0.7,38333103,691,55474.8,54784.0,16512,77120,5904.7,kirari::gpu::cuda::<unnamed>::write_rgba16(kirari::gpu::cuda::WriteParams)
+0.7,36031242,2784,12942.3,14048.0,4864,17343,3225.3,sm80_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize256x64x32_stage3_warpsize4x1x1_g1_tensor16x8x16_t1r1s1_linkable_execute_kernel_trt
+0.7,35375021,699,50608.0,56160.0,18464,62784,11779.1,kirari::gpu::cuda::<unnamed>::ingest_chroma_rows(kirari::gpu::cuda::IngestParams)
+0.5,26910100,696,38663.9,43520.0,14464,45919,9648.0,"void CUTENSOR_NAMESPACE::permutationKernelPLC3<CUTENSOR_NAMESPACE::VectorWrite2DTensorView<(unsigned char)0, (unsigned char)1, (bool)0, (unsigned int)8, float, __half, CUTENSOR_NAMESPACE::GeneralUnarySmall<float>>, CUTENSOR_NAMESPACE::VectorRead2DTensorView<(unsigned char)1, (unsigned char)0, (bool)0, (unsigned int)8, float, __half, CUTENSOR_NAMESPACE::GeneralUnarySmall<float>>, CUTENSOR_NAMESPACE::ThreadLevelElementwise<CUTENSOR_NAMESPACE::ElementwiseConfig2DCommonCase<CUTENSOR_NAMESPACE::GeneralUnarySmall<float>, CUTENSOR_NAMESPACE::GeneralBinary<float>, (int)2, (int)16, (int)128, (int)128, (signed char)8, (bool)0, (bool)0, (bool)1, (bool)0, (bool)0>, float>, CUTENSOR_NAMESPACE::ElementwiseRuntimePLC3<__half, float, __half, float>::Params>(T4)"
+0.5,25486870,696,36619.1,40128.0,16896,45056,7176.7,sm75_xmma_fprop_implicit_gemm_indexed_wo_smem_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x32x64_stage1_warpsize4x1x1_g1_tensor16x8x8_alignc8_execute_kernel_trt
+0.4,23945554,699,34256.9,38784.0,13088,39520,8538.2,ResizeBilinearKernel
+0.4,22275159,693,32143.1,31808.0,10368,1414367,72090.8,kirari::gpu::cuda::<unnamed>::frame_stats_count(kirari::gpu::cuda::FrameStatsParams)
+0.4,21700918,699,31045.7,34912.0,11776,36160,7720.4,sm80_xmma_fprop_implicit_gemm_indexed_wo_smem_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x16x32_stage1_warpsize4x1x1_g1_tensor16x8x16_alignc4_execute_kernel_trt
+0.3,14554908,696,20912.2,23552.0,7872,25344,5189.4,sm80_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize256x64x32_stage3_warpsize4x1x1_g1_tensor16x8x16_t1r3s3_linkable_execute_kernel_trt
+0.3,13865012,696,19921.0,22272.0,8704,26848,4505.6,sm75_xmma_fprop_implicit_gemm_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x32x32_stage1_warpsize4x1x1_g1_tensor16x8x8_t1r3s3_execute_kernel_trt
+0.2,13075324,699,18705.8,20896.0,7072,24704,4171.5,sm80_xmma_fprop_implicit_gemm_indexed_wo_smem_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize128x16x64_stage1_warpsize4x1x1_g1_tensor16x8x16_aligna8_alignc8_execute_kernel_trt
+0.2,10026171,1392,7202.7,5824.0,2336,1354463,51030.5,__myl_SlicTran_0x2790e38c09726111b0fa6f64168a7a3a
+0.2,10010910,699,14321.8,15936.0,5536,20160,3365.3,"void CUTENSOR_NAMESPACE::permutationKernelPLC3<CUTENSOR_NAMESPACE::VectorWrite2DTensorView<(unsigned char)0, (unsigned char)1, (bool)0, (unsigned int)4, float, __half, CUTENSOR_NAMESPACE::GeneralUnarySmall<float>>, CUTENSOR_NAMESPACE::VectorRead2DTensorView<(unsigned char)1, (unsigned char)0, (bool)0, (unsigned int)4, float, __half, CUTENSOR_NAMESPACE::GeneralUnarySmall<float>>, CUTENSOR_NAMESPACE::ThreadLevelElementwise<CUTENSOR_NAMESPACE::ElementwiseConfig2DSmallMode0<CUTENSOR_NAMESPACE::GeneralUnarySmall<float>, CUTENSOR_NAMESPACE::GeneralBinary<float>, (int)2, (int)4, (int)512, (int)128, (signed char)4, (bool)0, (bool)0, (bool)0, (bool)0, (bool)0>, float>, CUTENSOR_NAMESPACE::ElementwiseRuntimePLC3<__half, float, __half, float>::Params>(T4)"
+0.2,9322583,699,13337.0,14400.0,6304,35584,3539.9,"kirari::gpu::cuda::<unnamed>::pool_kernel(const __half *, __half *, int, int)"
+0.2,8718941,696,12527.2,14080.0,4864,15712,3049.3,sm80_xmma_fprop_implicit_gemm_indexed_f16f16_f16f16_f16_nhwckrsc_nhwc_tilesize64x32x64_stage5_warpsize2x2x1_g1_tensor16x8x16_execute_kernel_trt
+0.1,7541789,693,10882.8,7552.0,4960,1256512,67058.1,kirari::gpu::cuda::<unnamed>::frame_stats_trace(kirari::gpu::cuda::FrameStatsParams)
+0.1,7018876,696,10084.6,10336.0,4032,19776,1228.4,kirari::gpu::cuda::<unnamed>::first_kernel(kirari::gpu::cuda::TfixShape)
+0.1,6629978,2088,3175.3,3008.0,928,6976,1390.0,"void cuInt8::nhwcTonchw<__half, (int)32, (int)8, (int)2>(const __half *, T1 *, int, int, int, int, int, int)"
+0.1,5340479,696,7673.1,8608.0,3008,9088,1832.1,"void cuInt8::nchwTonhwc<__half, (int)32, (int)8, (int)2>(const T1 *, __half *, int, int, int, int, int, int, int, int)"
+0.1,4980893,699,7125.7,7744.0,3616,25248,1501.5,__myl_CastMulLtSeleCast_0xb84723b7cbaf1480474c9a34a56b86c9
+0.1,3845117,699,5500.9,6112.0,2400,6976,1225.8,"void cuInt8::nhwcTonchw<__half, (int)32, (int)4, (int)2>(const __half *, T1 *, int, int, int, int, int, int)"
+0.0,192480,80,2406.0,2480.0,1824,3488,567.0,MemsetD2D_BL
+0.0,6400,2,3200.0,3200.0,3168,3232,45.3,Scale_Bilinear_NV12
+0.0,4320,2,2160.0,2160.0,2144,2176,22.6,Subsample_Bilinear_Luma
+0.0,2784,2,1392.0,1392.0,1376,1408,22.6,Subsample_Bilinear_Chroma

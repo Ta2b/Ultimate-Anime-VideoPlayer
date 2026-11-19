@@ -32,20 +32,22 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour ; signature des exécutables Windows et macOS |
 | [`temporalfix.md`](temporalfix.md) | La stabilisation temporelle (TemporalFix, avant SPAN, TensorRT) : fenêtre de sept images, reflet aux bords, ce qui manque à Vulkan |
 | [`auto-par-plan.md`](auto-par-plan.md) | L'Auto plan par plan (`--shot-plan`, essai) : DistilDRBA ou RIFE et TemporalFix choisis par plan sur le rythme lu par la pré-analyse |
-| [`carte-de-la-scene.md`](carte-de-la-scene.md) | La carte de la scène par le flux optique de NVIDIA (NVOF, `--scene-map`) : session, ordre des files, tuiles, caméra, ce que les clients lisent |
+| [`carte-de-la-scene.md`](carte-de-la-scene.md) | La carte de la scène par le flux optique de NVIDIA (NVOF, allumée par défaut, `--no-scene-map`) : session, ordre des files, tuiles, caméra, coupes, ce que les clients lisent |
 | [`tuiles-span.md`](tuiles-span.md) | Les tuiles qui bougent : SPAN FP16 natif sur les seules tuiles dont l'entrée a bougé, jugées sur l'écart des blocs de la paire comme le lot A ; rejeu, contrôle et scintillement sur processeur des extraits du PC (par défaut, `--no-span-tiles` pour couper) |
 | [`anime4k.md`](anime4k.md) | Anime4K, l'agrandissement en shaders des petites cartes ; le banc des petites cartes |
 | [`banc-qualite.md`](banc-qualite.md) | Banc de qualité des réseaux contre leur référence FP32 et la vraie image, sans carte graphique |
 | [`parite-windows-linux.md`](parite-windows-linux.md) | Banc de parité Windows contre Linux sur le même PC |
 | [`test-utilisateurs.md`](test-utilisateurs.md) | Test avec cinq utilisateurs : tâches et grille |
 | [`a-faire-1-0.md`](a-faire-1-0.md) | Ce qui reste avant la 1.0 |
+| [`chantiers-en-pause.md`](chantiers-en-pause.md) | Les chantiers mis en pause par Tatoub : point d'arrêt et comment reprendre |
+| [`tfix-plafonds.md`](tfix-plafonds.md) | TemporalFix en 1080p : plafond théorique de chaque couche sur la RTX 4070 Ti |
 | [`phase6-a-tester.md`](phase6-a-tester.md) | Pistes d'optimisation codées, à mesurer sur une vraie carte |
 
 ## Historiques (gardés comme trace, marqués en tête)
 
 Plans et suivis de version (`plan-v0.5.md`, `plan-v0.6.md`, `tests-v0.5-windows-macos.md`), passation et état
 d'un poste (`handoff-pc.md`, `etat-windows.md`, `tests-pc.md`), audits (`audit-fonctions.md`, `audit-noms.md`,
-`audit-ui.md`) et relevés datés ([`reports/`](reports/)). Ils parlent de fonctions retirées depuis (profils,
+`audit-ui.md`) et relevés datés ([`reports/`](reports/), dont le journal des chantiers et le plan du flux optique du 19 novembre 2026). Ils parlent de fonctions retirées depuis (profils,
 HDR adaptatif et sa calibration, RTX HDR et TrueHDR, méthode HDR à choisir, ancien arbre du menu) : ne pas les
 prendre pour l'état du code.
 
