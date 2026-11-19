@@ -123,6 +123,29 @@ s'arrêtait pour la séance (A12-12, `tests/unit/core/free_starved_test.cpp`). P
    L'interpolation revient à la vidéo suivante, avec « Réessayer » (Vidéo > Général) ou dès qu'un
    réglage de l'interpolation change.
 
+### Pertes de l'affichage hors de la contre-pression (cadence haute, novembre 2026)
+
+Le banc du 19 novembre (RTX 4070 Ti, QD-OLED 165 Hz VRR, RIFE 4.25 seul) plafonnait vers 107 i/s avec 3,8 ms
+de GPU par image créée et rien en retard au journal. Une image sautée à la présentation alors que main l'avait
+déjà vue écrite à un tour d'avant (`FrameStats::dropped_ready`, `ReadySeen`) n'est pas une image que le GPU n'a
+pas livrée : une plus récente est devenue due avant que main la montre (tour de boucle long, acquisition qui
+attend l'écran, gigue de l'horloge à la fréquence même de l'écran). Elle élargissait pourtant le pas comme les
+autres, et à 165 Hz quelques pertes de ce genre par seconde tenaient la contre-pression près de ×2. Elle
+s'ôte désormais des sautées comme des manquées avant la contre-pression (`pressure_losses`,
+`app/play/cadence_watch.h`) ; les autres pertes comptent comme avant.
+
+Interrupteurs, pour comparer en lecture :
+
+- `--display-loss-pressure` : l'ancien compte, toutes les pertes dans la contre-pression ;
+- `--swap-mode=fifo|mailbox|immediate|relaxed` : le mode de présentation de la swapchain (FIFO par défaut ;
+  libplacebo retombe sur FIFO si la surface n'offre pas le mode demandé) ;
+- `--vrr-margin=N` : l'écart minimal reste N % sous le maximum d'un écran VRR (1 par défaut, comme avant).
+
+La fin de séance écrit une ligne « cadence haute » : mode de présentation, marge, pertes de l'affichage et du
+GPU, puis, en mode Rapide, la cadence moyenne, l'écart minimal, l'écart planifié, le service, la
+contre-pression moyenne et maximale, et la part des relevés où la cadence était bornée par l'écran, par le
+temps de service ou par la contre-pression. Porte du chantier 0.3 : 165 i/s tenus en ×7 avec le GPU sous 60 %.
+
 ### Ce qui reste fixe
 
 La paire source `(g, d)` : `d` est décodée en avance et `g` est la précédente ; le décodeur et le ring ne

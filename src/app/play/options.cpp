@@ -53,12 +53,12 @@ std::expected<void, Refusal> window(std::string_view text, PlayOptions& options)
 }
 
 // Les options à valeur, dans l'ordre où elles se cherchent (--snapshot-at avant --snapshot).
-constexpr std::array<std::string_view, 23> kValuedOptions{
+constexpr std::array<std::string_view, 25> kValuedOptions{
     "--model",       "--window",          "--start",           "--seconds",          "--fullscreen-after",
     "--stats",       "--snapshot-at",     "--snapshot-frames", "--snapshot",         "--keys",
     "--work-height", "--rife-model",      "--anime-contrast",  "--anime-saturation", "--anime-highlights",
     "--rife",        "--truehdr-peak",    "--data-dir",        "--bake-looks",       "--bench-level",
-    "--bench-out",   "--rife-calm-model", "--motion"};
+    "--bench-out",   "--rife-calm-model", "--motion",          "--swap-mode",        "--vrr-margin"};
 
 // Les options qui ne donnent qu'un chemin.
 using PathMember = std::optional<std::filesystem::path> PlayOptions::*;
@@ -169,7 +169,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 45> kFlags{{
+constexpr std::array<Flag, 46> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -190,6 +190,7 @@ constexpr std::array<Flag, 45> kFlags{{
     {"--no-anime-shots", &PlayOptions::anime_shots, false},
     {"--no-effect-highlights", &PlayOptions::effect_highlights, false},
     {"--no-vrr", &PlayOptions::no_vrr, true},
+    {"--display-loss-pressure", &PlayOptions::display_loss_pressure, true},
     {"--one-lane", &PlayOptions::one_lane, true},
     {"--lanes", &PlayOptions::lanes, true},
     {"--profile-dispatches", &PlayOptions::profile_dispatches, true},
@@ -226,6 +227,34 @@ std::expected<RelaunchedFor, Refusal> relaunched_reason(std::string_view arg) {
        {RelaunchedFor::GpuLost, RelaunchedFor::EngineUpdated, RelaunchedFor::Settings})
     if (reason == relaunched_name(known)) return known;
   return refuse(RefusalCode::FieldOutOfRange, std::format("{}: gpu-lost or engine-updated", arg));
+}
+
+// Les réglages fins : le peps du grade (--anime-*, en %) et la cadence haute (cadence_watch.h).
+std::expected<void, Refusal> tuning(std::string_view name, std::string_view text, PlayOptions& options) {
+  if (name == "--swap-mode") {
+    const auto mode = parse_swap_mode(text);
+    if (!mode)
+      return refuse(RefusalCode::FieldOutOfRange,
+                    std::format("--swap-mode: \"{}\" is not fifo, mailbox, immediate or relaxed", text));
+    options.swap_mode = *mode;
+    return {};
+  }
+  if (name == "--vrr-margin") {
+    const auto margin = number<double>(text);
+    if (!margin || *margin < 0.0 || *margin > 10.0)
+      return refuse(RefusalCode::FieldOutOfRange,
+                    std::format("--vrr-margin: \"{}\" is not a margin from 0 to 10 %", text));
+    options.vrr_margin_pct = *margin;
+    return {};
+  }
+  const auto percent = number<int>(text);
+  if (!percent || *percent < 0 || *percent > 200)
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("{}: \"{}\" is not a percentage between 0 and 200", name, text));
+  if (name == "--anime-contrast") options.anime_contrast = *percent;
+  if (name == "--anime-saturation") options.anime_saturation = *percent;
+  if (name == "--anime-highlights") options.anime_highlights = *percent;
+  return {};
 }
 
 bool set_flag(std::string_view arg, PlayOptions& options) {
@@ -341,16 +370,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
                           std::format("{}: \"{}\" outside {} to {}", name, text, range.lo, range.hi));
           }
           options.true_hdr_peak = *setting;
-        } else if (name == "--anime-contrast" || name == "--anime-saturation" ||
-                   name == "--anime-highlights") {
-          const auto percent = number<int>(text);
-          if (!percent || *percent < 0 || *percent > 200) {
-            return refuse(RefusalCode::FieldOutOfRange,
-                          std::format("{}: \"{}\" is not a percentage between 0 and 200", name, text));
-          }
-          if (name == "--anime-contrast") options.anime_contrast = *percent;
-          if (name == "--anime-saturation") options.anime_saturation = *percent;
-          if (name == "--anime-highlights") options.anime_highlights = *percent;
+        } else if (name.starts_with("--anime-") || name == "--swap-mode" || name == "--vrr-margin") {
+          applied = tuning(name, text, options);
         } else if (name == "--rife") {
           const auto factor = parse_factor(text);
           if (!factor) {
@@ -664,7 +685,11 @@ std::string play_usage(bool debug) {
          "                         (timing with a target date), wayland or open; --no-present: open, the\n"
          "                         former presentation; trials: bare (extensions only), poll (present\n"
          "                         ids and waits only), timing-plain (timing, default swapchain)\n"
-         "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n";
+         "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n"
+         "  --swap-mode=MODE       swapchain present mode: fifo (default), mailbox, immediate, relaxed\n"
+         "  --vrr-margin=N         Instant mode stays N % under a VRR screen's maximum (default 1)\n"
+         "  --display-loss-pressure  frames the display lost while ready widen the Instant step too\n"
+         "                         (former count)\n";
 }
 
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,

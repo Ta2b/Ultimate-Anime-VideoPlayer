@@ -26,6 +26,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/cadence_watch.h"
 #include "app/play/present_level.h"
 #include "core/profile.h"
 #include "core/types.h"
@@ -250,6 +251,13 @@ struct PlayOptions {
   // --no-vrr : traite l'écran comme à fréquence fixe même si le VRR est armé (essai du mode Rapide sur les
   // vsyncs).
   bool no_vrr = false;
+  // La cadence haute (cadence_watch.h) : --swap-mode=fifo|mailbox|immediate|relaxed, le mode de présentation
+  // de la swapchain (fifo par défaut) ; --display-loss-pressure, les images perdues par l'affichage alors
+  // qu'elles étaient prêtes comptent dans la contre-pression du mode Rapide (l'ancien compte) ;
+  // --vrr-margin=N, la marge sous le maximum d'un écran VRR, en % (1 par défaut, de 0 à 10).
+  SwapMode swap_mode = SwapMode::Fifo;
+  bool display_loss_pressure = false;
+  double vrr_margin_pct = 1.0;
   // --no-resume : ni reprise à la position retenue, ni mémoire de la position (resume.h).
   bool resume = true;
   // --first-run : l'écran de bienvenue (moteurs, profil de démarrage) même s'il a déjà été vu.

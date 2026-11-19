@@ -292,6 +292,31 @@ std::int64_t relaunch_position(const std::optional<std::int64_t>& forced_start,
   return file_options.start_us;
 }
 
+// La fenêtre et la swapchain que la ligne de commande et play.toml demandent.
+ScreenOptions screen_options(const PlayOptions& options, const PlaySettings& saved, const PlayerPaths& paths,
+                             const std::string& title) {
+  return ScreenOptions{
+      .title = title,
+      .width = options.hidden ? 16 : options.window_width,
+      .height = options.hidden ? 9 : options.window_height,
+      .fullscreen = options.fullscreen && !options.hidden,
+      .hidden = options.hidden,
+      .offscreen = options.hidden,
+      .offscreen_width = options.window_width,
+      .offscreen_height = options.window_height,
+      .hdr = !options.sdr,
+      .kde_sdr_nits = options.kde_sdr_nits,
+      .kde_sdr_auto = options.kde_sdr_auto,
+      .smooth_motion = saved.smooth_motion && saved.rife_factor >= 2,
+      .allow_software = options.software_gpu,
+      .device_name = options.software_gpu ? std::string() : saved.gpu,
+      .present = options.present,
+      .swap_mode = options.swap_mode,
+      .shader_cache = paths::shader_cache(paths),
+      .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")
+                                     : std::filesystem::path()};
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -333,25 +358,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   const std::jthread resource_log = start_resource_log();                        // A33-08
   load_user_keys(paths::user_keys(settings_path.parent_path()));                 // [keys] seul
   const std::string title = window_title(given ? options.file : std::filesystem::path());
-  auto screen = PlaceboScreen::open(ScreenOptions{
-      .title = title,
-      .width = options.hidden ? 16 : options.window_width,
-      .height = options.hidden ? 9 : options.window_height,
-      .fullscreen = options.fullscreen && !options.hidden,
-      .hidden = options.hidden,
-      .offscreen = options.hidden,
-      .offscreen_width = options.window_width,
-      .offscreen_height = options.window_height,
-      .hdr = !options.sdr,
-      .kde_sdr_nits = options.kde_sdr_nits,
-      .kde_sdr_auto = options.kde_sdr_auto,
-      .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
-      .allow_software = options.software_gpu,
-      .device_name = options.software_gpu ? std::string() : saved->gpu,
-      .present = options.present,
-      .shader_cache = paths::shader_cache(paths),
-      .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")
-                                     : std::filesystem::path()});
+  auto screen = PlaceboScreen::open(screen_options(options, *saved, paths, title));
   if (!screen) return std::unexpected(std::move(screen.error()));
   allow_screensaver();
   auto ui = PlayerUi::create((*screen)->window(), given ? core::to_utf8(options.file.filename()) : "", fonts);

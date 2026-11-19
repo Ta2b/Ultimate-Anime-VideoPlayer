@@ -25,6 +25,7 @@
 #include "app/play/backend_library.h"
 #include "app/play/bench_events.h"
 #include "app/play/build_progress.h"
+#include "app/play/cadence_watch.h"
 #include "app/play/chain.h"
 #include "app/play/chain_choices.h"
 #include "app/play/chain_retreat.h"
@@ -501,8 +502,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         session.display_period_us() > 0 ? session.display_period_us() : known_period_us;
     // Écart minimal : la période de l'écran ou du plafond, à 1 % près ; à fréquence fixe, sur les vsyncs.
     const bool vsync = free && !vrr_armed;
-    chain.live.set_free(free, limit_hz > 0.0 ? std::llround(1e6 / (vsync ? limit_hz : limit_hz * 0.99)) : 0,
-                        host_now_us());
+    chain.live.set_free(
+        free,
+        limit_hz > 0.0
+            ? std::llround(1e6 / (vsync ? limit_hz : limit_hz * (1.0 - p.options.vrr_margin_pct / 100.0)))
+            : 0,
+        host_now_us());
     chain.live.set_steady(free && p.options.fast_steady,
                           {.vrr = vrr_armed, .hz = vrr_armed ? limit_hz : known_hz, .cap_hz = cap_hz},
                           fps_of(video.frame_rate));
@@ -539,8 +544,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
   AutoWatch auto_watch;  // le palier de l'Auto : journal, annonce, mémoire (auto_watch.h)
   std::int64_t auto_missing_seen = 0;
-  std::int64_t free_dropped_seen = 0;
-  std::int64_t free_missing_seen = 0;
+  CadenceWatch cadence({p.options.swap_mode, p.options.display_loss_pressure, p.options.vrr_margin_pct});
   const double auto_source_fps = fps_of(video.frame_rate);
   // Un changement de palier : une ligne de journal avec sa raison. Le message à l'écran n'est dit qu'une fois
   // le palier tenu 3 s (pas de clignotement), et le palier tenu 6 s est retenu pour la prochaine lecture.
@@ -652,12 +656,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       const FrameStats& shown = session.stats();
       chain.live.auto_missed(host_now_us(), shown.missing - auto_missing_seen);
       auto_missing_seen = shown.missing;
-      if (chain.live.free_active()) {
-        // Images perdues : sautées à la présentation (arrivées trop tard) ou manquées (trous dans les pts).
-        const std::int64_t lost =
-            std::max(shown.missing - free_missing_seen, shown.dropped - free_dropped_seen);
-        chain.live.free_missed(host_now_us(), lost);
-      }
+      // Images perdues : la contre-pression du mode Rapide, sans celles de l'affichage (cadence_watch.h).
+      cadence.poll(chain.live, shown, host_now_us());
       // RIFE qui ne tient plus une image interpolée par paire : coupé, la carte rendue à SPAN (motion_cut.h).
       if (motion_guard.watch(chain, core::auto_limit_hz(known_hz, auto_cap()), fps_of(video.frame_rate),
                              host_now_us()))
@@ -669,8 +669,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         p.ui.controls().warn(i18n::ui_tr_format("Update {} available (Settings > General > Application)",
                                                 load_update_state(p.update_news->file).latest_version),
                              host_now_us());
-      free_missing_seen = shown.missing;
-      free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);
       show_auto();
     }
@@ -719,6 +717,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   finish_settings_writes(writer, p.settings_path, saved_settings());  // attente bornée (B30-05)
   p.quit = session.quit_asked();
   log_summary(session);
+  log->info("{}", cadence.summary());
   if (GpuTelemetry* const nvml = telemetry.get()) {
     // Énergie de la lecture : le compteur NVML relu au début et à la fin, à l'instant même (B11-14).
     const std::uint64_t energy_start_mj = telemetry.energy_start_mj();
