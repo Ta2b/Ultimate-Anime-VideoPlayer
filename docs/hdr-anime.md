@@ -266,13 +266,18 @@ suivi.
 - **Vérifier une image** : `--effect-mask-view` (essai, avec `--scene-map`) fait peindre le masque par la
   passe anime au lieu de l'image : l'image en gris sombre, les lumières (la carte des émetteurs, avant la
   part retenue) en rouge, l'effet sûr en vert, la marge retenue en bleu. Une lumière d'effet sort jaune,
-  une lumière retenue magenta, un décor sans lumière bleu ; sans masque, ni vert ni bleu. Chaque
-  instantané dit au journal le masque de son image, celui de l'écran ou celui du grade avant le warp
-  (« instantané … : masque des effets (grade avant le warp) de 60 × 34 tuiles, effet sûr sur … % d'entre
-  elles, marge des éclats retenue sur … % », ou « neutre » sans carte). Après un départ ou un saut, le
-  masque part du neutre et descend en 0,7 s : lancer la lecture une dizaine de secondes avant le moment
-  voulu. Premier essai du PC (19/11, #926, l'écran gradait, capture 2 s après le départ à 16:41) : l'image
-  de 16:43 sortait la même avec ou sans masque, sans qu'une capture puisse dire si la carte était là.
+  une lumière retenue magenta, un décor sans lumière bleu ; sans masque, ni vert ni bleu. La vue saute la
+  pile de LUT, qui la recolorait (deuxième essai du PC : une image verte, sans trace du masque). Chaque
+  instantané dit au journal son image et le masque de celle-ci, celui de l'écran ou celui du grade avant
+  le warp, retrouvé par son pts (« instantané … (image source à 16:20,042) : masque des effets (grade avant
+  le warp) de 60 × 34 tuiles, effet sûr sur … % d'entre elles, marge des éclats retenue sur … % », ou
+  « neutre » sans carte). Après un départ ou un saut, le masque part du neutre et descend en 0,7 s : lancer
+  la lecture une dizaine de secondes avant le moment voulu. Pour comparer deux lectures (avec et sans
+  `--no-effect-highlights`), `--pause-at=S` (essai) met en pause sur la première image source de pts S ou
+  après, la même d'une lecture à l'autre ; l'instantané se prend ensuite, en pause, et son pts le
+  confirme. Premier essai du PC (19/11, #926, l'écran gradait, capture 2 s après le départ à 16:41) :
+  l'image de 16:43 sortait la même avec ou sans masque, sans qu'une capture puisse dire si la carte était
+  là. Deuxième (#943) : la carte ne classait aucune tuile en effet (règle de la carte, reprise à part).
 
 Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintillement de plus, le temps du
 grade ne monte pas de plus de 0,3 ms, et le test à l'aveugle est gagné sur des scènes d'explosion et de

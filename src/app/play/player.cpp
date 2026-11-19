@@ -382,8 +382,10 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     PlayerUi& ui_;
     PlaceboScreen& screen_;
   } const release(**ui, **screen);
-  SnapshotPlan snapshot{
-      .path = options.snapshot, .at_us = options.snapshot_at_us, .frames = options.snapshot_frames};
+  SnapshotPlan snapshot{.path = options.snapshot,
+                        .at_us = options.snapshot_at_us,
+                        .frames = options.snapshot_frames,
+                        .pause_at_us = options.pause_at_us};
   std::size_t next_key = 0;
 
   // Les moteurs : settings.toml, choisis à l'écran de bienvenue au premier lancement.

@@ -159,7 +159,9 @@ class PlaceboSourceGrader final : public SourceGrader {
     effects_.source(source.epoch, source.effects);
     const bool on = grade_->set_effect_mask(&effects_.mask());
     effects_tally_.count(source.effects.has_value(), on, effects_.mask(), source.pts_us);
-    share_->note_effects(effect_summary(effects_.mask(), on));
+    EffectSummary seen = effect_summary(effects_.mask(), on);
+    seen.pts_us = source.pts_us;
+    share_->note_effects(seen);
     if (const auto& refused = grade_->effect_mask_refusal(); refused && !effects_refusal_noted_) {
       effects_refusal_noted_ = true;
       log_channel("app")->warn(

@@ -53,12 +53,13 @@ std::expected<void, Refusal> window(std::string_view text, PlayOptions& options)
 }
 
 // Les options à valeur, dans l'ordre où elles se cherchent (--snapshot-at avant --snapshot).
-constexpr std::array<std::string_view, 25> kValuedOptions{
+constexpr std::array<std::string_view, 26> kValuedOptions{
     "--model",       "--window",          "--start",           "--seconds",          "--fullscreen-after",
     "--stats",       "--snapshot-at",     "--snapshot-frames", "--snapshot",         "--keys",
     "--work-height", "--rife-model",      "--anime-contrast",  "--anime-saturation", "--anime-highlights",
     "--rife",        "--truehdr-peak",    "--data-dir",        "--bake-looks",       "--bench-level",
-    "--bench-out",   "--rife-calm-model", "--motion",          "--swap-mode",        "--vrr-margin"};
+    "--bench-out",   "--rife-calm-model", "--motion",          "--swap-mode",        "--vrr-margin",
+    "--pause-at"};
 
 // Les options qui ne donnent qu'un chemin.
 using PathMember = std::optional<std::filesystem::path> PlayOptions::*;
@@ -126,7 +127,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
 // clang-format off
-constexpr std::array<std::string_view, 50> kTrialOptions{
+constexpr std::array<std::string_view, 51> kTrialOptions{
     "--rife-image", "--ring-rgb10a2", "--no-ring-rgb10a2", "--hdr-metadata", "--no-hdr-metadata",
     "--probe-nvdec", "--no-probe-nvdec", "--shot-cuts", "--no-shot-cuts", "--one-lane", "--lanes",
     "--skip-held", "--anime-shots", "--no-anime-shots", "--fast-steady", "--smooth-drawings", "--ring-watcher",
@@ -136,7 +137,7 @@ constexpr std::array<std::string_view, 50> kTrialOptions{
     "--warp-l2", "--rife-hwc8", "--no-rife-hwc8", "--no-tfix-cache", "--scene-map", "--no-tfix-fused",
     "--no-effect-highlights", "--shot-plan", "--no-span-reuse", "--no-span-tiles", "--rife-native",
     "--pair-triage", "--span-tiles-check", "--gmfss-native", "--no-span-native", "--span-native-edges",
-    "--effect-mask-view"};
+    "--effect-mask-view", "--pause-at"};
 // clang-format on
 
 bool is_trial(std::string_view arg) {
@@ -393,6 +394,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           if (name == "--seconds") options.stop_after_us = *us;
           if (name == "--fullscreen-after") options.fullscreen_after_us = *us;
           if (name == "--snapshot-at") options.snapshot_at_us = *us;
+          if (name == "--pause-at") options.pause_at_us = *us;
         }
         break;
       }

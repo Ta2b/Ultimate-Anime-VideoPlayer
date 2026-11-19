@@ -92,6 +92,9 @@ struct PlayOptions {
   std::optional<std::filesystem::path> stats;  // --stats : une ligne par image présentée
   std::optional<std::filesystem::path> snapshot;  // --snapshot : la fenêtre en PPM, une fois
   std::int64_t snapshot_at_us = 3'000'000;
+  // --pause-at=S (essai) : la lecture se met en pause sur la première image source (pas un instant
+  // interpolé) de pts S ou après : la même image d'une lecture à l'autre, pour comparer deux instantanés.
+  std::optional<std::int64_t> pause_at_us;
   int snapshot_frames = 1;  // --snapshot-frames=N : N présentations de suite, numérotées  // --snapshot-at=S
                             // : après S s de lecture (ou de construction)
   // --keys=S:touche,… : touches pressées d'office à ces instants (essais sans clavier), par

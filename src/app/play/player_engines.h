@@ -17,6 +17,7 @@
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_shots.h"
+#include "app/play/controls.h"
 #include "app/play/display_edid.h"
 #include "app/play/drba_model.h"
 #include "app/play/engine_install.h"
@@ -69,6 +70,14 @@ struct SnapshotPlan {
     if (!path || host_now_us() - since_us < at_us) return false;
     screen.snapshot_next(*path, frames);
     path.reset();
+    return true;
+  }
+  // --pause-at : vrai une fois, quand la lecture atteint son image (pause_reached) ; l'appelant la met en
+  // pause.
+  std::optional<std::int64_t> pause_at_us;
+  bool pause_due(const ControlsView& view) {
+    if (!pause_at_us || !pause_reached(view, *pause_at_us)) return false;
+    pause_at_us.reset();
     return true;
   }
 };
