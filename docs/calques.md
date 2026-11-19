@@ -23,12 +23,18 @@ arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
   240 paires ; plus de plaque dès qu'une paire perd la caméra, jusqu'à la paire sûre suivante.
 
 Sans carte (AMD, Intel, Turing, NVOF refusé, pas encore relue), ou dès qu'elle doute de la paire (coupe, fondu,
-caméra non ajustée, résidu au-delà de 0,5 pixel de travail, moins de 5 % de décor), l'image est exactement celle
+caméra non ajustée ou non affinée par Lucas-Kanade, résidu au-delà de 0,5 pixel de travail, moins de 5 % de
+décor), l'image est exactement celle
 d'aujourd'hui. Un refus du backend (Vulkan n'a pas le noyau) coupe les deux pour la lecture, une ligne au
 journal.
 
 ## Comment
 
+- La caméra : celle que Lucas-Kanade affine sur les lumas de la paire (`SceneMotion::camera_refined`,
+  `kernels/spec/scene_camera.h`, porte 2.1 : 97 % des paires sous 0,5 pixel). L'affine de NVOF seule (affinage
+  fini trop tard, pas lancé) invente un cisaillement d'environ 2 pixels sur les panoramiques lents : la paire
+  n'a alors ni calques ni plaque (« caméra non affinée » au journal). La carte compte en coordonnées continues
+  (centre du pixel i en i + ½), les calques en indices : `index_camera`.
 - Décision par paire, sur l'hôte (`src/app/play/layer_plan.h`) : tuiles décor sûres (Background à confiance
   0,5 ou plus, ou Uncertain qui ne change pas), puis tout le chemin d'un dessin, d'un effet ou d'une tuile
   incertaine qui change (de sa tuile dans a à sa tuile dans b, élargi d'une tuile) est retiré.
@@ -51,13 +57,46 @@ plaque : K clés, P sources reprises`. Profil GPU : étapes « calques » et « 
 
 ## Essai (avec le reste, à la fin)
 
-Pas de banc à part : les deux fonctions s'essaient avec les autres usages du flux NVIDIA, sur le binaire
-`linux-release` d'un nouveau paquet Linux (`src/gpu`, `src/kernels` changent l'empreinte TensorRT).
+Pas de banc à part : un panoramique de 20 s, calques et plaque éteints, puis calques, puis calques et plaque,
+deux tours (ABAB), sur le binaire `linux-release` d'un nouveau paquet Linux (`src/gpu`, `src/kernels` changent
+l'empreinte TensorRT). L'export n'a jamais de calques : l'essai se fait en lecture, sur une RTX 30 ou après.
 
-- Tests : `kirari_backend_tensorrt_tests "[layers]"` (le noyau contre la référence, sur une RTX),
-  `kirari_kernels_tests "[layers]"`, `kirari_app_tests "[layers]"`.
-- À regarder, lancé avec `--scene-map` : panoramiques, zooms et travellings avec `layers = true` puis
-  `background_plate = true` ; le journal de fin dit la part de paires avec calques, le profil GPU le coût des
-  étapes « calques » et « plaque de décor ».
-- Si le décor ondule encore ou qu'un personnage s'efface : les seuils de `layer_plan.h` et les gardes de
-  `layers.h` se règlent ; si le décor sort du modèle de caméra (parallaxe), les calques restent éteints.
+Tests d'abord : `kirari_backend_tensorrt_tests "[layers]"` (le noyau contre la référence),
+`kirari_kernels_tests "[layers]"`, `kirari_app_tests "[layers]"`.
+
+```sh
+# Trois dossiers de réglages, copies des vrais (--data-dir : moteurs et modèles restent partagés).
+D=~/.local/share/kirari; E=/tmp/calques; PANO=panoramique.mkv; S=0  # l'extrait et sa seconde de début
+for v in eteint calques plaque; do
+  mkdir -p $E/$v
+  for f in settings.toml user.toml play.toml; do [ -f "$D/$f" ] && cp "$D/$f" $E/$v/; done
+  sed -i '/^layers = /d;/^background_plate = /d' $E/$v/play.toml
+done
+sed -i '/^\[interpolation\]/a layers = true' $E/calques/play.toml
+sed -i '/^\[interpolation\]/a layers = true\nbackground_plate = true' $E/plaque/play.toml
+# RIFE mouvement ×2 (les calques ne composent que ses warps), 24 présentations de suite à 10 s.
+for t in 1 2; do for v in eteint calques plaque; do
+  kirari --debug --scene-map --motion=rife --rife=2 --mute --no-resume --fullscreen --start=$S --seconds=20 \
+    --data-dir=$E/$v --stats=$E/$v/t$t.stats --snapshot=$E/$v/t$t.ppm --snapshot-at=10 --snapshot-frames=24 $PANO
+  cp $E/$v/kirari.log $E/$v/t$t.log
+done; done
+grep -h "calques\|plaque\|carte de la scène :\|profil GPU · .*SPAN" $E/*/t*.log
+```
+
+À relever :
+
+- `calques : N paires avec calques (X % de décor en moyenne), M images composées ; sans : …` : sur un
+  panoramique, au moins la moitié des paires avec calques ; les raisons de « sans » (« caméra non affinée »,
+  « décor hors du modèle de caméra » : le résidu, « trop peu de décor »). Avec la plaque : `K clés, P sources
+  reprises` (0 clé : le warp n'est pas après SPAN, la plaque ne tourne pas ; le dire).
+- `carte de la scène : … affinée sur …, (… affinages trop tard …)` : les paires où Lucas-Kanade arrive trop
+  tard n'ont pas de calques.
+- Profil GPU : les étapes « calques » et « plaque de décor » sous 0,3 ms par appel en 4K ; le SPAN de la
+  plaque, une fois par clé.
+- `--stats` : pas plus d'images en retard que la variante éteinte.
+- Les 24 images de chaque variante côte à côte : les traits du décor n'ondulent plus et les aplats ne bavent
+  plus au bord des personnages (calques) ; le décor ne scintille plus d'une image à l'autre (plaque) ; aucun
+  personnage effacé ni doublé, aucune couture de tuile.
+
+Si le décor ondule encore ou qu'un personnage s'efface : les seuils de `layer_plan.h` et les gardes de
+`layers.h` se règlent ; si le décor sort du modèle de caméra (parallaxe), les calques restent éteints.
