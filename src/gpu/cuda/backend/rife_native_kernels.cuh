@@ -11,7 +11,8 @@
 // (pente négative par canal : LeakyRelu, PRelu, Relu). En pas 2, la tuile d'entrée est rangée colonnes paires
 // puis impaires : les 16 lignes d'un fragment A restent des pixels voisins en mémoire partagée, sans conflit
 // de banques. Quand la grille ne remplit pas la carte (les blocs grossiers), K est découpé (ksplit) : chaque
-// bloc somme une part des prises × tranches en f32 dans partial, et reduce_kernel finit la couche.
+// bloc somme une part des prises × tranches en f32 dans partial, et reduce_kernel finit la couche. Le GridNet
+// de GMFSS (docs/gmfss-natif.md) ajoute un PReLU à la lecture (in_slope), sur la tuile en mémoire partagée.
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
@@ -48,6 +49,7 @@ struct Params {
   int tiles = 1;             // tuiles de sortie par phase
   int ksplit = 1;            // parts de K (blockIdx.z = paquet · ksplit + part)
   float* partial = nullptr;  // ksplit > 1 : [ksplit][oh · ow][canaux de la grille z], f32
+  float in_slope = 1.F;      // PReLU de l'entrée, appliqué à la tuile chargée (1 : aucun) ; l'image aussi
 };
 
 // Hauteur et largeur de la tuile d'entrée (halo compris), et octets de mémoire partagée.
@@ -174,6 +176,22 @@ __device__ __forceinline__ void load_nhwc(__half* s, const Params& p, int c0, in
     const __half* from = ok ? p.in + (static_cast<long>(y) * p.iw + x) * p.in_ld + c0 + c * 8 : p.in;
     const int at = r * IC + smem_col<S, IC>(col);
     cp_async16(base + static_cast<std::uint32_t>((at * kLds + c * 8) * 2), from, ok);
+  }
+}
+
+// PReLU de pente a sur les kPixels pixels de la tranche chargée (pas Kc + 8), en place : le GridNet de GMFSS
+// lit une même somme sous deux pentes (gmfss_native_net.cu). Le halo hors de l'image reste nul.
+template <int Kc, int kPixels>
+__device__ __forceinline__ void prelu_tile(__half* s, float a) {
+  constexpr int kChunks = Kc / 8, kLds = Kc + 8;
+  for (int i = static_cast<int>(threadIdx.x); i < kPixels * kChunks; i += kThreads) {
+    const int q = i / kChunks, c = i - q * kChunks;
+    auto* v = reinterpret_cast<__half2*>(s + q * kLds + c * 8);
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+      const float2 f = __half22float2(v[j]);
+      v[j] = __floats2half2_rn(f.x < 0.F ? f.x * a : f.x, f.y < 0.F ? f.y * a : f.y);
+    }
   }
 }
 
@@ -442,6 +460,10 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
       cp_async_wait_all();
     }
     __syncthreads();
+    if (p.in_slope != 1.F) {
+      prelu_tile<Kc, G::kIR * G::kIC>(s, p.in_slope);
+      __syncthreads();
+    }
     const int t0 = u0 > q * kTaps ? u0 - q * kTaps : 0;
     const int t1 = u1 - q * kTaps < kTaps ? u1 - q * kTaps : kTaps;
     accumulate<Kc, CT, KH, S, Rows, Acc16>(acc, s, w, q, kcs, t0, t1, warp, lane);

@@ -104,4 +104,20 @@ TEST_CASE("TemporalFix fusionné (TensorRT) : la clé d'artefact se relit, une c
   CHECK_FALSE(tfix_fused_artifact_key_parse("drba-fused:1088x1920:4:enc,b0,b1,b2"));
 }
 
+TEST_CASE("GMFSS natif (TensorRT) : la clé d'artefact se relit, une clé abîmée est refusée",
+          "[gpu][fused_keys]") {
+  const GmfssFusedKey key{.height = 384, .width = 640, .engines = {"fusion.engine", "ifnet.engine"}};
+  const std::string text = gmfss_fused_artifact_key(key);
+  CHECK(text == "gmfss-fused:384x640:fusion.engine,ifnet.engine");
+  const auto parsed = gmfss_fused_artifact_key_parse(text);
+  REQUIRE(parsed);
+  CHECK(parsed->height == 384);
+  CHECK(parsed->width == 640);
+  CHECK(parsed->engines == key.engines);
+  CHECK_FALSE(gmfss_fused_artifact_key_parse("gmfss-fused:384x640:fusion"));        // l'IFNet manque
+  CHECK_FALSE(gmfss_fused_artifact_key_parse("gmfss-fused:380x640:fusion,ifnet"));  // pas un multiple de 32
+  CHECK_FALSE(gmfss_fused_artifact_key_parse("gmfss-fused:384x640:fusion,../ifnet"));  // hors du cache
+  CHECK_FALSE(gmfss_fused_artifact_key_parse("tfix-fused:encoder:1080x1920:0:enc"));
+}
+
 }  // namespace kirari::gpu::cuda

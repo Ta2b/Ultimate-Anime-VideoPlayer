@@ -140,4 +140,33 @@ std::optional<TfixFusedKey> tfix_fused_artifact_key_parse(std::string_view text)
   return key;
 }
 
+constexpr std::string_view kGmfssPrefix = "gmfss-fused:";
+
+std::string gmfss_fused_artifact_key(const GmfssFusedKey& key) {
+  std::string engines;
+  for (const std::string& engine : key.engines)
+    engines += std::format("{}{}", engines.empty() ? "" : ",", engine);
+  return std::format("{}{}x{}:{}", kGmfssPrefix, key.height, key.width, engines);
+}
+
+std::optional<GmfssFusedKey> gmfss_fused_artifact_key_parse(std::string_view text) {
+  if (!text.starts_with(kGmfssPrefix)) return std::nullopt;
+  text.remove_prefix(kGmfssPrefix.size());
+  const std::vector<std::string_view> fields = split(text, ':');
+  if (fields.size() != 2) return std::nullopt;
+  const std::vector<std::string_view> size = split(fields[0], 'x');
+  if (size.size() != 2) return std::nullopt;
+  const auto height = parse_int(size[0]);
+  const auto width = parse_int(size[1]);
+  if (!height || !width || *height < 32 || *width < 32 || *height % 32 != 0 || *width % 32 != 0)
+    return std::nullopt;
+  GmfssFusedKey key{.height = *height, .width = *width};
+  for (const std::string_view part : split(fields[1], ',')) {
+    if (!plain_file_name(part)) return std::nullopt;
+    key.engines.emplace_back(part);
+  }
+  if (key.engines.size() != 2) return std::nullopt;
+  return key;
+}
+
 }  // namespace kirari::gpu::cuda

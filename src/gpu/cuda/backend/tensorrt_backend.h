@@ -49,6 +49,7 @@ class SpanFp8Engine;
 class SceneFlow;
 class RifeFusedEngine;
 class DrbaFusedEngine;
+class GmfssFusedEngine;
 struct IngestParams;
 struct WarpBlendParams;
 
@@ -242,6 +243,13 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::unique_ptr<Engine>, Refusal> load_tfix_fused(const Artifact& artifact);
   std::expected<void, Refusal> enqueue_tfix_fused(Engine& engine, std::span<const Tensor> inputs,
                                                   std::span<Tensor> outputs);
+  // La fusion de GMFSS au GridNet natif (tensorrt_gmfss_fused.cpp) : un manifeste « .gmfssfused », la
+  // fusion entière et son IFNet construits par trtexec, chargés ensemble, le natif essayé si demandé.
+  std::expected<Artifact, Refusal> build_gmfss_fused(const ModelSpec& model, const ShapeSet& shapes,
+                                                     Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_gmfss_fused(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_gmfss_fused(GmfssFusedEngine& engine, std::span<const Tensor> inputs,
+                                                   std::span<Tensor> outputs);
   // Les réglages de trtexec de cet appareil (build, build_rife_fused, build_drba_fused).
   prepare::TrtexecConfig trtexec_config() const;
   // La voie lane le temps d'une portée.
@@ -333,10 +341,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool filtered_warp_ = false;
   // kTrialL2Keep (--l2-keep, essai) : l'encodage gardé de RIFE fusionné tenu en L2.
   bool l2_keep_ = false;
-  bool span_native_ = false;  // bords du SPAN FP8 par les noyaux du FP16 natif (kTrialSpanNative)
-  bool rife_hwc8_ = false;    // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
-  bool rife_native_ = false;  // encodeur et blocs du RIFE fusionné par les noyaux natifs (kTrialRifeNative)
-  bool warp_l2_ = false;      // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
+  bool span_native_ = false;   // bords du SPAN FP8 par les noyaux du FP16 natif (kTrialSpanNative)
+  bool rife_hwc8_ = false;     // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
+  bool rife_native_ = false;   // encodeur et blocs du RIFE fusionné par les noyaux natifs (kTrialRifeNative)
+  bool gmfss_native_ = false;  // GridNet de la fusion de GMFSS par les noyaux natifs (kTrialGmfssNative)
+  bool warp_l2_ = false;       // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
   std::optional<std::size_t> l2_persisting_;  // persisting_l2, une fois
   std::filesystem::path trtexec_;
   std::string trtexec_sha256_;  // relevé à create (A05-05)

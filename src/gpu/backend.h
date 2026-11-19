@@ -112,7 +112,9 @@ namespace kirari::gpu {
 // le bit sans le dire.
 // 53 : KernelOps::motion_camera (le mouvement d'une caméra affine : le tri des paires de GMFSS,
 // kernels/spec/motion_camera.h).
-inline constexpr int kBackendAbi = 53;
+// 54 : kTrialGmfssNative (le GridNet de la fusion de GMFSS par nos noyaux, manifestes « .gmfssfused »,
+// docs/gmfss-natif.md) : un module d'avant ne saurait pas construire le manifeste.
+inline constexpr int kBackendAbi = 54;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -150,6 +152,11 @@ inline constexpr std::uint32_t kTrialSpanNative = 1U << 5U;
 // chargement ; les blocs TensorRT se construisent alors en E/S HWC8. Lu par le backend TensorRT ; sans effet
 // ailleurs.
 inline constexpr std::uint32_t kTrialRifeNative = 1U << 6U;
+// --gmfss-native : le GridNet de la fusion de GMFSS par nos noyaux (docs/gmfss-natif.md), son IFNet restant
+// un moteur TensorRT, gardé s'il tient 45 dB contre la fusion TensorRT entière à l'essai au chargement. Le
+// lecteur passe alors un manifeste « .gmfssfused » à la place de la fusion. Lu par le backend TensorRT ; sans
+// effet ailleurs.
+inline constexpr std::uint32_t kTrialGmfssNative = 1U << 7U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le
