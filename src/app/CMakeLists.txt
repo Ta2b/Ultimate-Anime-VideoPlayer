@@ -10,7 +10,7 @@ kirari_add_module(app
 
 
     play/external_subtitles.cpp play/frame_queue.cpp play/frame_stats.cpp play/gpu_telemetry.cpp play/input.cpp play/motion_model.cpp play/motion_cut.cpp play/options.cpp play/options_usage.cpp play/osd_text.cpp play/pipeline.cpp
-    play/placebo_export.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_cache.cpp play/placebo_present.cpp play/placebo_feedback.cpp play/placebo_wayland.cpp play/wayland_activation.cpp play/wayland_output.cpp play/ring_watcher.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_source_grade.cpp play/placebo_offscreen.cpp play/placebo_screen.cpp
+    play/placebo_export.cpp play/placebo_export_grade.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_cache.cpp play/placebo_present.cpp play/placebo_feedback.cpp play/placebo_wayland.cpp play/wayland_activation.cpp play/wayland_output.cpp play/ring_watcher.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_source_grade.cpp play/placebo_offscreen.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/present_watch.cpp play/player.cpp play/player_engines.cpp play/player_run.cpp play/player_after.cpp play/latest_writer.cpp play/loop_wait.cpp
 
     play/anime_shots.cpp play/gpu_profile_out.cpp play/display_contract.cpp play/cut_book.cpp play/shot_plan.cpp play/pair_marks.cpp play/effect_book.cpp play/user_keys.cpp play/resume.cpp

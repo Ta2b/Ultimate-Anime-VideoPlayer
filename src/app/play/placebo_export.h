@@ -152,6 +152,9 @@ class FrameExport {
   std::expected<void, Refusal> open_cuda(pl_gpu gpu, AVBufferRef* frames);
   // Le grade de setup.grade et sa cible. Refus : les hooks du grade ou une LUT ne se lisent pas.
   std::expected<void, Refusal> open_grade(pl_gpu gpu);
+  // Le grade dans graded_ (RVB, cible graded_color_, avec les hooks de params), puis graded_ encodé
+  // dans target sans hook : libplacebo pose les hooks OUTPUT après l'encodage YUV de la cible.
+  bool render_graded(const pl_frame& image, const pl_frame& target, const pl_render_params& params);
   void close_cuda(pl_gpu gpu);
   // Les tampons prêts copiés chacun dans une image du pool de l'encodeur, puis la plus ancienne
   // image copiée confiée.
@@ -176,6 +179,7 @@ class FrameExport {
   pl_renderer renderer_ = nullptr;
   std::optional<render::Grade> grade_;  // setup.grade posé : ses hooks après ceux d'Anime4K
   pl_color_space graded_color_{};       // la cible du grade : HDR10 ou BT.709
+  pl_tex graded_ = nullptr;             // l'image gradée en RVB, à la taille de sortie, avant son encodage YUV
   // Deux jeux de plans de sortie, l'un après l'autre : le rendu d'une image n'attend pas la relecture
   // de la précédente (file de transfert à part sur la plupart des GPU).
   static constexpr std::size_t kPlaneSets = 2;

@@ -19,7 +19,6 @@ extern "C" {
 
 #include "app/play/placebo_impl.h"
 #include "core/log.h"
-#include "render/display_model.h"
 
 namespace kirari::app::play {
 namespace {
@@ -196,32 +195,6 @@ std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboSc
   return out;
 }
 
-// Le grade de l'export, à lui (l'écran garde le sien) : ses paramètres, sa pile de LUT, la cadence exportée.
-// En PQ, la dernière passe compresse vers le pic du fichier comme la lecture vers celui de l'écran, au blanc
-// de référence du contenu (203 nits : le PQ passe tel quel, comme sous Windows).
-std::expected<void, Refusal> FrameExport::open_grade(pl_gpu gpu) {
-  if (!setup_.grade) return {};
-  auto grade = render::Grade::create(gpu);
-  if (!grade) return std::unexpected(std::move(grade.error()));
-  if (auto set = grade->set_looks(setup_.looks); !set) return std::unexpected(std::move(set.error()));
-  const render::GradeParams& params = *setup_.grade;
-  grade->set_params(params);
-  grade->set_video_fps(setup_.video_fps);
-  if (setup_.grade_pq) {
-    grade->set_kwin_match(
-        render::Grade::KwinMatch{.reference = render::kContentReferenceNits, .peak = params.peak});
-    graded_color_ = pl_color_space_hdr10;
-    graded_color_.hdr.max_luma = static_cast<float>(params.peak);
-    graded_color_.hdr.max_cll = static_cast<float>(params.peak);
-  } else {
-    graded_color_ = pl_color_space_bt709;  // BT.1886 : le grade SDR y prend l'exposant 2,4
-  }
-  grade_.emplace(std::move(*grade));
-  log_channel("export")->info("export : grade HDR anime, sortie {} (pic {:.0f} nits)",
-                              setup_.grade_pq ? "HDR10" : "SDR BT.709", params.peak);
-  return {};
-}
-
 std::expected<void, Refusal> FrameExport::open_cuda(pl_gpu gpu, AVBufferRef* frames) {
   if ((gpu->export_caps.buf & kCudaHandle) == 0)
     return refuse(RefusalCode::FeatureUnavailable, "tampons Vulkan non exportables vers CUDA");
@@ -284,6 +257,7 @@ FrameExport::~FrameExport() {
   for (auto& set : planes_) {
     for (pl_tex& tex : set) pl_tex_destroy(gpu, &tex);
   }
+  pl_tex_destroy(gpu, &graded_);
   pl_renderer_destroy(&renderer_);
 }
 
@@ -345,7 +319,11 @@ FrameExport::Converted FrameExport::render(const RingFrame& frame, std::span<con
   if (grade_) add(grade_->hooks());
   params.hooks = hooks.data();
   params.num_hooks = static_cast<int>(count);
-  const bool rendered = pl_render_image(renderer_, &image, &target, &params);
+  // Avec le grade, deux rendus : ses passes (OUTPUT) lisent du RVB, et libplacebo les pose après
+  // l'encodage YUV de la cible ; elles gradaient Y, Cb, Cr comme R, V, B (fonds bleutés devenus
+  // bruns, cheveux lavande devenus magenta). Le grade va donc dans une image RVB, encodée ensuite.
+  const bool rendered = grade_ ? render_graded(image, target, params)
+                               : pl_render_image(renderer_, &image, &target, &params);
   Converted out = given_back(std::nullopt);  // la copie lit les textures de sortie, plus le slot
   if (!rendered) out.failure = Refusal{RefusalCode::VendorCallFailed, "export : pl_render_image"};
   return out;
