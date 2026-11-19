@@ -277,7 +277,12 @@ b. **La garde des morceaux de la porte** : 60 dB contre TensorRT ne passait jama
    attendu sur le lite : l'encodeur natif (0,21 contre 0,52 ms), environ −0,3 ms ; à vérifier au PC, le
    verdict gardé se refait seul (l'empreinte des sources change).
 c. **Les blocs 0 à 2 de 4.25** restent à TensorRT (0,143, 0,104, 0,200 ms seuls contre 0,170, 0,119, 0,210 en
-   f16) : un lancement par bloc grossier entier (onze couches en un noyau, activations en mémoire partagée).
+   f16) : un lancement par bloc grossier entier (noyau persistant, barrière de grille entre les couches, les
+   sommes partielles de K découpé finies dans la même grille). Pas encore écrit : le gain dépend de ce qui
+   coûte entre deux couches, et en lecture la carte tourne à moins d'un cinquième d'occupation, horloges
+   basses. La séance PC qui suit la rc.1 le mesure ([`rife-seance-pc.md`](rife-seance-pc.md), étape 1) avec
+   `tools/rife/nsys_passe.py` : temps des petites grilles et écart juste avant elles, natif contre TensorRT.
+   Si l'écart pèse au moins le tiers, le noyau persistant ; sinon la forme des couches.
 d. **Les noyaux lourds du profil** : `glue_conv_kernel<4,16>` (0,52 ms à l'essai), `fused_glue<1,3>` (la colle de
    X_3, à la volée dans le bloc 3), `warp_blend` (0,90 ms, hors de la passe).
 e. **nsys refait** avec `--delay=15` pour l'occupation, après l'essai.
