@@ -22,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string_view>
 
 #include <libplacebo/colorspace.h>
 
@@ -38,13 +39,14 @@ namespace kirari::app::play {
 // Ce que l'écran applique à sa dernière présentation, publié pour le fil de l'agrandissement.
 struct SourceGradeState {
   // Le grade de la sortie ; rien : pas de grade avant le warp maintenant (grade coupé ou absent, sortie SDR,
-  // source HDR, netteté ou Anime4K en jeu).
+  // source HDR, Anime4K en jeu).
   std::optional<render::GradeParams> params;
   std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots> looks;
   std::optional<render::Grade::KwinMatch> kwin;
   pl_color_space source{};  // la couleur des images du ring
   pl_color_space target{};  // celle de la sortie : les images gradées y sont
   bool deband = false;      // débandage de libplacebo, sans grain (celui de l'écran sous le grade)
+  std::string_view off;     // sans params : pourquoi, pour le journal de fin du grade avant le warp
 };
 
 class SourceGradeShare {
@@ -57,10 +59,20 @@ class SourceGradeShare {
     const std::scoped_lock lock(mutex_);
     return state_;
   }
+  // L'autre sens : le masque des effets de la dernière source gradée, pour le journal d'un instantané.
+  void note_effects(const EffectSummary& seen) {
+    const std::scoped_lock lock(mutex_);
+    effects_ = seen;
+  }
+  EffectSummary effects() const {
+    const std::scoped_lock lock(mutex_);
+    return effects_;
+  }
 
  private:
   mutable std::mutex mutex_;
   SourceGradeState state_;
+  EffectSummary effects_;
 };
 
 // La source gradée : son époque, son pts (le journal de fin dit où voir le masque), et la note des éclats sur

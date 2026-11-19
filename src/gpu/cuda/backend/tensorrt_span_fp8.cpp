@@ -14,18 +14,6 @@
 namespace kirari::gpu::cuda {
 namespace {
 
-const char* sums_text(SpanNativeSums sums) {
-  switch (sums) {
-    case SpanNativeSums::F32:
-      return "f32";
-    case SpanNativeSums::Promoted:
-      return "promues (16 produits en f16 par mma, total en f32)";
-    case SpanNativeSums::F16:
-      break;
-  }
-  return "f16";
-}
-
 // Le FP8 sur Ada seulement ; le FP16 natif aussi sur RTX 50 (SpanFp8Net::supported_fp16_device).
 std::expected<void, Refusal> device_refusal(const cudaDeviceProp& properties, bool fp16) {
   const bool supported = fp16 ? SpanFp8Net::supported_fp16_device(properties.major, properties.minor)
@@ -71,11 +59,12 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   const std::optional<std::uint32_t> crc = span_fp8_artifact_crc(artifact.cache_key);
   if (!shape || !crc) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : clé d'artefact illisible");
   auto engine = SpanFp8Engine::load(artifact.path, *crc, static_cast<int>(shape->dims[2]),
-                                    static_cast<int>(shape->dims[3]), arena(), span_native_, span_promoted_);
+                                    static_cast<int>(shape->dims[3]), arena(), span_native_);
   if (!engine) return std::unexpected(std::move(engine.error()));
   if ((*engine)->fp16())
-    log(BackendLogLevel::Info, std::format("SPAN FP16 natif chargé : {}×{}, sommes {}", shape->dims[3],
-                                           shape->dims[2], sums_text((*engine)->sums())));
+    log(BackendLogLevel::Info,
+        std::format("SPAN FP16 natif chargé : {}×{}, sommes {}", shape->dims[3], shape->dims[2],
+                    (*engine)->sums() == SpanNativeSums::F32 ? "f32" : "f16"));
   else
     log(BackendLogLevel::Info,
         std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}{}", shape->dims[3], shape->dims[2],

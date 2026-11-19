@@ -183,6 +183,8 @@ struct PlaceboScreen::Impl {
   // L'instantané demandé (--snapshot), numéroté s'il y en a plusieurs ; un refus est écrit au journal.
   void take_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
                      const ImDrawData* drawn_ui);
+  // Ce que le masque des effets posait sur l'image de l'instantané (carte là ou non, part retenue).
+  void note_snapshot_effects(const std::string& name) const;
   std::string device_choice;  // la carte préférée à l'ouverture (B37-01), lue par libplacebo
   std::shared_ptr<spdlog::logger> channel;
   SDL_Window* window = nullptr;
@@ -295,7 +297,8 @@ struct PlaceboScreen::Impl {
   bool effects_refusal_noted = false;  // le refus de la passe du masque, journalisé une fois
   EffectTally effects_tally;           // les images gradées à l'écran, une fois chacune (journal de fin)
   std::int64_t effects_tally_pts = kNoPts;
-  int look_path_noted = -1;  // le chemin du look au journal (note_look_path) ; -1 : pas encore dit
+  bool effects_view = false;  // --effect-mask-view : le grade peint le masque (GradeParams::fx_view)
+  int look_path_noted = -1;   // le chemin du look au journal (note_look_path) ; -1 : pas encore dit
   void follow_effects(const ShowRequest& request);
   void take_frame_marks(const RingFrame* frame) {
     frame_debanded = frame != nullptr && frame->debanded;

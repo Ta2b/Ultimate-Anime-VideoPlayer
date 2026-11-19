@@ -18,8 +18,8 @@ slow, carte de coût), le banc mesure :
 - l'écart du décor au modèle, mesuré sur l'image (Lucas-Kanade sur les tuiles de décor, nvof_mesures.photo_residual :
   tuiles texturées dans les deux sens, sinon en travers des bords) et, quand l'image n'a pas 3 tuiles mesurables, sur
   les vecteurs NVOF (bruités d'environ 0,3 px, et pris par un personnage lent) ;
-- quatre pistes pour le modèle de caméra, jugées chacune comme la porte (nvof_mesures.variants) : nvof, traits, lk
-  (affinée par Lucas-Kanade global), traits_lk ;
+- cinq pistes pour le modèle de caméra, jugées chacune comme la porte (nvof_mesures.variants) : nvof, traits, lk
+  (affinée par Lucas-Kanade global), traits_lk, lk_bords (lk, décor jugé en travers des bords) ;
 - des tuiles de 32 px (en 1080p) classées décor, dessin ou incertain, et leur stabilité d'une paire à l'autre ;
 - sur les panoramiques, le mode pyramide (--pyramide 360:720) : NVOF en 360p, caméra ajustée, puis ce mouvement
   passé en indices externes (grille 8) à la passe 720p ; porte, résidu et part du décor avec et sans, par vitesse.
@@ -46,7 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from nvof_mesures import (at_cells, camera, decode, fit_pair, hint_field, moving_pairs, run_tool,  # noqa: E402
                           texture, tiles, variants, warp_gain)
 
-PISTES = ("nvof", "traits", "lk", "traits_lk")
+PISTES = ("nvof", "traits", "lk", "traits_lk", "lk_bords")
 MESURES = ("tuiles", "bords", "vecteurs")
 
 GATE_PX, GATE_SHARE, GATE_PAIRS, MOVING_PX = 0.5, 0.4, 0.9, 0.5
@@ -235,7 +235,9 @@ def report(results, times, info, clips, ref, pyr=None, levels=None):
     L += ["", "## Pistes du modèle de caméra (même critère, mêmes paires)", "",
           "nvof : l'affine NVOF ; traits : ajustée sur les blocs de traits seuls (sans le grain) ; lk : l'affine NVOF "
           "affinée par Lucas-Kanade global (7 × 7 puis 3 × 3, Huber), décor repris avec elle ; traits_lk : l'affine "
-          "des traits affinée de même, décor repris sur les traits. Toutes jugées comme la porte (image, sinon "
+          "des traits affinée de même, décor repris sur les traits ; lk_bords : lk, un bloc texturé dans un seul sens "
+          "jugé en travers de son bord, les blocs que la caméra sort de l'image non jugés. Toutes jugées comme la "
+          "porte (image, sinon "
           "vecteurs). Par case : bonnes / mobiles, la part pour les caméras de 0,5 à 15 px, et la mesure "
           "(tuiles / bords / vecteurs).", "", "| Grille | Hauteur | " + " | ".join(PISTES) + " |",
           "|---|---|" + "---:|" * len(PISTES)]
@@ -274,6 +276,17 @@ def report(results, times, info, clips, ref, pyr=None, levels=None):
 
 # ---------------------------------------------------------------------------------------------------------------
 
+def keep(folder, name, frames, pairs, flows, grid, height):
+    """NOM.npz : lumas des images des paires, flux NVOF (S10.5, comme nvof_dump les rend) et coûts, pour rejouer
+    nvof_mesures hors ligne sans le PC."""
+    os.makedirs(folder, exist_ok=True)
+    index = sorted({j for k in pairs for j in (k, k + 1)})
+    np.savez_compressed(os.path.join(folder, f"{name}.npz"), index=np.array(index), frames=frames[index],
+                        pairs=np.array(pairs), grid=grid, height=height,
+                        flows=np.stack([np.rint(flows[k][0] * 32).astype(np.int16) for k in pairs]),
+                        costs=np.stack([flows[k][1] for k in pairs]))
+
+
 def parse_clip(spec):
     typ, _, rest = spec.partition("=")
     if not rest:
@@ -295,6 +308,9 @@ def main():
     p.add_argument("--pyramide", default="360:720",
                    help="BAS:HAUT, passe basse dont la caméra guide la passe haute (panoramiques) ; vide : sans")
     p.add_argument("--vues", type=int, default=4, help="vues PNG par extrait")
+    p.add_argument("--garder", action="store_true",
+                   help="sauve images, flux et coûts des panoramiques (configuration de référence) dans SORTIE/flux, "
+                        "pour régler le banc hors ligne")
     p.add_argument("--sortie", required=True)
     args = p.parse_args()
 
@@ -358,6 +374,8 @@ def main():
                         row["variantes"] = variants(frames[k], frames[k + 1], flow, cost, cls, grid, height, fit)
                     rows.append(row)
                 slot["paires"][name] = rows
+                if args.garder and key == ref and typ == "panoramique":
+                    keep(os.path.join(args.sortie, "flux"), name, frames, pairs, flows, grid, height)
                 print(f"{name} : grille {grid}, {height}p, {len(rows)} paires", file=sys.stderr, flush=True)
         if levels and typ == "panoramique" and pairs:
             try:

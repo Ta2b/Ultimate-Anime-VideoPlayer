@@ -221,8 +221,9 @@ std::optional<std::string> effect_tally_line(std::string_view where, const Effec
   if (tally.noted() == 0) return std::nullopt;
   std::string seen;
   for (const EffectTally::Moment& m : tally.moments()) {
-    if (m.held <= 0.0) continue;
-    seen += std::format("{}{} ({:.0f} %)", seen.empty() ? "" : ", ", clock_of(m.pts_us), m.held * 100.0);
+    if (m.effect <= 0.0) continue;
+    seen += std::format("{}{} (effet {:.0f} %, retenue {:.0f} %)", seen.empty() ? "" : ", ",
+                        clock_of(m.pts_us), m.effect * 100.0, m.held * 100.0);
   }
   const double share = 100.0 * static_cast<double>(tally.masked()) / static_cast<double>(tally.images());
   return std::format(
@@ -234,7 +235,8 @@ std::optional<std::string> effect_tally_line(std::string_view where, const Effec
 }
 
 void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
-  const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
+  std::optional<render::GradeParams> params = grade_for(grade_choice, target);
+  if (params) params->fx_view = effects_view ? 1.0 : 0.0;
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
   if (grade && params) {
@@ -374,11 +376,19 @@ void PlaceboScreen::Impl::ready_grade(const RingFrame* frame) {
 }
 
 // Le grade avant le warp suit l'écran, toujours là où il s'applique : sur une sortie HDR10 gradée, sans
-// netteté ni Anime4K (qui passent avant le grade, sur l'image agrandie par l'affichage).
+// Anime4K (il agrandit la source SDR avant le grade, et une image déjà gradée lui arriverait en PQ). La
+// netteté ne l'écarte pas : elle reste à l'écran, sur l'image agrandie par l'affichage, après le grade et en
+// valeurs PQ comme pour toute source HDR (render/sharpen.h).
 void PlaceboScreen::Impl::publish_source_grade(const pl_color_space& target) {
   SourceGradeState state;
   const bool pq = target.transfer == PL_COLOR_TRC_PQ;
-  if (grade && pq && graded(target) && sharpness == 0 && !anime4k) {
+  if (!grade || !graded(target)) {
+    state.off = "pas de grade sur cette sortie";
+  } else if (!pq) {
+    state.off = "sortie SDR";
+  } else if (anime4k) {
+    state.off = "Anime4K";
+  } else {
     state.params = grade->params();
     state.looks = grade->shared_looks();
     state.kwin = kwin_applied;
@@ -417,6 +427,7 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   render::GradeParams params = s.grade->params();
   params.black_lo = 0.0;  // le vrai noir se cale sur ce qui sort sans lui
   params.black_hi = 0.0;
+  params.fx_view = 0.0;  // la vue du masque n'est pas l'image que le vrai noir mesure
   // P3.61 : la rampe passe aussi par la pile de LUT, que le vrai noir suit à l'écran ; mesurée sans elle, ses
   // seuils écrasaient une seconde fois les huit premières marches. Les mêmes LUT, aux mêmes intensités.
   // Partagées avec l'écran et comparées par identité (C41-05) : ni copie ni comparaison de 8 Mo à chaque

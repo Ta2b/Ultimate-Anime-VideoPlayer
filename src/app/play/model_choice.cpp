@@ -5,6 +5,8 @@
 #include <system_error>
 #include <utility>
 
+#include "app/play/paths.h"
+#include "app/play/player.h"
 #include "core/dir_entries.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
@@ -113,6 +115,27 @@ PrecisionTier model_tier(const std::optional<std::filesystem::path>& model) {
 TierSupport sibling_tiers(const std::filesystem::path& model, bool fp8_engine) {
   return TierSupport{.performance = fp8_engine && tier_variant(model, PrecisionTier::Performance) != model,
                      .quality = tier_variant(model, PrecisionTier::Quality) != model};
+}
+
+std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
+                                                     const std::optional<ModelChoice>& rife) {
+  std::vector<std::filesystem::path> dirs;
+  const auto add = [&dirs](const std::filesystem::path& dir) {
+    if (!dir.empty() && std::ranges::find(dirs, dir) == dirs.end()) dirs.push_back(dir);
+  };
+  if (rife) add(rife->path.parent_path());
+  for (const std::filesystem::path& candidate : default_rife_candidates(paths.home, paths.models))
+    add(candidate.parent_path());
+  // Hors du paquet : les modèles rangés dans le dossier des données (~/.local/share/kirari/models/rife, ou
+  // rife comme tools/fp8/build_interp_fp8.sh), puis celui que tools/release/fetch-models.sh remplit pour les
+  // tests de moteurs (~/kirari/models/rife, tests/CMakeLists.txt). Un lecteur lancé depuis l'arbre de
+  // construction n'a pas de models/ à côté de lui : il trouvait RIFE chez AnimeJaNai, jamais DistilDRBA.
+  if (const std::filesystem::path data = paths::data_root(paths); !data.empty()) {
+    add(data / "models" / "rife");
+    add(data / "rife");
+  }
+  if (!paths.home.empty()) add(paths.home / "kirari" / "models" / "rife");
+  return dirs;
 }
 
 }  // namespace kirari::app::play

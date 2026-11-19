@@ -1,6 +1,6 @@
 #pragma once
 // Noyaux du SPAN FP16 natif (lot C du chantier AnimeJaNai, docs/span-native16.md), écrits sans CUTLASS : une
-// seule famille de convolutions, mma.sync m16n8k16 FP16 avec sommes en f16, en f32 ou promues (Acc).
+// seule famille de convolutions, mma.sync m16n8k16 FP16 avec sommes en f16 ou en f32 (Acc).
 //
 // Un bloc de 4 warps calcule une tuile de kTH × kTW pixels de sortie et toutes les colonnes. La tuile
 // d'entrée, halo compris, est copiée une fois en mémoire partagée par cp.async (zéros hors de l'image), au
@@ -107,11 +107,10 @@ __device__ __forceinline__ void ldmatrix4(std::uint32_t (&a)[4], std::uint32_t a
 
 // Les sommes d'une convolution :
 //   kF16 : en f16, le débit plein des tensor cores des GeForce ;
-//   kF32 : en f32, la moitié de ce débit : le f32 du cran Qualité y bute sur le calcul ;
-//   kPromoted : chaque mma somme ses 16 produits en f16 depuis zéro, et ce résultat s'ajoute en f32. Le débit
-//     du f16 (plus quatre conversions et quatre additions par mma, hors des tensor cores) ; un seul arrondi
-//     f16 par somme de 16 produits, au lieu d'un à chaque pas de la somme entière (576 produits en 3×3).
-enum class Acc : int { kF16, kF32, kPromoted };
+//   kF32 : en f32, la moitié de ce débit : le f32 du cran Qualité y bute sur le calcul.
+// Promues (chaque mma en f16 depuis zéro, ajoutée en f32), elles ont perdu au banc : 14,39 ms et 71,5 dB
+// contre 14,74 ms et 77,9 dB en f32 (docs/span-native16.md, « Sommes promues »).
+enum class Acc : int { kF16, kF32 };
 
 __device__ __forceinline__ float2 unpack_half2(std::uint32_t bits) {
   __half2 v;
@@ -119,7 +118,7 @@ __device__ __forceinline__ float2 unpack_half2(std::uint32_t bits) {
   return __half22float2(v);
 }
 
-// Accumulateur d'une tuile m16n8 : 2 mots (4 demi-flottants) en f16, 4 flottants en f32 ou promu.
+// Accumulateur d'une tuile m16n8 : 2 mots (4 demi-flottants) en f16, 4 flottants en f32.
 template <Acc A>
 struct Frag;
 template <>
@@ -146,23 +145,6 @@ struct Frag<Acc::kF32> {
   }
   __device__ __forceinline__ float2 pair(int h) const { return make_float2(r[2 * h], r[2 * h + 1]); }
 };
-template <>
-struct Frag<Acc::kPromoted> {
-  float r[4];
-  __device__ __forceinline__ void clear() { r[0] = r[1] = r[2] = r[3] = 0.F; }
-  __device__ __forceinline__ void mma(const std::uint32_t (&a)[4], std::uint32_t b0, std::uint32_t b1) {
-    std::uint32_t d0 = 0U, d1 = 0U;
-    asm("mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%8};\n"
-        : "=r"(d0), "=r"(d1)
-        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1), "r"(0U));
-    const float2 lo = unpack_half2(d0), hi = unpack_half2(d1);
-    r[0] += lo.x;
-    r[1] += lo.y;
-    r[2] += hi.x;
-    r[3] += hi.y;
-  }
-  __device__ __forceinline__ float2 pair(int h) const { return make_float2(r[2 * h], r[2 * h + 1]); }
-};
 
 // Deux valeurs en FP16, bornées au plus grand fini : une somme bornée (sums) plus son biais, ou la porte, ne
 // sort pas en infini.
@@ -172,12 +154,11 @@ __device__ __forceinline__ __half2 to_half2(float lo, float hi) {
 }
 
 // Deux sommes de l'accumulateur (ligne g ou g + 8, pair). En f16, une somme débordée, infinie ou NaN (un
-// débordement des deux signes), est bornée comme acc_value du FP8 : ±65504, NaN à 0 ; hit le note. Promue,
-// seule une somme de 16 produits peut déborder (en f16) : la somme f32 en devient infinie, bornée de même.
+// débordement des deux signes), est bornée comme acc_value du FP8 : ±65504, NaN à 0 ; hit le note.
 template <Acc A>
 __device__ __forceinline__ float2 sums(const Frag<A>& frag, int h, bool& hit) {
   float2 s = frag.pair(h);
-  if constexpr (A != Acc::kF32) {
+  if constexpr (A == Acc::kF16) {
     if (!isfinite(s.x) || !isfinite(s.y)) {
       hit = true;
       s.x = isnan(s.x) ? 0.F : fmaxf(fminf(s.x, 65504.F), -65504.F);
@@ -379,8 +360,7 @@ __device__ __forceinline__ void gate(const Frag<A> (&acc)[kMF][C / 8], __half* o
     const int q0 = (warp * kRows + (f >> 1)) * kTW + 16 * (f & 1) + g;
 #pragma unroll
     for (int np = 0; np < kNP; ++np) {
-      // Promue, la 1×1 somme en f32 : 1/9 d'une 3×3 au plus, sans les sorties de passage du mode promu.
-      Frag<A == Acc::kPromoted ? Acc::kF32 : A> d[2];
+      Frag<A> d[2];
       d[0].clear();
       d[1].clear();
 #pragma unroll
@@ -433,15 +413,8 @@ __device__ __forceinline__ void plain(const Frag<A> (&acc)[kMF][Cout / 8], __hal
 }
 
 // Une convolution entière. Sources : 1 (kImage, ou une NHWC), ou 4 (conv_cat, K = 4 · Cin).
-template <int Cin, int Cout, int Taps, int Sources, Src From, Mode M, bool Relu, Acc Asked>
+template <int Cin, int Cout, int Taps, int Sources, Src From, Mode M, bool Relu, Acc A>
 __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
-  // Promue, la porte à 64 canaux somme en f32 sur sm 120 : ptxas y lance les 32 mma d'un pas à la suite, et
-  // leurs sorties avec l'accumulateur f32 dépassent 255 registres. Une conv des blocs sur trois, sur RTX 50.
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
-  constexpr Acc A = Asked == Acc::kPromoted && M == Mode::kGate && Cout == 64 ? Acc::kF32 : Asked;
-#else
-  constexpr Acc A = Asked;
-#endif
   static_assert(Cin % 16 == 0 && Cout % 16 == 0, "canaux par 16");
   static_assert(M != Mode::kGate || Cin == Cout, "la porte suit une conv carrée");
   constexpr int kHalo = Taps == 9 ? 1 : 0;
@@ -490,7 +463,7 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
     plain<Cout, Relu, A>(acc, s, p.bias, warp, lane, hit);
   }
   // Rare : plusieurs fils écrivent la même valeur, sans atomique (note_overflow du FP8).
-  if constexpr (A != Acc::kF32)
+  if constexpr (A == Acc::kF16)
     if (hit && p.overflow != nullptr) *reinterpret_cast<volatile int*>(p.overflow) = 1;
   __syncthreads();
   if constexpr (M == Mode::kPixel)

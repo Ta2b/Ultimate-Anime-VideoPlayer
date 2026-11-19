@@ -42,6 +42,9 @@
 #include <shlwapi.h>
 
 #include <SDL3/SDL_misc.h>
+#else
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace kirari::app::play {
@@ -717,6 +720,24 @@ void leave_lone_console() {
     if (previous != CP_UTF8 && SetConsoleOutputCP(CP_UTF8) != 0)
       std::atexit([] { SetConsoleOutputCP(previous); });
   }
+#endif
+}
+
+bool output_captured() {
+#ifdef _WIN32
+  const auto captured = [](DWORD which) {
+    const HANDLE handle = GetStdHandle(which);
+    if (handle == nullptr || handle == INVALID_HANDLE_VALUE) return false;
+    const DWORD type = GetFileType(handle);
+    return type == FILE_TYPE_PIPE || type == FILE_TYPE_DISK;
+  };
+  return captured(STD_OUTPUT_HANDLE) || captured(STD_ERROR_HANDLE);
+#else
+  const auto captured = [](int fd) {
+    struct stat st{};
+    return fstat(fd, &st) == 0 && (S_ISFIFO(st.st_mode) || S_ISREG(st.st_mode));
+  };
+  return captured(STDOUT_FILENO) || captured(STDERR_FILENO);
 #endif
 }
 

@@ -2,6 +2,8 @@
 // l'entrée que le backend écrit et la sortie qu'il relit, un renderer et un grade à part. Tout tourne sur le
 // fil de l'agrandissement ; pl_gpu y est sûr (pl_gpu_limits.thread_safe sous Vulkan).
 #include <format>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "app/play/placebo_impl.h"
@@ -35,7 +37,7 @@ pl_frame frame_of(pl_tex tex, const pl_color_space& color) {
 
 class PlaceboSourceGrader final : public SourceGrader {
  public:
-  PlaceboSourceGrader(pl_gpu gpu, pl_log log, std::shared_ptr<const SourceGradeShare> share, bool external,
+  PlaceboSourceGrader(pl_gpu gpu, pl_log log, std::shared_ptr<SourceGradeShare> share, bool external,
                       double source_fps, std::uint32_t generation)
       : gpu_(gpu),
         log_(log),
@@ -48,10 +50,12 @@ class PlaceboSourceGrader final : public SourceGrader {
   PlaceboSourceGrader(PlaceboSourceGrader&&) = delete;
   PlaceboSourceGrader& operator=(PlaceboSourceGrader&&) = delete;
   ~PlaceboSourceGrader() override {
-    if (graded_ > 0) {
+    // Aussi sans aucune image gradée : la mesure dit alors pourquoi l'écran a tout gradé.
+    if (graded_ > 0 || left_ > 0) {
       log_channel("app")->info(
-          "grade avant le warp : {} images sources gradées, moyenne GPU {:.3f} ms", graded_,
-          timed_ > 0 ? static_cast<double>(gpu_ns_) / 1e6 / static_cast<double>(timed_) : 0.0);
+          "grade avant le warp : {} images sources gradées, moyenne GPU {:.3f} ms ; {} laissées à l'écran{}",
+          graded_, timed_ > 0 ? static_cast<double>(gpu_ns_) / 1e6 / static_cast<double>(timed_) : 0.0, left_,
+          left_ > 0 ? std::format(" ({})", left_why_) : std::string());
     }
     if (const auto line = effect_tally_line("grade avant le warp", effects_tally_))
       log_channel("app")->info("{}", *line);
@@ -63,7 +67,11 @@ class PlaceboSourceGrader final : public SourceGrader {
   std::expected<bool, Refusal> grade(gpu::KernelOps& ops, const gpu::Tensor& rgb, bool debanded,
                                      const GradedSource& source) override {
     const SourceGradeState state = share_->get();
-    if (!state.params) return false;
+    if (!state.params) {
+      ++left_;
+      left_why_ = state.off;
+      return false;
+    }
     if (rgb.shape.dims.size() != 4) return refuse(RefusalCode::ShapeInvalid, "grade avant le warp : tenseur");
     const int width = static_cast<int>(rgb.shape.dims[3]);
     const int height = static_cast<int>(rgb.shape.dims[2]);
@@ -151,6 +159,7 @@ class PlaceboSourceGrader final : public SourceGrader {
     effects_.source(source.epoch, source.effects);
     const bool on = grade_->set_effect_mask(&effects_.mask());
     effects_tally_.count(source.effects.has_value(), on, effects_.mask(), source.pts_us);
+    share_->note_effects(effect_summary(effects_.mask(), on));
     if (const auto& refused = grade_->effect_mask_refusal(); refused && !effects_refusal_noted_) {
       effects_refusal_noted_ = true;
       log_channel("app")->warn(
@@ -186,7 +195,7 @@ class PlaceboSourceGrader final : public SourceGrader {
 
   pl_gpu gpu_;
   pl_log log_;
-  std::shared_ptr<const SourceGradeShare> share_;
+  std::shared_ptr<SourceGradeShare> share_;  // lu à chaque source, et le masque des effets y est noté
   bool external_;
   double fps_;
   std::uint32_t generation_;
@@ -204,6 +213,8 @@ class PlaceboSourceGrader final : public SourceGrader {
   std::uint64_t graded_ = 0;
   std::uint64_t gpu_ns_ = 0;
   std::uint64_t timed_ = 0;
+  std::uint64_t left_ = 0;     // images laissées à l'écran : rien publié à grader (SourceGradeState::off)
+  std::string_view left_why_;  // la dernière raison
 };
 
 }  // namespace

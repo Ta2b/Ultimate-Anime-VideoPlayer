@@ -14,6 +14,10 @@
 //  - adouci d'un flou 3 × 3, puis lu en bilinéaire par le GPU.
 // Sans carte, il revient lentement vers 1 partout, puis s'éteint (neutral) : le grade redevient celui
 // d'aujourd'hui, image pour image.
+//
+// Une seconde couche, lissée, dilatée et floutée de même, suit les seuls effets sûrs (la classe effet de la
+// carte) : là, la passe anime ouvre plus large la porte des lumières et monte plus haut (fx_gain, essai du
+// PC du 19 novembre : l'effet se voyait, mais sur 2 % des pixels). Elle ne touche rien hors des effets.
 #pragma once
 
 #include <cstdint>
@@ -34,6 +38,8 @@ struct EffectTiles {
   // Par tuile, ligne par ligne : kEffectUnsure si la carte ne tranche pas, sinon de 0 (décor ou dessin
   // sûr) à 1 (effet sûr).
   std::vector<float> effect;
+  // Par tuile, 1 sur un effet sûr (la classe effet de la carte), 0 ailleurs ; vide : aucun.
+  std::vector<float> sure;
   bool cut = false;          // coupe de scène : le masque est posé d'un coup
   bool hold = false;         // dessin tenu ou fondu : rien n'est appris de la paire
   std::int64_t span_us = 0;  // durée de la paire (pts(b) − pts(a)) ; ≤ 0 : 41 708 µs (23,976 i/s)
@@ -56,14 +62,17 @@ class EffectMask {
   void relax(std::int64_t span_us);
   void reset();
 
-  // Vrai sans masque, ou quand toutes les tuiles sont revenues à 1 : la passe ne s'ajoute pas.
+  // Vrai sans masque, ou quand toutes les tuiles sont revenues à 1 et qu'aucun effet sûr ne reste : la passe
+  // ne s'ajoute pas.
   bool neutral() const;
   int cols() const { return cols_; }
   int rows() const { return rows_; }
   double cover_x() const { return cover_x_; }
   double cover_y() const { return cover_y_; }
-  // Les valeurs à poser dans la texture (lissées, dilatées, floutées), ligne par ligne, de 0 à 1.
+  // La part de la marge gardée (lissée, dilatée, floutée), ligne par ligne, de 0 à 1.
   std::span<const float> values() const { return shown_; }
+  // L'effet sûr de la seconde couche (lissé, dilaté, flouté), ligne par ligne, de 0 à 1 ; vide avec values.
+  std::span<const float> sure() const { return sure_shown_; }
   // Augmenté à chaque changement des valeurs (la composition gardée de l'écran en dépend).
   std::uint64_t serial() const { return serial_; }
 
@@ -75,6 +84,8 @@ class EffectMask {
   double cover_y_ = 1.0;
   std::vector<float> level_;  // l'état lissé, avant le flou
   std::vector<float> shown_;
+  std::vector<float> sure_level_;  // la seconde couche (effets sûrs), avant le flou
+  std::vector<float> sure_shown_;
   std::uint64_t serial_ = 0;
 };
 

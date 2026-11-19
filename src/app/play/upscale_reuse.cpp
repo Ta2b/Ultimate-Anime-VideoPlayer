@@ -18,13 +18,15 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
     anchor_ready_ = false;
     const bool behind_bad = std::exchange(anchor_bad_, facts.corrupt);  // la nouvelle ancre, abîmée ou non
     if (!tiles.active()) return ReuseKind::Compute;
+    const bool restart = !facts.same_epoch || facts.corrupt || behind_bad || !facts.has_output;
     // Les tuiles suivent chaque image calculée, même entière : leur état repart de là.
     tile_plan = tiles.plan(TileFacts{
-        .fresh = facts.tiles_ok && facts.same_epoch && !facts.corrupt && !behind_bad && facts.has_output,
+        .stale = facts.tiles_stale != TileStale::Chain && restart ? TileStale::Restart : facts.tiles_stale,
         .can_shift = facts.can_shift,
         .scene = facts.scene,
         .spread_px = facts.spread_px,
-        .input_key = facts.input_key});
+        .input_key = facts.input_key,
+        .blocks = facts.blocks});
     return tile_plan.tiled ? ReuseKind::Tiles : ReuseKind::Compute;
   };
   if (!enabled || !facts.same_epoch || facts.corrupt || anchor_bad_ || !facts.has_output || !facts.pair_held)

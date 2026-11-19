@@ -311,11 +311,11 @@ namespace kirari::gpu::cuda {
 
 // Le SPAN FP16 natif (docs/span-native16.md) suit la référence FP16 (span_fp8_ref.h), qui calcule le même
 // réseau en 64 canaux, accumulateur f32. À 48 canaux réels, le corps natif calcule en 48. Il ne reste que
-// l'ordre des sommes et leur f16, en f32 ou promues (SpanNativeSums).
+// l'ordre des sommes et leur f16, ou f32 (SpanNativeSums).
 TEST_CASE("SPAN FP16 natif : suit la référence FP16", "[cuda][span_fp8]") {
   if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
   const int real = GENERATE(48, 64);
-  const SpanNativeSums sums = GENERATE(SpanNativeSums::F16, SpanNativeSums::F32, SpanNativeSums::Promoted);
+  const SpanNativeSums sums = GENERATE(SpanNativeSums::F16, SpanNativeSums::F32);
   INFO(real << " canaux, sommes " << static_cast<int>(sums));
   Random random;
   span_fp8::Package package = random_package(random, real, real == 48 ? 5 : 8);

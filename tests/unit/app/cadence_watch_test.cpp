@@ -1,9 +1,11 @@
 // La cadence haute (cadence_watch.h), en un seul cas : les pertes de l'affichage restent hors de la
 // contre-pression (sauf --display-loss-pressure), l'image vue prête à un tour d'avant, les modes de
-// présentation et la ligne de fin qui dit ce qui a borné la cadence.
+// présentation, la ligne de fin qui dit ce qui a borné la cadence et la cadence du seul mouvement.
 #include "app/play/cadence_watch.h"
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "app/play/frame_stats.h"
 
 namespace kirari::app::play {
 namespace {
@@ -45,6 +47,15 @@ TEST_CASE("Cadence haute : pertes de l'affichage, images prêtes, bornes", "[app
   CHECK(text.find("pertes du GPU 2") != std::string::npos);
   CHECK(text.find("borné par l'écran 25 %, par le temps de service 25 %, par la contre-pression 50 %") !=
         std::string::npos);
+
+  // En mouvement : l'écart qui finit sur un dessin tenu n'y compte pas, celui des instants voisins si.
+  FrameStats stats;
+  stats.paced(0, 0, 0, false, 6'000);
+  stats.paced(6'000, 0, 0, false, 6'000);
+  stats.paced(48'000, 0, 0, true, 42'000);
+  stats.paced(54'000, 0, 0, false, 6'000);
+  watch.motion(stats.moving_frames, stats.moving_us);
+  CHECK(watch.summary().find("en mouvement (hors coupes et dessins tenus) 166.7 i/s") != std::string::npos);
 }
 
 }  // namespace
