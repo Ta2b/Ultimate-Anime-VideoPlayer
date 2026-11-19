@@ -1,6 +1,6 @@
 # GMFlow natif : étude
 
-Étude, pas encore de noyau de production. Question : calculer GMFlow (le flot du graphe « paire » de GMFSS Fortuna
+Étude ; le squelette CNN est écrit (PR 1, [plus bas](#squelette-natif-pr-1)), pas encore branché. Question : calculer GMFlow (le flot du graphe « paire » de GMFSS Fortuna
 union) par nos propres noyaux CUDA, comme RIFE ([`rife-natif.md`](rife-natif.md)) et, en cours, FeatureNet,
 MetricNet et GridNet de GMFSS, pour qu'aucun moteur TensorRT ne soit plus construit pour GMFSS. Outils :
 `tools/gmfss/gmflow_natif_couts.py` (coûts et temps estimés), `tools/gmfss/gmflow_natif_reseau.py` (GMFlow découpé
@@ -30,7 +30,7 @@ deux images réduites de moitié (640x384 pour la paire 1280x768 ; 320x192 au de
 
 | Étape | Détail | Taille (paire 1280x768, flot entier) |
 |---|---|---|
-| Squelette CNN (lot 2 : les deux images) | conv 7x7/2 3→64 (sans biais), InstanceNorm, Relu ; layer1 : 2 blocs résiduels 64 ; layer2 : 2 blocs 96, le premier de pas 2 avec raccourci 1x1/2 (biais) + InstanceNorm ; layer3 : 2 blocs 128, pas 1, raccourci 1x1 ; conv2 1x1 128→128 (biais) ; « trident » 3x3 128→128 aux poids partagés, pas 1 et pas 2 | 1/2 : 320x192 ; 1/4 : 160x96 ; 1/8 : 80x48. Bloc résiduel : conv 3x3, IN, Relu, conv 3x3, IN, Relu, + raccourci, Relu. InstanceNorm sans paramètres partout (13), 18 convolutions |
+| Squelette CNN (lot 2 : les deux images) | conv 7x7/2 3→64 (sans biais), InstanceNorm, Relu ; layer1 : 2 blocs résiduels 64 ; layer2 : 2 blocs 96, le premier de pas 2 avec raccourci 1x1/2 (biais) + InstanceNorm ; layer3 : 2 blocs 128, pas 1, raccourci 1x1 ; conv2 1x1 128→128 (biais) ; « trident » 3x3 128→128 aux poids partagés, pas 1 et pas 2 | 1/2 : 320x192 ; 1/4 : 160x96 ; 1/8 : 80x48. Bloc résiduel : conv 3x3, IN, Relu, conv 3x3, IN, Relu, + raccourci, Relu. InstanceNorm sans paramètres partout (15 : la 7x7, les 12 convolutions des blocs, les 2 raccourcis), 18 convolutions |
 | Échelle 1/8 | position sinus par fenêtre (40x24), transformeur 6 blocs, puis appariement global, puis propagation globale | 3 840 jetons par image |
 | Transformeur (mêmes poids aux deux échelles) | bloc = self-attention (sans MLP) puis cross-attention + MLP ; d = 128, **une tête** ; projections q, k, v, fusion 128x128 sans biais ; LayerNorm après la fusion ; MLP sur [source, message] 256 → 1024 (GELU) → 128, LayerNorm ; résiduel ; la cible de la cross-attention est l'autre moitié du lot telle qu'elle entrait dans le bloc ; blocs impairs en fenêtres décalées d'une demi-fenêtre (Swin, masque −100 entre régions) | 1/8 : lot 2, fenêtres 2x2 de 960 jetons, décalage (12, 20) |
 | Appariement global | corrélation f0·f1ᵀ/√128 (3 840 x 3 840), softmax des lignes (0→1) et des colonnes (1→0), flot = Σ p·coordonnée − coordonnée | |
@@ -240,6 +240,64 @@ Flot entier (GMFlow sur 640x384), flot seulement (l'image du milieu à cette tai
 Au demi-flot sur la petite paire 640x384 (GMFlow sur 160x96, plus petit qu'aucun cas de la lecture), le FP32 lui-même
 trouve des appariements ambigus (pics de 52 px sur le zoom) ; le natif FP16 et l'actuel s'y trompent autant (EPE
 0,20 et 0,21, PSNR image du natif 47,1 / 34,2) : cette taille ne départage rien, elle n'est pas retenue.
+
+## Squelette natif (PR 1)
+
+Écrit sans GPU : compilé pour sm_75, 86, 89 et 120 sans débordement de registres, jamais lancé. Rien ne l'appelle encore.
+
+**Lecture** (`src/prepare/gmflow_native.{h,cpp}`, types sans `std::expected` dans `gmflow_backbone.h` pour nvcc).
+`gmflow_backbone(paire)` lit les poids du squelette par leur nom dans la paire ONNX (`gmfss.flownet.backbone.*`,
+nœuds `/flownet/backbone/…`) et refuse (FieldMissing) ce que les noyaux ne font pas : noyau, pas ou bord autres
+que ceux attendus, groupes, dilatation, InstanceNorm à échelle ou décalage appris, ε différents d'une couche à
+l'autre, biais en trop ou en moins, raccourci absent ou en trop, Add dans l'autre ordre, normalisations
+différentes des deux images, trident qui ne partage pas ses poids. Elle rend un **plan** : 17 convolutions (le
+trident une fois), 25 tenseurs, 24 opérations (18 convolutions, 6 fins de bloc), 15 statistiques ;
+`gmflow_backbone_check` le revérifie contre ce que savent les noyaux (canaux d'entrée par 32, de sortie par 16
+jusqu'à 128, normalisation à la lecture des seules 3x3 de pas 1, chaque tenseur écrit une fois avant d'être lu).
+Le réseau CUDA et l'émulation exécutent ce plan à la lettre : l'indexation prouvée par l'émulation est celle du
+lecteur.
+
+**Normalisation de l'image** rangée dans la 7x7 : poids × 1/écart de leur plan, biais −Σ poids · pad, où pad est
+la moyenne d'ImageNet arrondie en FP16 (dans la paire FP16, elle est déjà en FP16 : pad est exact). L'image FP16
+entre telle quelle et un pixel hors de l'image vaut pad, soit zéro une fois normalisé, comme le bord du graphe.
+Arrondir l'image normalisée en FP16 coûtait 5 dB sur les sorties (émulation).
+
+**Noyaux** (`src/gpu/cuda/backend/gmflow_backbone_kernels.cuh`, `gmflow_backbone_net.{h,cu}`) : NHWC FP16, les deux
+images en lot, mma.sync m16n8k16 et sommes f32 (`Acc::kF32`) de `rife_native_kernels.cuh` (fragments, `accumulate`,
+`stage`, `cp.async`). La 7x7/2 déplie un morceau d'image de 13 × 69 pixels en mémoire partagée (K = 160 pour 147
+produits) ; les 1x1 passent par le noyau des 3x3 en KH = 1, celle de pas 2 lit un pixel sur deux. L'épilogue de chaque
+convolution suivie d'une InstanceNorm ajoute Σx et Σx² (f32, valeurs FP16 écrites) par image et par canal, une
+addition atomique par bloc et par canal ; la 3x3 suivante normalise et applique Relu à sa tuile au chargement
+(`In::kNorm`). Les raccourcis et la sortie de chaque bloc se lisent dans un noyau de fin de bloc élément par
+élément (une écriture FP16). Les tenseurs sont placés dans une zone selon leur durée de vie ; les statistiques
+sont remises à zéro au début du passage (capturable en graphe CUDA).
+
+**Émulation** (`tools/gmfss/gmflow_squelette_emule.py`, plan et poids vidés par `tools/gmfss/gmflow_squelette`,
+qui appelle la lecture du lecteur) : le plan rejoué avec les arrondis des noyaux, contre le sous-graphe du
+squelette de la paire FP32 sous ONNX Runtime, sur 4 paires de `calibration.mkv`. Moyenne des quatre ; PSNR sur la
+crête de la référence, moyen / pire.
+
+| Images | Sortie | Contrôle f32 (plan de la paire FP32) | Natif FP16 | ONNX Runtime sur la paire FP16 | Stockage FP16 de chaque couche (façon TensorRT, `gmflow_natif_reseau.py`) |
+|---|---|---|---|---|---|
+| 320x192 | 1/4 | 1,13e-6, 133,3 dB | 9,9e-4, 74,5 / 74,0 dB | 6,3e-4, 78,3 / 77,4 dB | 2,1e-3, 68,7 / 64,2 dB |
+| 320x192 | 1/8 | 1,13e-6, 132,7 dB | 9,8e-4, 73,9 / 73,6 dB | 6,3e-4, 77,8 / 77,1 dB | 2,1e-3, 68,1 / 64,1 dB |
+| 640x384 | 1/4 | 1,52e-6, 131,0 dB | 1,12e-3, 73,7 / 72,1 dB | 6,9e-4, 77,8 / 76,9 dB | 2,9e-3, 66,3 / 61,6 dB |
+| 640x384 | 1/8 | 1,52e-6, 130,8 dB | 1,12e-3, 73,4 / 71,8 dB | 6,9e-4, 77,5 / 76,6 dB | 2,9e-3, 66,0 / 61,6 dB |
+
+(écart relatif : √EQM / √(moyenne des carrés de la référence)). Le contrôle f32, sans aucun arrondi, rend ONNX
+Runtime FP32 à l'ordre des sommes près (avec au bord la moyenne FP32 exacte, `pad_exact`) : poids rangés, prises,
+dépliage de la 7x7, normalisation rangée, statistiques, raccourcis et trident sont justes. Le natif FP16 est
+≈ 4 dB sous ONNX Runtime sur la paire FP16, qui n'est pas TensorRT : sur le CPU il garde des poids FP16 mais
+calcule et stocke les activations en f32. Face à un stockage FP16 de chaque couche, plus proche de ce que fait
+TensorRT FP16, le natif gagne 6 à 7 dB (10 dB au pire cas). La comparaison qui compte, contre le moteur TensorRT
+de la paire sur la carte, reste à faire.
+
+**Ce qui manque avant de brancher** : la position sinus dans l'épilogue du trident (PR 2 ou à l'assemblage), le
+choix des tuiles et un `ksplit` pour les petites grilles (1/8 au demi-flot), les variantes de sommes f16 et
+mixtes chronométrées contre TensorRT comme RIFE et GMFSS (`gmfss_trial.h`), le premier lancement sur la carte
+(sorties contre le sous-graphe ONNX, déterminisme : les additions atomiques changent les statistiques à l'ulp
+près d'un lancement à l'autre). Le 1/8 est exactement le 1/4 pris un pixel sur deux (même trident, bord 1) :
+la seconde passe du trident pourrait se réduire à cette lecture.
 
 ## Découpage en PR proposé
 

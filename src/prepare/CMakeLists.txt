@@ -10,7 +10,7 @@ endif()
 kirari_add_module(prepare
   SOURCES
     builder.cpp cache.cpp cache_io.cpp cache_purge.cpp identity.cpp key_lock.cpp model_source.cpp
-    drba_split.cpp gmfss_fused.cpp gmfss_native.cpp onnx_blend.cpp onnx_cache.cpp onnx_dims.cpp onnx_frames.cpp onnx_outputs.cpp onnx_scan.cpp onnx_split.cpp rife_native.cpp rife_split.cpp tfix_split.cpp process_text.cpp ${kirari_prepare_process}
+    drba_split.cpp gmflow_native.cpp gmfss_fused.cpp gmfss_native.cpp onnx_blend.cpp onnx_cache.cpp onnx_dims.cpp onnx_frames.cpp onnx_outputs.cpp onnx_scan.cpp onnx_split.cpp rife_native.cpp rife_split.cpp tfix_split.cpp process_text.cpp ${kirari_prepare_process}
     sha256.cpp trtexec_command.cpp trtexec_progress.cpp utf8.cpp
   DEPS kirari::core kirari::gpu kirari::kernels
   PRIVATE_DEPS kirari::core_log kirari::dep::toml kirari::gpu_ir)

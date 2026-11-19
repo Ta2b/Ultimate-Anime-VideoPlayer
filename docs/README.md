@@ -24,6 +24,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
 | [`rife-natif.md`](rife-natif.md) | RIFE fusionné par nos noyaux, sans TensorRT (`--rife-native`, essai) |
 | [`gmfss-natif.md`](gmfss-natif.md) | GMFSS union par nos noyaux, GMFlow sous TensorRT (`--gmfss-native`, essai) |
+| [`gmflow-natif.md`](gmflow-natif.md) | GMFlow par nos noyaux : étude, squelette CNN écrit (PR 1), pas encore branché |
 | [`warp-lib.md`](warp-lib.md) | La bibliothèque de warp CUDA (lot E) : briques communes, colle de RIFE réécrite dessus, warp générique pour TemporalFix et les calques |
 | [`rife-candidats.md`](rife-candidats.md) | RIFE 4.25 lite et 4.26 face à 4.22 lite et 4.25 : mesures sur processeur, niveaux choisis, protocole ABAB sur la RTX |
 | [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour ; signature des exécutables Windows et macOS |
