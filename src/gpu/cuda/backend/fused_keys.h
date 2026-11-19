@@ -67,4 +67,11 @@ struct GmfssFusedKey {
 std::string gmfss_fused_artifact_key(const GmfssFusedKey& key);
 std::optional<GmfssFusedKey> gmfss_fused_artifact_key_parse(std::string_view text);
 
+// La clé d'un Artifact de la paire native de GMFSS (prepare/gmfss_pair_split.h) : «
+// gmfss-pair:<h>x<w>:<paire>, <flot> », mêmes champs que la fusion (la taille est celle de la fusion, les
+// images au double). La coupe et les poids du FeatureNet et du MetricNet se relisent dans le manifeste,
+// chemin de l'Artifact.
+std::string gmfss_pair_artifact_key(const GmfssFusedKey& key);
+std::optional<GmfssFusedKey> gmfss_pair_artifact_key_parse(std::string_view text);
+
 }  // namespace kirari::gpu::cuda

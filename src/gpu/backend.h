@@ -114,7 +114,9 @@ namespace kirari::gpu {
 // kernels/spec/motion_camera.h).
 // 54 : kTrialGmfssNative (le GridNet de la fusion de GMFSS par nos noyaux, manifestes « .gmfssfused »,
 // docs/gmfss-natif.md) : un module d'avant ne saurait pas construire le manifeste.
-inline constexpr int kBackendAbi = 54;
+// 55 : manifestes « .gmfsspair » sous kTrialGmfssNative (le FeatureNet et le MetricNet de la paire de GMFSS
+// par nos noyaux) : un module 54 ne saurait pas les construire.
+inline constexpr int kBackendAbi = 55;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -152,9 +154,10 @@ inline constexpr std::uint32_t kTrialSpanNative = 1U << 5U;
 // chargement ; les blocs TensorRT se construisent alors en E/S HWC8. Lu par le backend TensorRT ; sans effet
 // ailleurs.
 inline constexpr std::uint32_t kTrialRifeNative = 1U << 6U;
-// --gmfss-native : le GridNet de la fusion de GMFSS par nos noyaux (docs/gmfss-natif.md), son IFNet restant
-// un moteur TensorRT, gardé s'il tient 45 dB contre la fusion TensorRT entière à l'essai au chargement. Le
-// lecteur passe alors un manifeste « .gmfssfused » à la place de la fusion. Lu par le backend TensorRT ; sans
+// --gmfss-native : le GridNet de la fusion, le FeatureNet et le MetricNet de la paire de GMFSS par nos noyaux
+// (docs/gmfss-natif.md), l'IFNet et GMFlow restant des moteurs TensorRT ; chaque graphe gardé s'il tient 45
+// dB contre son moteur TensorRT entier à l'essai au chargement. Le lecteur passe alors des manifestes «
+// .gmfssfused » et « .gmfsspair » à la place de la fusion et de la paire. Lu par le backend TensorRT ; sans
 // effet ailleurs.
 inline constexpr std::uint32_t kTrialGmfssNative = 1U << 7U;
 

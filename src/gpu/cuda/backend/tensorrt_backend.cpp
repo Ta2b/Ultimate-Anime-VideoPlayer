@@ -20,6 +20,7 @@
 #include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
 #include "gpu/cuda/backend/gmfss_fused_engine.h"
+#include "gpu/cuda/backend/gmfss_pair_engine.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/scene_flow.h"
 #include "gpu/cuda/backend/shared_activations.h"
@@ -29,6 +30,7 @@
 #include "prepare/builder.h"
 #include "prepare/drba_split.h"
 #include "prepare/gmfss_fused.h"
+#include "prepare/gmfss_pair_split.h"
 #include "prepare/identity.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
@@ -378,6 +380,8 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
   if (prepare::is_tfix_fused_manifest(model.onnx_path)) return build_tfix_fused(model, shapes, progress);
   // La fusion de GMFSS coupée pour le GridNet natif : la fusion entière et son IFNet.
   if (prepare::is_gmfss_fused_manifest(model.onnx_path)) return build_gmfss_fused(model, shapes, progress);
+  // La paire de GMFSS coupée pour le FeatureNet et le MetricNet natifs : la paire entière et son flot.
+  if (prepare::is_gmfss_pair_manifest(model.onnx_path)) return build_gmfss_pair(model, shapes, progress);
   // Pas de vérification ici : désérialiser le plan sur le GPU juste après sa construction, pour le jeter et
   // le charger de nouveau à l'ouverture, coûtait un chargement de trop (C05-03). Un plan refusé à ce
   // chargement est mis de côté et reconstruit par le lecteur (player_engines.cpp, Artifact::reused, C05-01).
@@ -391,6 +395,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Arti
   if (drba_fused_artifact_key_parse(artifact.cache_key)) return load_drba_fused(artifact);
   if (tfix_fused_artifact_key_parse(artifact.cache_key)) return load_tfix_fused(artifact);
   if (gmfss_fused_artifact_key_parse(artifact.cache_key)) return load_gmfss_fused(artifact);
+  if (gmfss_pair_artifact_key_parse(artifact.cache_key)) return load_gmfss_pair(artifact);
   // Les activations dans la zone de la voie choisie avant le chargement (use_lane) ; un moteur
   // lancé sur l'autre voie y passe à son lancement.
   auto engine = TrtEngine::load(*runtime_, artifact.path, arena());
@@ -509,6 +514,8 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
       return enqueue_tfix_fused(engine, inputs, outputs);
     if (auto* gmfss = dynamic_cast<GmfssFusedEngine*>(&engine))
       return enqueue_gmfss_fused(*gmfss, inputs, outputs);
+    if (auto* pair = dynamic_cast<GmfssPairEngine*>(&engine))
+      return enqueue_gmfss_pair(*pair, inputs, outputs);
     auto* fused = dynamic_cast<SpanFp8Engine*>(&engine);
     if (fused == nullptr) return refuse(RefusalCode::DeviceMismatch, "enqueue : moteur d'un autre backend");
     return enqueue_span_fp8(*fused, inputs, outputs);

@@ -50,6 +50,7 @@ class SceneFlow;
 class RifeFusedEngine;
 class DrbaFusedEngine;
 class GmfssFusedEngine;
+class GmfssPairEngine;
 struct IngestParams;
 struct WarpBlendParams;
 
@@ -250,6 +251,25 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::unique_ptr<Engine>, Refusal> load_gmfss_fused(const Artifact& artifact);
   std::expected<void, Refusal> enqueue_gmfss_fused(GmfssFusedEngine& engine, std::span<const Tensor> inputs,
                                                    std::span<Tensor> outputs);
+  // La paire de GMFSS au FeatureNet et au MetricNet natifs (tensorrt_gmfss_pair.cpp) : un manifeste
+  // « .gmfsspair », la paire entière et son flot construits par trtexec, chargés ensemble, le natif essayé si
+  // demandé.
+  std::expected<Artifact, Refusal> build_gmfss_pair(const ModelSpec& model, const ShapeSet& shapes,
+                                                    Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_gmfss_pair(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_gmfss_pair(GmfssPairEngine& engine, std::span<const Tensor> inputs,
+                                                  std::span<Tensor> outputs);
+  // Les morceaux d'un manifeste de GMFSS (dossier dir), chacun vérifié par son empreinte puis construit par
+  // trtexec à la forme fixe shape (le second avec les réglages de RIFE si second_tuned) : les noms des
+  // fichiers du cache, dans l'ordre des morceaux.
+  std::expected<std::vector<std::string>, Refusal> build_gmfss_pieces(const std::filesystem::path& dir,
+                                                                      std::span<const std::string> pieces,
+                                                                      std::span<const std::string> digests,
+                                                                      const Shape& shape, bool second_tuned,
+                                                                      Progress& progress);
+  // Le seuil de l'essai des réseaux natifs de GMFSS contre TensorRT FP16 (docs/gmfss-natif.md) ; la séance
+  // finale vise 50 dB.
+  static constexpr double kGmfssNativeMinDb = 45.0;
   // Les réglages de trtexec de cet appareil (build, build_rife_fused, build_drba_fused).
   prepare::TrtexecConfig trtexec_config() const;
   // La voie lane le temps d'une portée.

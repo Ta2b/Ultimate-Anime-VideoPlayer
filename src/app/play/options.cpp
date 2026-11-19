@@ -656,7 +656,7 @@ std::string play_usage(bool debug) {
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass (same output)\n"
          "  --no-span-reuse        measurement: SPAN on every frame, held drawings included\n"
-         "  --rife-native, --gmfss-native  trial: fused RIFE, GMFSS fusion GridNet by our CUDA kernels\n"
+         "  --rife-native, --gmfss-native  trial: fused RIFE, GMFSS small nets by our CUDA kernels\n"
          "  --no-span-tiles        measurement: whole-frame SPAN only (--span-tiles-check: 1 in 24 checked)\n"
          "  --rife-at-slot         measurement: each RIFE pass of a strong pair waits for the ring slot\n"
          "                         of its image instead of being queued when the pair arrives (same output)\n"

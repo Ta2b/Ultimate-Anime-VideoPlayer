@@ -73,8 +73,8 @@ __global__ void unpack_image(const __half* in, long plane, __half* out) {
 
 class Net final : public GmfssNativeNet {
  public:
-  Net(int height, int width, bool acc32)
-      : height_(height), width_(width), acc32_(acc32), net_(height, width, acc32) {}
+  Net(int height, int width, RifeNativeSums sums)
+      : height_(height), width_(width), sums_(sums), net_(height, width, sums) {}
 
   bool plan(const GmfssGrid& grid, std::string& error) {
     if (grid.tensors.size() <= static_cast<std::size_t>(prepare::kGmfssGridInputs) || grid.steps.empty()) {
@@ -109,7 +109,7 @@ class Net final : public GmfssNativeNet {
   }
 
   std::int64_t workspace_bytes() const override { return net_.zone_bytes() + net_.partial_bytes(); }
-  bool acc32() const override { return acc32_; }
+  RifeNativeSums sums() const override { return sums_; }
 
   cudaError_t run(cudaStream_t stream, const GmfssNativeInputs& in, void* out) const override {
     const auto plane = [&](int level) { return static_cast<long>(height_ >> level) * (width_ >> level); };
@@ -144,7 +144,7 @@ class Net final : public GmfssNativeNet {
  private:
   int height_;
   int width_;
-  bool acc32_;
+  RifeNativeSums sums_;
   gmfss_plan::ConvNet net_;
   std::array<gmfss_plan::Placed, prepare::kGmfssGridInputs> inputs_{};
   int out_ = 0;
@@ -155,12 +155,12 @@ class Net final : public GmfssNativeNet {
 }  // namespace
 
 std::unique_ptr<GmfssNativeNet> GmfssNativeNet::create(const prepare::GmfssGrid& grid, int height, int width,
-                                                       bool acc32, std::string& error) {
+                                                       RifeNativeSums sums, std::string& error) {
   if (height < 32 || width < 32 || height % 32 != 0 || width % 32 != 0) {
     error = "taille de la fusion : des multiples de 32 attendus";
     return nullptr;
   }
-  auto net = std::make_unique<Net>(height, width, acc32);
+  auto net = std::make_unique<Net>(height, width, sums);
   if (!net->plan(grid, error)) return nullptr;
   return net;
 }

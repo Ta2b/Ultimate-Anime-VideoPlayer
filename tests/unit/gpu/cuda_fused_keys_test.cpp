@@ -120,4 +120,21 @@ TEST_CASE("GMFSS natif (TensorRT) : la clé d'artefact se relit, une clé abîm�
   CHECK_FALSE(gmfss_fused_artifact_key_parse("tfix-fused:encoder:1080x1920:0:enc"));
 }
 
+TEST_CASE("GMFSS natif (TensorRT) : la clé de la paire se relit, et ne se prend pas pour celle de la fusion",
+          "[gpu][fused_keys]") {
+  const GmfssFusedKey key{.height = 384, .width = 640, .engines = {"pair.engine", "flow.engine"}};
+  const std::string text = gmfss_pair_artifact_key(key);
+  CHECK(text == "gmfss-pair:384x640:pair.engine,flow.engine");
+  const auto parsed = gmfss_pair_artifact_key_parse(text);
+  REQUIRE(parsed);
+  CHECK(parsed->height == 384);
+  CHECK(parsed->width == 640);
+  CHECK(parsed->engines == key.engines);
+  CHECK_FALSE(gmfss_fused_artifact_key_parse(text));  // le backend charge chaque clé par son préfixe
+  CHECK_FALSE(gmfss_pair_artifact_key_parse(gmfss_fused_artifact_key(key)));
+  CHECK_FALSE(gmfss_pair_artifact_key_parse("gmfss-pair:384x640:pair"));        // le flot manque
+  CHECK_FALSE(gmfss_pair_artifact_key_parse("gmfss-pair:384x630:pair,flow"));   // pas un multiple de 32
+  CHECK_FALSE(gmfss_pair_artifact_key_parse("gmfss-pair:384x640:pair,/flow"));  // hors du cache
+}
+
 }  // namespace kirari::gpu::cuda
