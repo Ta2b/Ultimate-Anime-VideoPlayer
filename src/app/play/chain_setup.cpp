@@ -227,7 +227,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                 .compose = settings.gmfss_compose,
                 .cost_us = gmfss_cost_us,
                 .pair_us = gmfss_pair_us},
-      .layers = {.layers = layers, .plate = plate.get()},
+      .layers = layer_setup(*this, clock),
       .warp =
           settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
       // Mouvement d'ensemble : le warp de RIFE mouvement et celui de DistilDRBA mouvement.

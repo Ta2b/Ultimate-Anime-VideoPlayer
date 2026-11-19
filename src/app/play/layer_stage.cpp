@@ -38,6 +38,7 @@ void LayerStage::forget() {
   plate_track_.forget();
   plate_step_ = {};
   plate_ready_ = false;
+  key_pending_ = false;
 }
 
 void LayerStage::arrive(const PairFacts& facts, const LayerSetup& setup, bool smooth_first,
@@ -62,8 +63,13 @@ void LayerStage::arrive(const PairFacts& facts, const LayerSetup& setup, bool sm
     ++counts_.skipped[static_cast<std::size_t>(planned.error())];
   }
   if (plate_ != nullptr) {
+    // Une clé décidée dont SPAN n'a pas tourné (SPAN de b repris d'un dessin tenu, fait en avance, ou image
+    // sautée) : la plaque tient encore l'ancienne clé, à la place de laquelle le suivi compte déjà. Il
+    // repart, la paire refait une clé.
+    if (key_pending_) plate_track_.forget();
     plate_step_ = plate_track_.step(planned, continues);
-    if (plate_step_.action == PlateAction::None) plate_ready_ = false;
+    key_pending_ = plate_step_.action == PlateAction::Refresh;
+    if (plate_step_.action != PlateAction::Use) plate_ready_ = false;
   }
   if (planned && setup.layers) pair_ = std::move(*planned);
   // La plaque relit les tuiles de b : gardées même sans calques sur les images intermédiaires.
@@ -109,6 +115,7 @@ std::expected<void, Refusal> LayerStage::after_span(gpu::Backend& backend, const
       return {};
     }
     plate_ready_ = true;
+    key_pending_ = false;
     ++counts_.keys;
   }
   if (!plate_ready_) return {};

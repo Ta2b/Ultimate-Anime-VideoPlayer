@@ -20,6 +20,12 @@ bool keeps_rife(const kernels::SceneTile& tile) {
          (tile.kind == SceneClass::Uncertain && tile.changed);
 }
 
+// Un déplacement en tuiles, arrondi ; un déplacement non fini (tuile sans vecteur) compte pour nul.
+int tiles_moved(float d, double px) {
+  const double tiles = static_cast<double>(d) / px;
+  return std::isfinite(tiles) ? static_cast<int>(std::lround(std::clamp(tiles, -1e4, 1e4))) : 0;
+}
+
 // Les tuiles qui gardent RIFE : chaque dessin ou effet balaie le rectangle de tuiles entre sa place dans a et
 // sa place dans b (son déplacement dx, dy), élargi d'une tuile. Un personnage rapide, qui traverse plus d'une
 // tuile d'une image à l'autre, reste à RIFE sur tout son chemin : aux instants intermédiaires, a et b
@@ -31,8 +37,8 @@ std::vector<std::uint8_t> rife_zone(const kernels::SceneMotion& s) {
     for (int c = 0; c < s.cols; ++c) {
       const kernels::SceneTile& tile = s.at(c, r);
       if (!keeps_rife(tile)) continue;
-      const int to_c = c + static_cast<int>(std::lround(std::clamp(tile.dx / px, -1e4, 1e4)));
-      const int to_r = r + static_cast<int>(std::lround(std::clamp(tile.dy / px, -1e4, 1e4)));
+      const int to_c = c + tiles_moved(tile.dx, px);
+      const int to_r = r + tiles_moved(tile.dy, px);
       const int c0 = std::max(std::min(c, to_c) - 1, 0);
       const int c1 = std::min(std::max(c, to_c) + 1, s.cols - 1);
       const int r0 = std::max(std::min(r, to_r) - 1, 0);

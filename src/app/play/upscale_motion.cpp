@@ -137,7 +137,8 @@ std::expected<void, Refusal> UpscaleStage::measure_first_pair(const gpu::Motion&
 }
 
 std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu::Tensor& b,
-                                                 const gpu::Motion& motion, float t, const Target& out) {
+                                                 const gpu::Motion& motion, float t, const Target& out,
+                                                 bool layered) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   // Tri des paires (rife_triage.h) : le mouvement fondu là où la carte doute. Le masque du fondu : 1 − t pour
   // un mouvement lu à l'instant, 0,5 pour celui du milieu (kernels/spec/motion_doubt.h).
@@ -145,8 +146,9 @@ std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu
   read.warp = setup_.warp;
   read.pan_lock = setup_.pan_lock;
   if (out.ring != nullptr) return ops.warp_blend_ring(a, b, read, t, *out.ring);
-  if (auto ok = ops.warp_blend(a, b, read, t, *out.tensor); !ok) return ok;
-  // Calques (layer_stage.h) : le décor repris de a et b au seul mouvement de caméra ; sans carte, rien.
+  if (auto ok = ops.warp_blend(a, b, read, t, *out.tensor); !ok || !layered) return ok;
+  // Calques (layer_stage.h) : le décor repris de a et b au seul mouvement de caméra ; sans carte, rien. Pas
+  // pour DistilDRBA (a et b inversés après ½) ni GMFSS (a et b des clés intermédiaires).
   return layers_.compose_pair(ops, a, b, *out.tensor, t, setup_.warp == kernels::RifeWarp::CatmullRom);
 }
 
@@ -185,7 +187,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_direct(std::uint32_t outp
   if (warps_spanned()) {
     if (auto ok = span_current(); !ok) return ok;
   }
-  return blend(a, b, at_instant(run->motion), t, out);
+  return blend(a, b, at_instant(run->motion), t, out, true);
 }
 
 // Le mouvement maximal du milieu relu par l'hôte (ticket 0 : mesuré sur-le-champ), son attente au profil de
@@ -315,7 +317,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   if (const std::optional<bool> half = strong_half(t)) {
     auto run = strong_for(output, t, other, *half);
     if (!run) return std::unexpected(std::move(run.error()));
-    return blend(a, b, at_instant(run->motion), t, out);
+    return blend(a, b, at_instant(run->motion), t, out, true);
   }
   if (strong_motion_ && t != 0.5F) ++strong_derived_;
   // Paire forte : ses autres instants sont RIFE à l'instant exact (strong_half), sans poses ; son milieu suit
@@ -325,7 +327,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     const gpu::Motion previous = mid_motion(mid_ ^ 1U);
     return blend_poses(a, b, middle, before_ == PairMotion::Moving ? &previous : nullptr, t, out);
   }
-  return blend(a, b, middle, t, out);
+  return blend(a, b, middle, t, out, true);
 }
 
 }  // namespace kirari::app::play
