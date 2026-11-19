@@ -342,9 +342,11 @@ class KernelOps {
   // enfile sur la voie courante la seule lecture de a et b (la luma du flux), puis le flux et la réduction
   // sur une file à part, que le travail des voies n'attend jamais ; restart coupe les indices temporels de
   // NVOF (coupe, saut, nouvelle époque, début d'export : le résultat ne dépend alors pas de l'historique).
-  // scene_flow_take relit sans jamais attendre (nullopt : pas encore fini). kSceneFlowReadbacks paires en vol
-  // au plus : un ticket dépassé est périmé (SequenceOrder). Un seul thread appelle les deux. Refus : backend
-  // sans NVOF (AMD, Intel, pilote sans la bibliothèque), GPU sans carte de coût (Turing), taille refusée.
+  // Ticket 0 : NVOF n'a pas fini la paire d'avant, celle-ci n'est pas lancée (rien n'attend NVOF ; la paire
+  // suivante repart sans indices). scene_flow_take relit sans jamais attendre (nullopt : pas encore fini).
+  // kSceneFlowReadbacks paires en vol au plus : un ticket dépassé est périmé (SequenceOrder). Un seul thread
+  // appelle les deux. Refus : backend sans NVOF (AMD, Intel, pilote sans la bibliothèque), GPU sans carte de
+  // coût (Turing), taille refusée.
   virtual std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& /*a*/, const Tensor& /*b*/,
                                                                  bool /*restart*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_flow : absent de ce backend"});

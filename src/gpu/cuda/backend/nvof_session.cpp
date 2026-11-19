@@ -24,16 +24,17 @@
 namespace kirari::gpu::cuda {
 namespace {
 
+// La bibliothèque n'est jamais déchargée : le pilote garde ses fils après nvOFDestroy (comme la pré-analyse,
+// media/probe_flow_nvof.cpp) ; la décharger à la fin d'une lecture ou à un changement de taille ôterait leur
+// code sous eux.
 #if defined(_WIN32)
 constexpr const char* kLibrary = "nvofapi64.dll";
 void* open_library() {
-  return reinterpret_cast<void*>(LoadLibraryA(kLibrary));
+  // Le pilote est dans System32 : jamais une copie posée à côté du lecteur ou de la vidéo (P1.22).
+  return reinterpret_cast<void*>(LoadLibraryExA(kLibrary, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32));
 }
 void* find_symbol(void* library, const char* name) {
   return reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(library), name));
-}
-void close_library(void* library) {
-  FreeLibrary(static_cast<HMODULE>(library));
 }
 #else
 constexpr const char* kLibrary = "libnvidia-opticalflow.so.1";
@@ -43,12 +44,12 @@ void* open_library() {
 void* find_symbol(void* library, const char* name) {
   return dlsym(library, name);
 }
-void close_library(void* library) {
-  dlclose(library);
-}
 #endif
 
 using CreateInstance = NV_OF_STATUS NVOFAPI(uint32_t, NV_OF_CUDA_API_FUNCTION_LIST*);
+
+// NV_OF_API_VERSION, sans la conversion à l'ancienne de sa macro (-Wold-style-cast, clang-tidy).
+constexpr auto kApiVersion = static_cast<uint32_t>((NV_OF_API_MAJOR_VERSION << 4U) | NV_OF_API_MINOR_VERSION);
 
 // Une capacité à plusieurs valeurs ; vide si le pilote ne la donne pas.
 std::vector<uint32_t> caps(const NV_OF_CUDA_API_FUNCTION_LIST& calls, NvOFHandle handle, NV_OF_CAPS which) {
@@ -63,12 +64,10 @@ std::vector<uint32_t> caps(const NV_OF_CUDA_API_FUNCTION_LIST& calls, NvOFHandle
 }  // namespace
 
 struct NvofSession::Api {
-  void* library = nullptr;
   NV_OF_CUDA_API_FUNCTION_LIST calls{};
   NvOFHandle handle = nullptr;
   ~Api() {
     if (handle != nullptr) calls.nvOFDestroy(handle);
-    if (library != nullptr) close_library(library);
   }
 
   // Le refus d'un appel, avec le dernier message de la session s'il y en a un.
@@ -90,10 +89,25 @@ struct NvofSession::Buffers {
   NvOFGPUBufferHandle reference = nullptr;
   NvOFGPUBufferHandle flow = nullptr;
   NvOFGPUBufferHandle cost = nullptr;
+  // Adresses et pas, lus une fois à la création : jamais nuls ensuite (un noyau ne lit pas une adresse
+  // nulle).
+  Pitched input_at;
+  Pitched reference_at;
+  Pitched flow_at;
+  Pitched cost_at;
   ~Buffers() {
     for (NvOFGPUBufferHandle buffer : {input, reference, flow, cost}) {
       if (buffer != nullptr) calls->nvOFDestroyGPUBufferCuda(buffer);
     }
+  }
+  // Les adresses et pas des quatre tampons, lus une fois ; faux si l'un est illisible.
+  bool read_addresses() {
+    for (auto [buffer, into] : {std::pair{input, &input_at}, std::pair{reference, &reference_at},
+                                std::pair{flow, &flow_at}, std::pair{cost, &cost_at}}) {
+      *into = pitched(buffer);
+      if (into->data == nullptr || into->pitch == 0) return false;
+    }
+    return true;
   }
   Pitched pitched(NvOFGPUBufferHandle buffer) const {
     NV_OF_CUDA_BUFFER_STRIDE_INFO stride{};
@@ -131,15 +145,15 @@ std::expected<std::unique_ptr<NvofSession>, Refusal> NvofSession::open(int width
   session->height_ = height;
   session->api_ = std::make_unique<Api>();
   Api& api = *session->api_;
-  api.library = open_library();
-  if (api.library == nullptr) {
+  void* library = open_library();
+  if (library == nullptr) {
     return refuse(RefusalCode::LibraryUnavailable,
                   std::format("flux optique : {} absente (pilote NVIDIA sans flux optique)", kLibrary));
   }
-  auto* create = reinterpret_cast<CreateInstance*>(find_symbol(api.library, "NvOFAPICreateInstanceCuda"));
+  auto* create = reinterpret_cast<CreateInstance*>(find_symbol(library, "NvOFAPICreateInstanceCuda"));
   if (create == nullptr)
     return refuse(RefusalCode::LibraryUnavailable, "flux optique : NvOFAPICreateInstanceCuda absent");
-  if (const NV_OF_STATUS status = create(NV_OF_API_VERSION, &api.calls); status != NV_OF_SUCCESS) {
+  if (const NV_OF_STATUS status = create(kApiVersion, &api.calls); status != NV_OF_SUCCESS) {
     return refuse(RefusalCode::LibraryUnavailable,
                   std::format("flux optique : API {}.{} refusée par le pilote (erreur {})",
                               NV_OF_API_MAJOR_VERSION, NV_OF_API_MINOR_VERSION, static_cast<int>(status)));
@@ -213,12 +227,14 @@ std::expected<std::unique_ptr<NvofSession>, Refusal> NvofSession::open(int width
         status != NV_OF_SUCCESS)
       return api.failed(status, "nvOFCreateGPUBufferCuda");
   }
+  if (!buffers.read_addresses())
+    return refuse(RefusalCode::VendorCallFailed, "flux optique : adresse ou pas d'un tampon illisible");
   return session;
 }
 
 NvofSession::~NvofSession() {
   if (stream_ != nullptr) static_cast<void>(cudaStreamSynchronize(stream_));
-  buffers_.reset();  // tampons avant la session, la session avant la bibliothèque
+  buffers_.reset();  // tampons avant la session
   api_.reset();
   if (stream_ != nullptr) static_cast<void>(cudaStreamDestroy(stream_));
 }
@@ -231,16 +247,16 @@ int NvofSession::cells_y() const {
 }
 
 NvofSession::Pitched NvofSession::input() const {
-  return buffers_->pitched(buffers_->input);
+  return buffers_->input_at;
 }
 NvofSession::Pitched NvofSession::reference() const {
-  return buffers_->pitched(buffers_->reference);
+  return buffers_->reference_at;
 }
 NvofSession::Pitched NvofSession::flow() const {
-  return buffers_->pitched(buffers_->flow);
+  return buffers_->flow_at;
 }
 NvofSession::Pitched NvofSession::cost() const {
-  return buffers_->pitched(buffers_->cost);
+  return buffers_->cost_at;
 }
 
 std::expected<void, Refusal> NvofSession::execute(bool restart) {

@@ -92,6 +92,14 @@ std::expected<void, Refusal> SceneFlow::allocate_grid() {
   return {};
 }
 
+std::expected<bool, Refusal> SceneFlow::busy() const {
+  if (!consumed_posted_) return false;
+  const cudaError_t state = cudaEventQuery(consumed_);
+  if (state == cudaErrorNotReady) return true;
+  if (auto ok = cuda_check(state, "cudaEventQuery"); !ok) return std::unexpected(std::move(ok.error()));
+  return false;
+}
+
 std::expected<void, Refusal> SceneFlow::before_lumas(cudaStream_t lane) {
   if (!consumed_posted_) return {};
   return cuda_check(cudaStreamWaitEvent(lane, consumed_, 0), "cudaStreamWaitEvent");
@@ -137,6 +145,11 @@ std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, bool res
       cuda_check(cudaMemcpyAsync(read.host, device_, bytes, cudaMemcpyDeviceToHost, own), "cudaMemcpyAsync");
   if (ready) ready = cuda_check(cudaEventRecord(read.done, own), "cudaEventRecord");
   if (!ready) return std::unexpected(std::move(ready.error()));
+#ifdef _WIN32
+  // WDDM garde les lancements dans un lot logiciel : la file de NVOF est poussée tout de suite, comme la voie
+  // à chaque étape (TensorRtBackend::push_launches). « Pas prête » est la réponse normale.
+  static_cast<void>(cudaStreamQuery(own));
+#endif
   tickets_ = ticket;
   read.ticket = ticket;
   return ticket;
