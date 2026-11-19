@@ -2,7 +2,8 @@
 # Il emporte prepare (constructeur trtexec) et sa propre copie de spdlog ; ses symboles
 # restent cachés, sauf les trois points d'entrée.
 add_library(kirari_backend_tensorrt_kernels STATIC deband_kernels.cu drba_fused_kernels.cu export_kernels.cu
-  gmfss_kernels.cu rife_fused_kernels.cu rife_kernels.cu slice_kernels.cu stats_kernels.cu warp_kernels.cu)
+  gmfss_kernels.cu rife_fused_kernels.cu rife_kernels.cu scene_flow_kernels.cu slice_kernels.cu stats_kernels.cu
+  tfix_blend_kernels.cu tfix_fused_kernels.cu warp_kernels.cu warp_lib.cu)
 target_include_directories(kirari_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(kirari_backend_tensorrt_kernels PRIVATE kirari::dep::cudart)
 # -lineinfo pour ncu ; ptxas donne les registres de chaque noyau au journal de build, et un
@@ -54,12 +55,12 @@ if(KIRARI_WITH_SPAN_FP8)
       # CCCL de CUDA 13 exige le préprocesseur conforme de MSVC.
       $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
   endfunction()
-  # Une seule bibliothèque pour les noyaux FP8 et FP16, aux mêmes architectures : net_kernel<…> de conv_cat et
-  # de to_pixel est le même type dans span_fp8_net.cu et span_fp8_net16.cu. sm 89 (Ada) et sm 120 (Blackwell
+  # Une seule bibliothèque pour les noyaux FP8 (CUTLASS) et FP16 natifs (span_native16.cu, sans CUTLASS), aux
+  # mêmes architectures. sm 89 (Ada) et sm 120 (Blackwell
   # grand public, étape 10.2) : les mma FP8 m16n8k32 n'existent pas avant 89, et la liste
   # KIRARI_CUDA_ARCHITECTURES n'y change rien. Le PTX de 120 (code réel et virtuel) garde le module chargeable sur
   # une carte plus récente, où supported_device refuse de lancer les noyaux. CUDA 12.8 au moins.
-  add_library(kirari_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu span_fp8_net16.cu
+  add_library(kirari_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu span_native16.cu
     ${kirari_span_fp8_ref})
   kirari_span_cutlass_target(kirari_backend_span_fp8_kernels "89-real;120")
   set(kirari_span_fp8_net kirari_backend_span_fp8_kernels)
@@ -74,10 +75,14 @@ endif()
 
 add_library(kirari_backend_tensorrt MODULE
   drba_fused_engine.cpp entry.cpp fused_graphs.cpp gpu_timing.cpp host_upload.cpp ring_slot.cpp rife_fused_engine.cpp
-  ingest_chroma.cpp shared_activations.cpp span_fp8_check.cpp span_fp8_engine.cpp tensorrt_backend.cpp tensorrt_export.cpp tensorrt_kernels.cpp
-  tensorrt_gmfss.cpp tensorrt_lanes.cpp tensorrt_drba_fused.cpp tensorrt_rife.cpp tensorrt_rife_fused.cpp tensorrt_span_derive.cpp
-  span_timing.cpp tensorrt_span_fp8.cpp tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_warp.cpp trt_engine.cpp)
+  ingest_chroma.cpp nvof_session.cpp scene_flow.cpp shared_activations.cpp span_fp8_check.cpp span_fp8_engine.cpp tensorrt_backend.cpp tensorrt_export.cpp tensorrt_kernels.cpp
+  tensorrt_gmfss.cpp tensorrt_lanes.cpp tensorrt_drba_fused.cpp tensorrt_rife.cpp tensorrt_rife_fused.cpp tensorrt_scene_flow.cpp tensorrt_span_derive.cpp
+  span_timing.cpp tensorrt_span_fp8.cpp tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_tfix_fused.cpp tensorrt_warp.cpp tfix_fused_engine.cpp
+  trt_engine.cpp)
 target_include_directories(kirari_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")
+# En-têtes BSD de NVIDIA Optical Flow (nvof_session.cpp) : types et signatures seulement, la bibliothèque vient
+# du pilote ; aucun fichier de NVIDIA n'est livré.
+target_include_directories(kirari_backend_tensorrt SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/nvidia-optical-flow")
 target_link_libraries(kirari_backend_tensorrt PRIVATE
   kirari::gpu kirari::gpu_span_fp8 kirari::cuda_fused_keys kirari::prepare kirari::core_log kirari::dep::spdlog kirari_backend_tensorrt_kernels ${kirari_span_fp8_net}
   kirari::dep::tensorrt CUDA::cuda_driver ${CMAKE_DL_LIBS})

@@ -84,4 +84,24 @@ TEST_CASE("DistilDRBA fusionné (TensorRT) : la clé d'artefact se relit, une cl
   CHECK_FALSE(drba_fused_artifact_key_parse("drba-fused:1088x1920:4x:enc,b0,b1,b2"));
 }
 
+TEST_CASE("TemporalFix fusionné (TensorRT) : la clé d'artefact se relit, une clé abîmée est refusée",
+          "[gpu][fused_keys]") {
+  const TfixFusedKey key{
+      .window = true, .height = 540, .width = 960, .half = true, .engines = {"b0", "b1", "b2", "c"}};
+  const std::string text = tfix_fused_artifact_key(key);
+  CHECK(text == "tfix-fused:window:540x960:1:b0,b1,b2,c");
+  const auto parsed = tfix_fused_artifact_key_parse(text);
+  REQUIRE(parsed);
+  CHECK(parsed->window);
+  CHECK(parsed->half);
+  CHECK(parsed->height == 540);
+  CHECK(parsed->engines == key.engines);
+  CHECK(tfix_fused_artifact_key_parse("tfix-fused:encoder:1080x1920:0:enc"));
+  CHECK_FALSE(tfix_fused_artifact_key_parse("tfix-fused:encoder:1080x1920:0:enc,b0"));   // un moteur de trop
+  CHECK_FALSE(tfix_fused_artifact_key_parse("tfix-fused:window:541x960:0:b0,b1,b2,c"));  // impaire
+  CHECK_FALSE(tfix_fused_artifact_key_parse("tfix-fused:window:540x960:2:b0,b1,b2,c"));  // demi-taille
+  CHECK_FALSE(tfix_fused_artifact_key_parse("tfix-fused:window:540x960:0:b0,b1,b2,../c"));  // hors du cache
+  CHECK_FALSE(tfix_fused_artifact_key_parse("drba-fused:1088x1920:4:enc,b0,b1,b2"));
+}
+
 }  // namespace kirari::gpu::cuda

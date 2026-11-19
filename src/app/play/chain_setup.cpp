@@ -226,7 +226,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
           settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
       // Mouvement d'ensemble : le warp de RIFE mouvement et celui de DistilDRBA mouvement.
       .pan_lock = settings.pan_lock && (rife_motion || drba_motion),
-      .slots = std::move(slots)};
+      .slots = std::move(slots),
+      .scene_map = scene_map};
 }
 
 namespace {
@@ -367,8 +368,10 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   // disputent la carte sans rien recouvrir de plus. --lanes garde les trois voies.
   c.one_lane = o.one_lane || !o.lanes;
   c.rife_warm = o.rife_warm;
+  c.temporal_fix_whole = o.temporal_fix_whole;
   c.rife_encode_all = o.rife_encode_all;
   c.rife_at_slot = o.rife_at_slot;
+  c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
 }
 
@@ -382,6 +385,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
           .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) |
                     (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
                     (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
+                    (p.options.span_native ? gpu::kTrialSpanNative : 0U) |
                     (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
 }
 

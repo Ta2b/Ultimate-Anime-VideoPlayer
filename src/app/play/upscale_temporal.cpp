@@ -40,8 +40,10 @@ std::size_t UpscaleStage::temporal_ahead(std::size_t base) const {
 
 std::expected<void, Refusal> UpscaleStage::allocate_temporal() {
   if (setup_.temporal_fix == nullptr) return {};
-  if (setup_.temporal_encoder == nullptr || setup_.temporal_features <= 0)
-    return refuse(RefusalCode::ModelMismatch, "stabilisation temporelle : encodeur absent");
+  // Sans encodeur (--no-tfix-cache) : le moteur en un morceau, sept images, pas de traits gardés.
+  const bool cached = setup_.temporal_encoder != nullptr;
+  if (cached && setup_.temporal_features <= 0)
+    return refuse(RefusalCode::ModelMismatch, "stabilisation temporelle : traits sans canaux");
   // De la tête moins le rayon à la plus lointaine lue en avance, plus un tampon de jeu.
   const std::size_t capacity = kRadius + 1 + frames_ahead() + 1;
   temporal_.window = TemporalWindow(capacity);
@@ -53,15 +55,16 @@ std::expected<void, Refusal> UpscaleStage::allocate_temporal() {
         setup_.backend->alloc_tensor(gpu::TensorType::F16, planes3(setup_.work_width, setup_.work_height));
     if (!tensor) return std::unexpected(std::move(tensor.error()));
     temporal_.rgb.push_back(std::move(*tensor));
+    if (!cached) continue;
     auto encoded = setup_.backend->alloc_tensor(gpu::TensorType::F16, features);
     if (!encoded) return std::unexpected(std::move(encoded.error()));
     temporal_.features.push_back(std::move(*encoded));
   }
   const std::span<const std::string> names = setup_.temporal_fix->input_names();
-  if (names.size() != 2 * kFrames) {
+  const std::size_t expected = cached ? 2 * kFrames : kFrames;
+  if (names.size() != expected) {
     return refuse(RefusalCode::ModelMismatch,
-                  std::format("stabilisation temporelle : {} entrées au lieu de {}", names.size(),
-                              2 * kTemporalFixFrames));
+                  std::format("stabilisation temporelle : {} entrées au lieu de {}", names.size(), expected));
   }
   // L'entrée k du moteur (dans l'ordre de input_names) lit l'image, ou les traits, de rang r de la fenêtre.
   for (std::size_t k = 0; k < names.size(); ++k) {
@@ -124,7 +127,8 @@ std::expected<bool, Refusal> UpscaleStage::ingest_source(const DecodedFrame& fra
   }
   bool mirrored = false;
   const std::array<std::size_t, kTemporalFixFrames> chosen = window.window(*center, &mirrored);
-  std::array<gpu::Tensor, 2 * kTemporalFixFrames> inputs{};
+  std::array<gpu::Tensor, 2 * kTemporalFixFrames> slots{};
+  const std::span<gpu::Tensor> inputs(slots.data(), setup_.temporal_fix->input_names().size());
   for (std::size_t k = 0; k < inputs.size(); ++k) {
     const std::size_t slot = temporal_.inputs[k];
     inputs[k] = slot < kFrames ? temporal_.rgb[chosen[slot]]->tensor()
@@ -137,6 +141,7 @@ std::expected<bool, Refusal> UpscaleStage::ingest_source(const DecodedFrame& fra
   // autres reprennent leurs traits gardés (prepare/onnx_cache.h).
   std::expected<void, Refusal> ok;
   for (const std::size_t index : temporal_.fresh) {
+    if (setup_.temporal_encoder == nullptr) break;
     std::array encode_in{temporal_.rgb[index]->tensor()};
     std::array encode_out{temporal_.features[index]->tensor()};
     ok = setup_.backend->enqueue(*setup_.temporal_encoder, encode_in, encode_out);

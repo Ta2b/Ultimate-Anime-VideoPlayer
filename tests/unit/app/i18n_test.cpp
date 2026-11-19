@@ -203,6 +203,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "player_engines.cpp",
                                         "player_run.cpp",
                                         "ring_stage.cpp",
+                                        "scene_map.cpp",
                                         "scripted_input.cpp",
                                         "session.cpp",
                                         "span_commit.cpp",

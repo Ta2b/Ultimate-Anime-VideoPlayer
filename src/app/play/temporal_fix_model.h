@@ -33,10 +33,12 @@ inline constexpr std::string_view kTemporalFixFeatures = "features";
 prepare::EncoderCache temporal_fix_cache(bool half);
 
 // La fenêtre à construire : entrée coupée en kTemporalFixFrames images, suivies de leurs kTemporalFixFrames
-// traits gardés, à demi-taille si half, dans dir. Un fichier par modèle et par variante, quelle que soit la
-// taille de travail. Refus : ceux de derived_model et des découpes.
+// traits gardés (sans eux si whole : le graphe en un morceau, --no-tfix-cache), à demi-taille si half,
+// dans dir. Un fichier par modèle et par variante, quelle que soit la taille de travail. Refus : ceux de
+// derived_model et des découpes.
 std::expected<std::filesystem::path, Refusal> temporal_fix_graph(const std::filesystem::path& model,
-                                                                 bool half, const std::filesystem::path& dir);
+                                                                 bool half, const std::filesystem::path& dir,
+                                                                 bool whole = false);
 // L'encodeur à construire : une image 1 × 3 × H × W → ses traits (prepare::feature_channels canaux).
 std::expected<std::filesystem::path, Refusal> temporal_fix_encoder(const std::filesystem::path& model,
                                                                    bool half,

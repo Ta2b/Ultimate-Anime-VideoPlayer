@@ -15,6 +15,8 @@ tools/bench/qualite.sh --md rapport.md --json r.json    # avec le rapport par ca
 tools/bench/qualite.sh --video episode.mkv --scenes 60  # mouvement réel d'un épisode
 tools/bench/qualite.sh --seulement mouvement --reseau nouveau_rife.onnx
 python3 -I tools/bench/qualite/test_banc.py             # les tests du banc, sans modèle
+python3 -I tools/bench/qualite/scintillement.py a.mkv b.mkv --source extrait.mkv --flux nvof --nvof-dump …
+                                                        # laquelle de deux sorties scintille le moins, par plan
 python3 -I tools/bench/qualite/rife_taille.py --video extrait-1080p.mkv --reseau rife_v4.26.onnx
                                                         # RIFE estimé plus petit que l'image (docs/interpolation.md)
 python3 -I tools/bench/qualite/rife_instants.py --video extrait-1080p.mkv --reseau rife_v4.22_lite.onnx
@@ -373,3 +375,33 @@ warp par texture. Le temps des deux ordres ne se mesure que sur la carte (« À 
 
 Le même banc tourne sur la carte avec `--provider cuda` (paquet `onnxruntime-gpu`), ce qui donne le FP16 d'un
 vrai GPU, mais pas celui de TensorRT.
+
+## Scintillement de deux sorties du lecteur
+
+`tools/bench/qualite/scintillement.py` dit laquelle de deux sorties (ou plus) tremble le moins dans le temps, plan
+par plan. C'est l'outil 0.1 du guide d'implémentation : les lots A, B et C, TemporalFix, les éclats HDR et les tuiles
+qui bougent passent leur porte de stabilité avec lui.
+
+```sh
+# deux exports du même passage (export-lossless, même --start et --seconds), sans puis avec TemporalFix
+python3 -I tools/bench/qualite/scintillement.py sans_tf.mkv avec_tf.mkv --source extrait.mkv \
+    --flux nvof --nvof-dump build/nvof_dump/nvof_dump --porte 0.9 --md scintillement.md --json scintillement.json
+# sans carte NVIDIA : le flux de RIFE sur processeur
+python3 -I tools/bench/qualite/scintillement.py sans_tf.mkv avec_tf.mkv --source extrait.mkv \
+    --flux rife --rife ~/.cache/kirari-release-models/modeles/rife/rife_v4.25.onnx
+```
+
+- Pour chaque paire N, N+1, un flux déplace les images l'une sur l'autre : NVOF (`tools/nvof_interp/nvof_dump`, le
+  flux arrière, l'aller servant à la cohérence) ou RIFE (ses deux flux vers le milieu de la paire, estimés à 720p).
+- Le flux vient de la source, jamais d'une sortie, et le même sert à toutes : sinon il favoriserait celle d'où il
+  vient. Il n'est retenu que là où il recale la source elle-même (écart flouté sous `--seuil`, 10 niveaux), où il ne
+  lit pas hors de l'image et, avec NVOF, où l'aller et le retour s'annulent.
+- Une paire dont moins de 30 % de l'image est sûre est une coupe : elle est exclue et ouvre un nouveau plan. Une paire
+  dont la luminance moyenne recalée change de plus de `--fondu` (0,75 niveau) est un fondu ou un éclair : exclue.
+- Le score d'une sortie est l'écart moyen de luminance (niveaux 8 bits) entre ses deux images recalées. Le grain et
+  la compression de la source y sont pour toutes pareil : on ne lit que l'écart entre sorties, jamais un score seul.
+- Le rapport est par plan (un plan d'au moins `--plan-min` paires, 8), jamais une moyenne de la vidéo. `--porte F`
+  sort en erreur si la dernière sortie n'est pas devant la première sur au moins F des plans.
+
+Porte de l'outil lui-même : sur un extrait connu pour scintiller, SPAN sans TemporalFix contre le même avec, il doit
+classer TemporalFix devant sur au moins 9 plans sur 10 (`--porte 0.9`). Sinon c'est l'outil qui est faux.

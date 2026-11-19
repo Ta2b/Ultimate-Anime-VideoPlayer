@@ -127,7 +127,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 36> kTrialOptions{
+constexpr std::array<std::string_view, 39> kTrialOptions{
     "--rife-image",      "--ring-rgb10a2",   "--no-ring-rgb10a2", "--hdr-metadata",   "--no-hdr-metadata",
     "--probe-nvdec",     "--no-probe-nvdec", "--shot-cuts",       "--no-shot-cuts",   "--one-lane",
     "--lanes",           "--skip-held",      "--anime-shots",     "--no-anime-shots", "--fast-steady",
@@ -135,7 +135,7 @@ constexpr std::array<std::string_view, 36> kTrialOptions{
     "--audio-pll",       "--no-audio-pll",   "--vsync-index",     "--no-vsync-index", "--present",
     "--no-present",      "--no-vrr",         "--rife-calm-model", "--rife-warm",      "--profile-dispatches",
     "--rife-encode-all", "--rife-at-slot",   "--filtered-warp",   "--warp-l2",        "--rife-hwc8",
-    "--no-rife-hwc8"};
+    "--no-rife-hwc8",    "--no-tfix-cache",  "--scene-map",       "--no-tfix-fused"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -157,7 +157,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 39> kFlags{{
+constexpr std::array<Flag, 43> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -168,6 +168,7 @@ constexpr std::array<Flag, 39> kFlags{{
     {"--no-ring-rgb10a2", &PlayOptions::ring_rgb10a2, false},
     {"--probe-nvdec", &PlayOptions::probe_nvdec, true},
     {"--no-probe-nvdec", &PlayOptions::probe_nvdec, false},
+    {"--no-probe-flow", &PlayOptions::probe_flow, false},
     {"--shot-cuts", &PlayOptions::shot_cuts, true},
     {"--no-shot-cuts", &PlayOptions::shot_cuts,
      false},  // les coupes de l'interpolation mesurées par RIFE seul
@@ -185,12 +186,15 @@ constexpr std::array<Flag, 39> kFlags{{
     {"--rife-hwc8", &PlayOptions::rife_hwc8, true},
     {"--no-rife-hwc8", &PlayOptions::rife_hwc8, false},
     {"--span-native", &PlayOptions::span_native, true},
+    {"--no-tfix-fused", &PlayOptions::temporal_fix_fused, false},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},
     {"--rife-at-slot", &PlayOptions::rife_at_slot, true},
+    {"--scene-map", &PlayOptions::scene_map, true},
     {"--skip-held", &PlayOptions::skip_held, true},
     {"--fast-steady", &PlayOptions::fast_steady, true},
     {"--smooth-drawings", &PlayOptions::smooth_drawings, true},
+    {"--no-tfix-cache", &PlayOptions::temporal_fix_whole, true},
     {"--ring-watcher", &PlayOptions::ring_watcher, true},
     {"--no-ring-watcher", &PlayOptions::ring_watcher, false},
     {"--precise-wait", &PlayOptions::precise_wait, true},
@@ -573,6 +577,7 @@ std::string play_usage(bool debug) {
       "                         output, only a .pq.ppm name keeps the graded picture\n"
       "  --snapshot-frames=N    N presentations in a row (FILE-001.ppm…), for flicker\n"
       "  --sdr                  SDR output even on an HDR screen (SDR grade tests)\n"
+      "  --no-probe-flow        shot cuts without NVIDIA's optical flow, as on other cards\n"
       "  --bake-looks=FILE.cube writes play.toml's LUT stack (strengths included) as a single\n"
       "                         65-point LUT, then stops\n"
       "  --anime-contrast=N, --anime-saturation=N, --anime-highlights=N\n"
@@ -632,11 +637,17 @@ std::string play_usage(bool debug) {
          "shot\n"
          "  --smooth-drawings      a drawing held 2 to 6 frames blends into motion (motion RIFE; the\n"
          "                         Video menu option \"Smooth held drawings\" for this playback)\n"
+         "  --no-tfix-cache        trial: temporal stabilization in one engine, each frame encoded at\n"
+         "                         every pass, instead of the encoder cache (same output)\n"
+         "  --no-tfix-fused        trial: temporal stabilization by the encoder-cache graph instead of\n"
+         "                         the fused engines (TensorRT)\n"
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass instead of\n"
          "                         keeping the encoding of the pair and of the previous B (same output)\n"
          "  --rife-at-slot         measurement: each RIFE pass of a strong pair waits for the ring slot\n"
          "                         of its image instead of being queued when the pair arrives (same output)\n"
+         "  --scene-map            trial: NVIDIA optical flow (RTX 30 and later) maps each pair: camera,\n"
+         "                         tiles that move, cuts; same output until a feature reads it\n"
          "  --warp-l2              trial: TensorRT warp keeps the flow in persisting L2 (same output)\n"
          "  --no-rife-hwc8         trial: fused RIFE blocks built with planar inputs and outputs under\n"
          "                         TensorRT, with reformat copies (default: HWC8, same output)\n"

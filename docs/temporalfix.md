@@ -51,7 +51,8 @@ savoir. Stabiliser avant l'interpolation aide aussi RIFE : moins de bruit, des f
   gardent les dimensions H et W, et le profil de construction les donne à toutes (`ModelSource::twins`, au
   nombre de canaux près). Les traits sont gardés à côté de leur image dans `temporal_window` : le reflet aux
   bords et les époques s'appliquent aux deux à la fois. Idée reprise de libaji (`src/native/tfix.cpp`,
-  commit `1fea490`), écrite sur nos propres découpes ; aucune ligne reprise.
+  commit `1fea490`), écrite sur nos propres découpes ; aucune ligne reprise. Retour en arrière : `--debug --no-tfix-cache`
+  reconstruit le graphe en un seul moteur, chaque image encodée à chaque passe (même sortie).
 - `src/app/play/chain_temporal.cpp` : la construction et le chargement des deux moteurs (TensorRT, voie
   Upscale). Un refus laisse la lecture sans elle, retenu pour la séance.
 - `src/app/play/temporal_window.*` : les tampons bruts gardés par pts et le choix des sept images.
@@ -102,6 +103,33 @@ Ces temps sont ceux du graphe en un morceau, avant le cache de l'encodeur : à m
 À 24 i/s, la demi-taille prend environ 15 % de la carte, la moitié de SPAN FP8 (12,5 ms) ; la pleine taille
 environ 67 %. Le graphe à demi-taille complet (moyennes, Resize, addition à pleine taille) reste à mesurer sur
 la RTX.
+
+## Fusionné (lot B, étapes 2 et 3)
+
+Sous TensorRT, le lecteur essaie d'abord TemporalFix fusionné (`src/app/play/chain_temporal.cpp`), et ne
+retombe sur le graphe à cache de l'encodeur que s'il est refusé (la raison au journal). `--debug --no-tfix-fused`
+garde ce graphe, pour la mesure ABAB ; `--debug --no-tfix-cache` prend le graphe en un morceau.
+
+- **Découpe** (`src/prepare/tfix_split.*`) : le modèle est reconnu (noms des tenseurs aux frontières, Concat
+  d'entrée, temps des appuis, constantes du mélange, attributs des Resize et des GridSample) puis coupé en cinq
+  morceaux de convolutions : l'encodeur (une image), les trois blocs du flot et la tête de confiance, en lots
+  de six appuis à forme fixe. Le manifeste `.tfixfused` et les morceaux vont dans les modèles dérivés, sous un
+  nom qui porte la dérivation (`fusion1`), le rôle, la taille du réseau et l'empreinte du modèle.
+- **Encodeur fusionné** : pour chaque image ingérée, en demi-taille la moyenne 2 × 2, puis les traits
+  (TensorRT), puis les trois niveaux de pyramide (flou binomial 5 × 5 et Resize, 7 canaux) écrits une fois
+  dans le tampon gardé (`kernels::tfix_packed`). Une image sert sept fenêtres : la pyramide n'est plus refaite.
+- **Fenêtre fusionnée** (`src/gpu/cuda/backend/tfix_fused_engine.*`) : X0 depuis les pyramides, puis pour
+  chaque niveau le Resize du bloc, le flot doublé, le warp des pyramides de l'appui (bibliothèque de warps,
+  `docs/warp-lib.md`) et le Concat en un seul noyau (`tfix_fused_kernels.cu`) ; l'entrée de la tête (warp de
+  l'image entière, moyennes, différences) en un noyau, puis le mélange des six appuis en un noyau
+  (`tfix_blend_kernels.cu`). Toute la fenêtre est un seul graphe CUDA ; ses adresses passent par une table en
+  mémoire de l'appareil, posée avant chaque lancement.
+- **Écart** : la référence numpy de la même décomposition (`tools/temporalfix/fused_reference.py`) donne
+  78 dB face au graphe entier FP16 (s1, s2, s3), le pixel (0, 0) mis à part : le graphe y ajoute un terme de
+  2^-11 que la fusion laisse de côté.
+
+Cible du lot B : 12 ms ou moins par image à pleine taille en 1080p sur la RTX 4070 Ti (27,9 ms pour le graphe
+entier), à 52 dB ou plus face au graphe entier. Pas encore mesuré : porte du groupe de tests 2, sur le PC.
 
 ## Coût dans l'Auto
 

@@ -100,7 +100,10 @@ namespace kirari::gpu {
 //      travail).
 // 45 : KernelOps::gmfss_still (le décor fixe des clés repris des sources).
 // 46 : SplatJob::pull (le splat tiré).
-inline constexpr int kBackendAbi = 46;
+// 47 : KernelOps::scene_flow_start et scene_flow_take (la carte de la scène par le flux optique de NVIDIA,
+// kernels/spec/scene_flow.h).
+// 48 : TemporalFix fusionné (manifestes « .tfixfused » : encodeur et fenêtre, tampon gardé à pyramides).
+inline constexpr int kBackendAbi = 48;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -129,6 +132,10 @@ inline constexpr std::uint32_t kTrialWarpL2 = 1U << 3U;
 // colle écrivant et lisant ce format : plus de copies de reformatage (41 % du dernier bloc). Même calcul, au
 // rangement près. Lu par le backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialRifeHwc8 = 1U << 4U;
+// --span-native : le SPAN FP8 prend conv_1 (dégroupage fondu), conv_cat et to_pixel aux noyaux du FP16 natif
+// (docs/span-native16.md) ; le FP16 natif lui-même passe par son paquet (SpanVariantKind::Fp16Cutlass). Lu
+// par le backend TensorRT ; sans effet ailleurs.
+inline constexpr std::uint32_t kTrialSpanNative = 1U << 5U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le

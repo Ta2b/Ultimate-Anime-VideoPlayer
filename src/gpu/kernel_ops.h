@@ -30,6 +30,7 @@
 #include "gpu/gpu_profile.h"
 #include "gpu/tensor.h"
 #include "kernels/spec.h"
+#include "kernels/spec/scene_flow.h"
 
 namespace kirari::gpu {
 
@@ -117,6 +118,8 @@ struct PairScores {
 
 // Mesures lancées sans attente (scores_start, flow_max_start) et pas encore relues, par sorte.
 inline constexpr std::size_t kPendingReadbacks = 2;
+// Paires de la carte de la scène en vol (scene_flow_start), relues une paire plus tard.
+inline constexpr std::size_t kSceneFlowReadbacks = 3;
 
 // Images décodées qu'un backend garde au plus après ingest, le temps que le GPU finisse de les lire
 // en place (TensorRT avec NVDEC) : le décodeur leur réserve autant de surfaces.
@@ -320,6 +323,22 @@ class KernelOps {
   virtual std::expected<std::optional<kernels::FrameStats>, Refusal> frame_stats_take(
       std::uint64_t /*ticket*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "frame_stats : absent de ce backend"});
+  }
+  // La carte de la scène (kernels/spec/scene_flow.h) : le flux optique matériel de NVIDIA entre deux images
+  // RGB de travail a et b (1 × 3 × H × W, FP16 ou FP32, même taille), réduit par tuile. scene_flow_start
+  // enfile sur la voie courante la seule lecture de a et b (la luma du flux), puis le flux et la réduction
+  // sur une file à part, que le travail des voies n'attend jamais ; restart coupe les indices temporels de
+  // NVOF (coupe, saut, nouvelle époque, début d'export : le résultat ne dépend alors pas de l'historique).
+  // scene_flow_take relit sans jamais attendre (nullopt : pas encore fini). kSceneFlowReadbacks paires en vol
+  // au plus : un ticket dépassé est périmé (SequenceOrder). Un seul thread appelle les deux. Refus : backend
+  // sans NVOF (AMD, Intel, pilote sans la bibliothèque), GPU sans carte de coût (Turing), taille refusée.
+  virtual std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& /*a*/, const Tensor& /*b*/,
+                                                                 bool /*restart*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_flow : absent de ce backend"});
+  }
+  virtual std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
+      std::uint64_t /*ticket*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_flow : absent de ce backend"});
   }
   // L'appareil répond-il encore (étape 11.5) ? Chaque file interrogée sans l'attendre ; DeviceLost quand le
   // contexte est perdu. RingStage le demande quand une image attend un slot depuis plus de 200 ms.

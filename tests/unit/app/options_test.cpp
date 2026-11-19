@@ -101,6 +101,8 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   REQUIRE(nvdec);
   CHECK(nvdec->probe_nvdec);
   CHECK_FALSE(parse({"épisode.mkv", "--no-probe-nvdec"})->probe_nvdec);
+  CHECK(options->probe_flow);  // défaut, sans --debug
+  CHECK_FALSE(parse({"épisode.mkv", "--no-probe-flow"})->probe_flow);
   CHECK(options->shot_cuts);  // défaut
   const auto cuts = parse({"épisode.mkv", "--no-shot-cuts"});
   REQUIRE(cuts);

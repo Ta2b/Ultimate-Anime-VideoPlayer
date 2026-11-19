@@ -46,6 +46,7 @@ class SharedActivations;
 // refus de construction (C03-08).
 std::string shape_text(const ShapeSet& shapes);
 class SpanFp8Engine;
+class SceneFlow;
 class RifeFusedEngine;
 class DrbaFusedEngine;
 struct IngestParams;
@@ -119,6 +120,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::uint64_t, Refusal> frame_stats_start(const Tensor& rgb,
                                                           kernels::FrameTransfer transfer) override;
   std::expected<std::optional<kernels::FrameStats>, Refusal> frame_stats_take(std::uint64_t ticket) override;
+  // La carte de la scène par NVOF (tensorrt_scene_flow.cpp, scene_flow.h), relue sans attente.
+  std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& a, const Tensor& b,
+                                                         bool restart) override;
+  std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
+      std::uint64_t ticket) override;
   std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
                                                 const Motion* previous, float t, const Tensor& out) override;
   // Les mêmes, directement dans le slot (BackendCaps::ring_targets).
@@ -222,6 +228,12 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::unique_ptr<Engine>, Refusal> load_drba_fused(const Artifact& artifact);
   std::expected<void, Refusal> enqueue_drba_fused(DrbaFusedEngine& engine, std::span<const Tensor> inputs,
                                                   std::span<Tensor> outputs);
+  // TemporalFix coupé en morceaux (tensorrt_tfix_fused.cpp) : l'encodeur ou la fenêtre, selon le manifeste.
+  std::expected<Artifact, Refusal> build_tfix_fused(const ModelSpec& model, const ShapeSet& shapes,
+                                                    Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_tfix_fused(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_tfix_fused(Engine& engine, std::span<const Tensor> inputs,
+                                                  std::span<Tensor> outputs);
   // Les réglages de trtexec de cet appareil (build, build_rife_fused, build_drba_fused).
   prepare::TrtexecConfig trtexec_config() const;
   // La voie lane le temps d'une portée.
@@ -313,8 +325,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool filtered_warp_ = false;
   // kTrialL2Keep (--l2-keep, essai) : l'encodage gardé de RIFE fusionné tenu en L2.
   bool l2_keep_ = false;
-  bool rife_hwc8_ = false;  // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
-  bool warp_l2_ = false;    // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
+  bool span_native_ = false;  // bords du SPAN FP8 par les noyaux du FP16 natif (kTrialSpanNative)
+  bool rife_hwc8_ = false;    // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
+  bool warp_l2_ = false;      // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
   std::optional<std::size_t> l2_persisting_;  // persisting_l2, une fois
   std::filesystem::path trtexec_;
   std::string trtexec_sha256_;  // relevé à create (A05-05)
@@ -438,6 +451,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
   std::uint64_t flow_tickets_ = 0;
   std::uint64_t stats_tickets_ = 0;
+  // La session NVOF de la carte de la scène, créée au premier scene_flow_start ; détruite avant les voies.
+  std::unique_ptr<SceneFlow> scene_flow_;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).

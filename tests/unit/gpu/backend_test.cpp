@@ -25,7 +25,7 @@ using kirari::Refusal;
 using kirari::RefusalCode;
 using namespace kirari::gpu;
 
-static_assert(kBackendAbi == 46);
+static_assert(kBackendAbi == 48);
 // Aucune exception ne traverse les points d'entrée : sous MSVC, une exception sortie d'une
 // fonction extern "C" est un comportement indéfini chez l'appelant.
 static_assert(std::is_nothrow_invocable_r_v<int, BackendAbiFn>);
