@@ -186,10 +186,6 @@ class PlaceboSourceGrader final : public SourceGrader {
 
 }  // namespace
 
-void PlaceboScreen::set_grade_before_warp(bool on) {
-  impl_->grade_before_warp = on;
-}
-
 std::shared_ptr<SourceGrader> PlaceboScreen::source_grader(bool external, double source_fps,
                                                            std::uint32_t generation) {
   return std::make_shared<PlaceboSourceGrader>(impl_->vk->gpu, impl_->log, impl_->source_grade_share,

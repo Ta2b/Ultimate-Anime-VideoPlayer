@@ -227,6 +227,11 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   gpu::Backend& backend = *setup_.backend;
   const gpu::BackendCaps caps = backend.capabilities();
   copies_ = caps.lanes > 1 && !setup_.one_lane ? 2U : 1U;
+  // Sans SPAN, le grade avant le warp grade une copie de chaque source (warps_spanned), que RIFE ne lit pas.
+  // Ni GMFSS, ni les calques, ni Smooth, ni TemporalFix : ils lisent les sources de travail (l'écran grade).
+  graded_copies_ = setup_.engine == nullptr && setup_.grader != nullptr && !setup_.yuv_slots &&
+                   setup_.gmfss.use == GmfssUse::Off && !setup_.layers.layers && !setup_.smooth_drawings &&
+                   setup_.temporal_fix == nullptr;
   if (setup_.yuv_slots && !caps.yuv_targets) {
     return refuse(RefusalCode::FormatUnsupported,
                   std::format("étage gpu : le backend {} n'écrit pas en YUV pour l'encodeur", caps.name));
@@ -250,11 +255,12 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   }
   const gpu::Shape out_shape = planes(3, w * kSpanFactor, h * kSpanFactor);
   if (warps_spanned()) {
+    const gpu::Shape shape = setup_.engine != nullptr ? out_shape : planes(3, w, h);  // copies gradées
     for (auto& spanned : spanned_) {
-      if (auto ok = alloc(spanned, out_shape); !ok) return ok;
+      if (auto ok = alloc(spanned, shape); !ok) return ok;
     }
     for (std::uint32_t i = 0; i < copies_ && !ring_direct_; ++i) {
-      if (auto ok = alloc(middle_outs_[i], out_shape); !ok) return ok;
+      if (auto ok = alloc(middle_outs_[i], shape); !ok) return ok;
     }
   } else if (setup_.engine != nullptr) {
     if (auto ok = alloc(output_, out_shape); !ok) return ok;
