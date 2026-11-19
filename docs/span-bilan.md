@@ -1,5 +1,11 @@
 # Bilan du SPAN natif (CUDA, RTX 40 et 50)
 
+Mis à jour le 19 novembre 2026 en soirée : **le noyau Winograd F(2×2, 3×3) est écrit (#980), éteint par
+défaut.** Sur l'émulateur, il donne 72,13 dB contre 71,81 au direct, sans valeur non finie, et la même sortie
+au bit près avec ou sans bandes. Il compile sans débordement sur sm 8.9 et 12.0. Reste le temps au PC : la
+colonne « Winograd » du banc. F(2×2) passe avant F(4×4), dont le calcul de V lirait trop la mémoire partagée
+sans transformée séparable.
+
 Mis à jour le 19 novembre 2026 au soir : **Winograd passe la porte des dB.** Sur les vrais modèles et deux
 images d'anime (270 × 480), F(4×4, 3×3) en f16 rend 65,9 à 67,7 dB au b8f64 et 70,1 à 72,3 dB au b5f48,
 contre 65,3 à 67,1 et 66,7 à 68,8 dB pour le calcul direct d'aujourd'hui : pas de perte, un léger gain (moins
@@ -55,6 +61,7 @@ les bords natifs du FP8 (`kirari play --debug --span-native-edges`, #854).
 | #951 | Le PC ne mesure que les temps ; EXPORT et `justesse_cpu.py` jugent la justesse sur processeur |
 | #963 | Poids partagés à l'essai, sortie au bit près ; la convolution passe dans `span_native_conv.cuh` |
 | #973 | Poids partagés par défaut à 48 canaux seulement, d'après le banc ; le banc mesure avec et sans |
+| #980 | Winograd F(2×2, 3×3) à l'essai (64 canaux, sommes f16), éteint par défaut ; colonne « Winograd » au banc |
 
 ### Mesures, dans l'ordre
 
@@ -167,7 +174,7 @@ Les gains sont des estimations sans mesure, sauf les plafonds, qui sont calculé
 | Poids partagés (#963) | mesuré : −3,7 % au b5f48, +4,1 % au b8f64 | aucun : bit près, choisi par modèle | fait |
 | Réglage par couche (tuile, warps, lignes par warp, bande), choisi au chargement | 5 à 15 % | faible ; chronométrer les variantes au chargement est admis | cloud, puis temps au PC |
 | Fusion d'un bloc SPAB | le trafic d'activations du L2 (4,2 Go) | moyen à fort, voir ci-dessous | cloud, puis temps au PC |
-| Winograd F(2×2, 3×3) | multiplications des 3×3 ÷ 2,25 : 2,97 ms de mma au plafond | dB mesurés : aucune perte ; transformées sur les cœurs ordinaires | cloud, puis temps au PC |
+| Winograd F(2×2, 3×3) (#980) | multiplications des 3×3 ÷ 2,25 : 2,97 ms de mma au plafond | dB mesurés : aucune perte ; 64 barrières par tuile au lieu de 2 | noyau écrit, temps au PC |
 | Winograd F(4×4, 3×3) | ÷ 4 : 1,82 ms de mma au plafond | dB mesurés : aucune perte ; transformées plus lourdes (tuiles 6 × 6), noyau le plus complexe | cloud, puis temps au PC |
 | FP8 natif (cran Performance) | 3,29 ms au plafond, 6 à 7 ms attendus | justesse du FP8 ; en pause | cloud et PC |
 | Parcimonie 2:4 (mma.sp) | tensor cores ×2 sur les blocs : 3,3 ms au plafond en f16 | fort : réentraîner le SPAN (élagage puis affinage), licence du modèle à vérifier, calcul d'entraînement | hors du cloud processeur |
@@ -223,9 +230,11 @@ profil montre que le L2 des activations limite.
 
    L'interprète en f32 rend la référence à 138–141 dB ; le direct émulé (67 dB) recoupe les 66,6 dB mesurés
    en lecture. Winograd somme sur Cin seulement (3 ou 4 pas de 16 par point) au lieu de 9 · Cin (27 ou 36
-   pas) : moins d'arrondis de l'accumulateur f16, d'où le léger gain. Reste à écrire le noyau : transformée
-   d'entrée en mémoire partagée, 16 ou 36 mma par point de la tuile, transformée de sortie dans l'épilogue
-   (porte et bandes inchangées), vérifié sur l'émulateur, puis temps au PC. Commande :
+   pas) : moins d'arrondis de l'accumulateur f16, d'où le léger gain. Le noyau F(2×2, 3×3) est écrit
+   (#980, `span_native_wino.cuh`, section « Winograd » de `span-native16.md`), éteint par défaut. Émulateur :
+   72,13 dB contre 71,81 au direct, même sortie en bandes au bit près. Reste le temps au PC : la colonne
+   « Winograd » du banc (`--winograd`). S'il gagne et garde ses dB (export `wg`), Auto le prend à 64 canaux.
+   F(4×4) ne viendrait qu'avec une transformée séparable. Commande des dB :
    `python3 -I tools/bench/span_native/winograd_db.py MODELE.onnx --image IMAGE --coin 270 480`.
 6. **Cloud puis PC** : la fusion en bande de colonnes (partie 3), si le profil montre que le L2 des
    activations limite.
