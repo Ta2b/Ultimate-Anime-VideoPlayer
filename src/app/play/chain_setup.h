@@ -138,7 +138,7 @@ struct ChainEngines {
   int rife_planes = kernels::kRifeInputChannels;
   bool skip_held = false;               // --skip-held (UpscaleSetup::skip_held)
   bool span_reuse = true;               // --no-span-reuse (UpscaleSetup::span_reuse)
-  bool span_tiles = false;              // --span-tiles (UpscaleSetup::span_reuse)
+  bool span_tiles = true;               // --no-span-tiles (UpscaleSetup::span_reuse)
   bool span_tiles_check = false;        // --span-tiles-check (UpscaleSetup::span_reuse)
   bool one_lane = false;                // --one-lane (UpscaleSetup::one_lane)
   bool rife_warm = false;               // --rife-warm (UpscaleSetup::rife_warm)
