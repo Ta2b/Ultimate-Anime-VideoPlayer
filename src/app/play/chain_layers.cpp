@@ -12,14 +12,16 @@ namespace kirari::app::play {
 
 std::optional<bool> load_plate(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                const PlaySettings& settings) {
-  if (!settings.background_plate || c.engine == nullptr || !c.model) return true;
   const auto log = log_channel("app");
+  if ((settings.background_plate || settings.layers) && !c.scene_map) {
+    log->info("calques et plaque de décor : sans --scene-map, pas de carte de la scène, éteints");
+    return true;
+  }
+  if (!settings.background_plate || c.engine == nullptr || !c.model) return true;
   if (!settings.layers)
     log->info(
         "plaque de décor : elle suit la carte de la scène, comme les calques ; les images intermédiaires "
         "gardent RIFE seul");
-  if (!c.span_int8)
-    log->info("plaque de décor : SPAN tourne déjà en FP16, la plaque n'apporte que la stabilité du décor");
   const gpu::Shape shape{.dims = {1, 3, c.work.height, c.work.width}};
   auto engine = prepare_engine(p, init, *c.backend, c.model->path, shape,
                                EngineLabel{.name = i18n::tr("Background plate"),
@@ -35,6 +37,11 @@ std::optional<bool> load_plate(Player& p, const gpu::BackendInit& init, ChainEng
   c.plate = std::move(**engine);
   log->info("plaque de décor : SPAN {} FP16 sur une image clé par plan", core::to_utf8(c.model->path.stem()));
   return true;
+}
+
+LayerSetup layer_setup(const ChainEngines& c, const MasterClock* clock) {
+  if (clock == nullptr || !c.scene_map) return {};
+  return {.layers = c.layers && c.rife_motion != nullptr, .plate = c.plate.get()};
 }
 
 }  // namespace kirari::app::play

@@ -1,10 +1,14 @@
 #include "app/play/layer_plan.h"
 
+#include <limits>
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "app/play/chain_setup.h"
 #include "app/play/settings.h"
+#include "doubles.h"
 #include "upscale_rig.h"
 
 using namespace kirari;
@@ -73,6 +77,13 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   CHECK(swept->decor[3 * 8 + 6] == 0);
   CHECK(swept->decor[2 * 8 + 7] == 1);
   CHECK(swept->decor[0] == 1);
+  // Une tuile dessin sans vecteur (déplacement non fini) : seule sa zone proche garde RIFE.
+  SceneMotion lost = pan(4.0);
+  lost.tiles[2 * 8 + 3].kind = SceneClass::Drawing;
+  lost.tiles[2 * 8 + 3].dx = std::numeric_limits<float>::quiet_NaN();
+  const auto near = plan_layers(lost, 64, 36);
+  REQUIRE(near);
+  CHECK(near->decor == layers->decor);  // la même zone que le dessin immobile plus haut
 
   // Sortie ×2 : tuiles de 16, déplacements de ±4 pixels de sortie à t = ½ (8 de caméra en sortie).
   const kirari::kernels::LayerGrid grid = layer_grid(*layers, 128, 72);
@@ -107,6 +118,15 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   CHECK(plate->count == 1);
   CHECK(plate->source_grid.cols == 8);
   CHECK_THAT(plate->sources[0].shift[0], WithinAbs(-16.0, 1e-5));
+
+  // La chaîne : en lecture, avec la carte ; les calques avec RIFE mouvement seul ; rien à l'export.
+  ChainEngines c;
+  c.layers = true;
+  const test::FakeClock clock;
+  CHECK_FALSE(layer_setup(c, &clock).layers);  // sans --scene-map
+  c.scene_map = true;
+  CHECK_FALSE(layer_setup(c, &clock).layers);  // sans RIFE mouvement
+  CHECK_FALSE(layer_setup(c, nullptr).layers);
 
   // play.toml : les deux clés se relisent ; un ancien fichier sans elles les laisse éteintes.
   PlaySettings on;

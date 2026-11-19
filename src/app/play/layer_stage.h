@@ -19,8 +19,8 @@ namespace kirari::app::play {
 struct LayerSetup {
   // play.toml [interpolation] layers : les calques sur les images intermédiaires.
   bool layers = false;
-  // Le SPAN de la plaque (play.toml [interpolation] background_plate) : le modèle de SPAN
-  // en pleine précision (ou plate_model), aux formes de travail ; nullptr : sans plaque.
+  // Le SPAN de la plaque (play.toml [interpolation] background_plate) : le modèle de SPAN en FP16, aux formes
+  // de travail ; nullptr : sans plaque.
   gpu::Engine* plate = nullptr;
 };
 
@@ -62,7 +62,8 @@ class LayerStage {
   PlateTrack plate_track_;
   PlateStep plate_step_;
   std::unique_ptr<gpu::TensorBuffer> plate_;
-  bool plate_ready_ = false;  // une clé a été passée dans plate_ depuis le dernier oubli
+  bool plate_ready_ = false;  // plate_ tient la clé du suivi (son SPAN a tourné)
+  bool key_pending_ = false;  // la clé de la paire attend le SPAN de la plaque (after_span)
   struct Counts {
     std::uint64_t pairs = 0;     // paires qui ont des calques
     std::uint64_t composed = 0;  // images intermédiaires composées
