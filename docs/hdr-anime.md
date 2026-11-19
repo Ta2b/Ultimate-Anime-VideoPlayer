@@ -270,8 +270,12 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   plafond de sortie sans la lueur (626 à 630 nits de contenu, écrêtés à plat), et les cheveux et le visage
   qu'ils éclairent à 450-520 nits. Le halo, grand, domine à peine sa zone (0,02 PQ en médiane) et la lueur
   ne s'y déclenche pas. Baisser le « Blanc des surfaces » ne les détache pas non plus (essai à 60 %, plus
-  haut). Pour qu'elles ressortent, il faudra que la passe anime les reconnaisse comme émetteurs (après la
-  rc.1). La vue `--effect-mask-view` ne peint que le masque de la carte, pas la lueur.
+  haut). Pour qu'elles ressortent, il faudra que la passe anime les reconnaisse comme émetteurs. **Chantier en
+  pause depuis le 19 novembre 2026** (Tatoub) : la rc.1 sort avec ce rendu. Reprise : rejouer la passe anime
+  sur la source de 16:23 et 16:45 (pas sur les PQ de sortie), mesurer l'écart bloc-zone de la corne et du
+  halo dans la source, puis reconnaître une lueur à sa forme (petit cœur blanc entouré d'un dégradé
+  coloré) plutôt qu'à son seul écart à la zone. La vue `--effect-mask-view` ne peint que le masque de la
+  carte, pas la lueur.
 - **Sans carte** (AMD, Intel, NVOF refusé, `--no-effect-highlights`), le masque revient lentement au neutre
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format
