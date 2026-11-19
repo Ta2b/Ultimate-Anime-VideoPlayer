@@ -3,6 +3,12 @@
 // seulement pour l'instant : l'import du moteur Vulkan ne connaît pas encore tous ses opérateurs (CumSum,
 // ReduceSum, ReduceL2…). Un refus laisse la lecture sans elle, la raison au journal, retenu pour la séance
 // (C08-12).
+//
+// Sous TensorRT, la version fusionnée passe d'abord (kernels/spec/tfix_fused.h, docs/temporalfix.md) : le
+// modèle coupé en cinq petits moteurs reliés par des noyaux CUDA, les six appuis en un lot, la fenêtre en un
+// graphe CUDA. Si elle ne s'applique pas (structure du modèle inconnue, taille, construction refusée), la
+// raison va au journal et le graphe entier prend la place. --no-tfix-fused (essai) prend le graphe à cache
+// de l'encodeur, pour la mesure ABAB.
 #include <format>
 #include <utility>
 #include <vector>
@@ -13,6 +19,8 @@
 #include "app/play/temporal_fix_model.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
+#include "kernels/spec/tfix_fused.h"
+#include "prepare/tfix_split.h"
 
 namespace kirari::app::play {
 namespace {
@@ -24,6 +32,64 @@ constexpr double kTemporalFixFirstBuildS = 80.0;
 constexpr double kTemporalFixEncoderFirstBuildS = 10.0;
 // La largeur que le profil laisse libre sous celle du travail : comme vs_temporalfix (width - 8).
 constexpr int kTemporalFixLooseWidth = 8;
+// La fenêtre fusionnée : quatre petits moteurs à forme fixe (blocs et tête, lots de six).
+constexpr double kTemporalFixFusedFirstBuildS = 40.0;
+
+enum class FusedLoad : std::uint8_t { Loaded, Declined, Closed };
+
+// Les deux moteurs fusionnés, l'encodeur puis la fenêtre. Declined : la raison au journal, le graphe entier
+// suit ; Closed : la fenêtre a été fermée pendant une construction.
+FusedLoad load_fused(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                     const std::filesystem::path& onnx, bool half) {
+  const auto log = log_channel("app");
+  if (!p.options.temporal_fix_fused) {
+    log->info("stabilisation temporelle : --no-tfix-fused, graphe à cache de l'encodeur");
+    return FusedLoad::Declined;
+  }
+  const int net_height = half ? c.work.height / 2 : c.work.height;
+  const int net_width = half ? c.work.width / 2 : c.work.width;
+  if (!kernels::tfix_size_valid(net_height, net_width)) {
+    log->info("stabilisation temporelle : réseau {}x{} hors des noyaux fusionnés, graphe entier", net_width,
+              net_height);
+    return FusedLoad::Declined;
+  }
+  const gpu::Shape shape{.dims = {1, kernels::kTfixImage, c.work.height, c.work.width}};
+  const auto build =
+      [&](prepare::TfixRole role,
+          double first_build_s) -> std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> {
+    auto manifest =
+        prepare::derive_tfix_fused(onnx, paths::derived_models(p.paths), role, net_height, net_width, half);
+    if (!manifest) return std::unexpected(std::move(manifest.error()));
+    return prepare_engine(p, init, *c.backend, *manifest, shape,
+                          EngineLabel{.name = i18n::tr("Temporal stabilization"),
+                                      .model = core::to_utf8(onnx.stem()),
+                                      .width = c.work.width,
+                                      .height = c.work.height,
+                                      .first_build_s = first_build_s},
+                          gpu::Lane::Upscale);
+  };
+  const auto declined = [&](const Refusal& refusal) {
+    log->warn("stabilisation temporelle fusionnée refusée ({}) : graphe entier", refusal.detail);
+    return FusedLoad::Declined;
+  };
+  auto encoder = build(prepare::TfixRole::Encoder, kTemporalFixEncoderFirstBuildS);
+  if (!encoder) return declined(encoder.error());
+  if (!*encoder) return FusedLoad::Closed;
+  auto window = build(prepare::TfixRole::Window, kTemporalFixFusedFirstBuildS);
+  if (!window) return declined(window.error());
+  if (!*window) return FusedLoad::Closed;
+  const std::size_t frames = 2 * static_cast<std::size_t>(kTemporalFixFrames);
+  if ((**encoder)->input_names().size() != 1 || (**window)->input_names().size() != frames) {
+    return declined(
+        Refusal{RefusalCode::ModelMismatch,
+                std::format("{} et {} entrées au lieu de 1 et {}", (**encoder)->input_names().size(),
+                            (**window)->input_names().size(), frames)});
+  }
+  c.temporal_fix = std::move(**window);
+  c.temporal_encoder = std::move(**encoder);
+  c.temporal_features = kernels::tfix_packed_planes(net_height, net_width, half);
+  return FusedLoad::Loaded;
+}
 
 }  // namespace
 
@@ -70,6 +136,17 @@ std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, C
   }
   // --no-tfix-cache : le graphe en un morceau, sans cache de l'encodeur (le retour en arrière).
   const bool whole = c.temporal_fix_whole;
+  switch (whole ? FusedLoad::Declined : load_fused(p, init, c, *found, half)) {
+    case FusedLoad::Loaded:
+      log->info("stabilisation temporelle {} fusionnée : {} en {}x{}{}", name(fix),
+                core::to_utf8(found->filename()), c.work.width, c.work.height,
+                half ? ", réseau à demi-taille" : "");
+      return true;
+    case FusedLoad::Closed:
+      return std::nullopt;
+    case FusedLoad::Declined:
+      break;
+  }
   auto graph = temporal_fix_graph(*found, half, paths::derived_models(p.paths), whole);
   if (!graph) return refused(graph.error());
   // La forme d'une image ; les traits gardés suivent le même profil, avec leurs canaux (ModelSource::twins).

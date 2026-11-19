@@ -102,7 +102,8 @@ namespace kirari::gpu {
 // 46 : SplatJob::pull (le splat tiré).
 // 47 : KernelOps::scene_flow_start et scene_flow_take (la carte de la scène par le flux optique de NVIDIA,
 // kernels/spec/scene_flow.h).
-inline constexpr int kBackendAbi = 47;
+// 48 : TemporalFix fusionné (manifestes « .tfixfused » : encodeur et fenêtre, tampon gardé à pyramides).
+inline constexpr int kBackendAbi = 48;
 
 using DeviceUuid = kirari::DeviceUuid;
 
