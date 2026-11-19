@@ -49,7 +49,8 @@ inline constexpr float kEffectNeutral = 1.0F / 512.0F;
 
 class EffectMask {
  public:
-  // La carte de la paire suivante.
+  // La carte de la paire suivante. Une coupe sans tuiles (pas de carte du nouveau plan) remet le masque au
+  // neutre.
   void update(const EffectTiles& tiles);
   // Une paire sans carte (absente, pas encore relue) : retour lent vers le neutre.
   void relax(std::int64_t span_us);

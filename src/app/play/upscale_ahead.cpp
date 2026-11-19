@@ -258,18 +258,27 @@ namespace {
 
 // Rien sans carte (pas encore relue, refusée) ni sans paire de la même époque : l'écran revient alors au
 // grade d'aujourd'hui. Sans interpolation, la carte de la paire d'avant (celle qui finit sur left) sert à la
-// paire en cours : une paire de retard, que le lissage du masque couvre.
+// paire en cours : une paire de retard, que le lissage du masque couvre ; sur une coupe, elle décrirait le
+// plan d'avant et le masque revient au neutre.
 void note_effects(LiveSettings& live, const SceneMap& map, SourceId left, std::int64_t from_us,
                   const DecodedFrame& b, const PairFacts& facts, int width, int height, bool cut) {
   if (!live.effect_highlights() || !facts.same_epoch || from_us == kNoPts || b.pts_us == kNoPts) return;
   const kernels::SceneMotion* scene = facts.scene ? &*facts.scene : nullptr;
   if (scene == nullptr && map.latest() && map.latest()->right == left) scene = &map.latest()->motion;
   if (scene == nullptr) return;
+  render::EffectTiles tiles;
+  if (cut && !facts.scene) {
+    // Sur une coupe, la carte de la paire d'avant décrit le plan d'avant : une note sans tuiles remet le
+    // masque au neutre plutôt que de poser l'ancien plan sur le nouveau.
+    tiles.cut = true;
+    tiles.span_us = facts.gap_us;
+  } else {
+    tiles = effect_tiles_of(*scene, width, height, facts.gap_us, cut);
+  }
   live.effect_book().add(EffectNote{.epoch = b.epoch,
                                     .from_us = from_us,
                                     .to_us = b.pts_us,
-                                    .tiles = std::make_shared<const render::EffectTiles>(
-                                        effect_tiles_of(*scene, width, height, facts.gap_us, cut))});
+                                    .tiles = std::make_shared<const render::EffectTiles>(std::move(tiles))});
 }
 
 }  // namespace
