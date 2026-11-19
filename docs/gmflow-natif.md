@@ -1,0 +1,306 @@
+# GMFlow natif : étude
+
+Étude, pas encore de noyau de production. Question : calculer GMFlow (le flot du graphe « paire » de GMFSS Fortuna
+union) par nos propres noyaux CUDA, comme RIFE ([`rife-natif.md`](rife-natif.md)) et, en cours, FeatureNet,
+MetricNet et GridNet de GMFSS, pour qu'aucun moteur TensorRT ne soit plus construit pour GMFSS. Outils :
+`tools/gmfss/gmflow_natif_couts.py` (coûts et temps estimés), `tools/gmfss/gmflow_natif_reseau.py` (GMFlow découpé
+comme le natif, en PyTorch) et `tools/gmfss/gmflow_natif_emule.py` (émulation contre ONNX Runtime). Pas de GPU
+pour cette étude : les temps du natif sont des estimations, les erreurs sont mesurées (émulation CPU).
+
+## Ce qui tourne aujourd'hui
+
+- Le graphe paire d'union (`gmfss_fortuna_union_pair.onnx`, ou `_s05_pair` au demi-flot) tourne sous TensorRT **en
+  FP16**. Le FP8 de GMFSS a été retiré le 30/10 (mauvaise image dans les gros mouvements) et union est revenu
+  sans lui ([`interpolation.md`](interpolation.md), « ni la base, ni le fusionné, ni le FP8 »). Même le graphe FP8
+  d'alors laissait GMFlow en FP16 : `/flownet/backbone/` exclu, et les Q/DQ n'étaient placés que devant les
+  convolutions, jamais devant les MatMul du transformeur ([`fp8-interpolation.md`](fp8-interpolation.md)). **Il
+  n'existe donc pas de « GMFlow sous TensorRT FP8 » mesuré** : la référence de vitesse et de qualité est TensorRT
+  FP16.
+- Temps mesurés sur la RTX 4070 Ti, travail 720p (paire 1280x768) : paire **35 ms** au flot entier, **12 ms** au
+  demi-flot (`gmfss_cost`, `chain_gmfss.cpp` ; 9,4 à 9,9 ms au trtexec pour le demi-flot). Construction de la paire :
+  179 s. Aucun profil par couche ne sépare GMFlow de FeatureNet et MetricNet. Avec le rapport des coûts
+  ci-dessous (flot entier ≈ 4,4 fois le demi-flot), on **déduit** GMFlow ≈ 29 à 30 ms au flot entier et ≈ 6 à 7 ms
+  au demi-flot, le reste de la paire ≈ 5 à 6 ms. À mesurer (PR 0).
+
+## Architecture de GMFlow dans ce graphe
+
+Lue dans la roue (`vsgmfss_fortuna/gmflow/`, poids `flownet.pkl`, 4,72 M paramètres, partagés par base et union)
+et dans l'export (`gmfss_graph.bidirectional_reuse` : un seul passage, `pred_bidir_flow=True`). GMFlow reçoit les
+deux images réduites de moitié (640x384 pour la paire 1280x768 ; 320x192 au demi-flot), normalisées ImageNet.
+
+| Étape | Détail | Taille (paire 1280x768, flot entier) |
+|---|---|---|
+| Squelette CNN (lot 2 : les deux images) | conv 7x7/2 3→64 (sans biais), InstanceNorm, Relu ; layer1 : 2 blocs résiduels 64 ; layer2 : 2 blocs 96, le premier de pas 2 avec raccourci 1x1/2 (biais) + InstanceNorm ; layer3 : 2 blocs 128, pas 1, raccourci 1x1 ; conv2 1x1 128→128 (biais) ; « trident » 3x3 128→128 aux poids partagés, pas 1 et pas 2 | 1/2 : 320x192 ; 1/4 : 160x96 ; 1/8 : 80x48. Bloc résiduel : conv 3x3, IN, Relu, conv 3x3, IN, Relu, + raccourci, Relu. InstanceNorm sans paramètres partout (13), 18 convolutions |
+| Échelle 1/8 | position sinus par fenêtre (40x24), transformeur 6 blocs, puis appariement global, puis propagation globale | 3 840 jetons par image |
+| Transformeur (mêmes poids aux deux échelles) | bloc = self-attention (sans MLP) puis cross-attention + MLP ; d = 128, **une tête** ; projections q, k, v, fusion 128x128 sans biais ; LayerNorm après la fusion ; MLP sur [source, message] 256 → 1024 (GELU) → 128, LayerNorm ; résiduel ; la cible de la cross-attention est l'autre moitié du lot telle qu'elle entrait dans le bloc ; blocs impairs en fenêtres décalées d'une demi-fenêtre (Swin, masque −100 entre régions) | 1/8 : lot 2, fenêtres 2x2 de 960 jetons, décalage (12, 20) |
+| Appariement global | corrélation f0·f1ᵀ/√128 (3 840 x 3 840), softmax des lignes (0→1) et des colonnes (1→0), flot = Σ p·coordonnée − coordonnée | |
+| Propagation globale | self-attention 3 840 x 3 840 sur les caractéristiques, q = Wq·f + bq, **k = Wk·q + bk** (projections enchaînées, une seule matrice en fait), v = le flot (2 canaux) ; sur les deux cartes | |
+| Échelle 1/4 | les deux sens en lot (f0 = [f0, f1], f1 = [f1, f0]), flot ×2 (bilinéaire, coins alignés), f1 déformé par le flot, position (fenêtre 20x12), transformeur 6 blocs | 15 360 jetons par carte, lot 4 dans le transformeur, fenêtres 8x8 de 240 jetons, décalage (6, 10) |
+| Appariement local | rayon 4 : 81 produits par pixel, hors image masqués, softmax, flot résiduel ajouté | |
+| Propagation locale | fenêtre 3x3, q = Wq·f + bq, k = Wk·f + bk ; les voisins hors image valent 0 (score 0, flot 0), non masqués | |
+| Agrandissement convexe ×4 | conv 3x3 [flot, f0] 130 → 256 (biais), Relu, conv 1x1 256 → 144 (biais), softmax sur 9 voisins pour chacun des 16 sous-pixels, somme pondérée de 4·flot | sortie 640x384, 2 canaux, deux sens |
+
+Au demi-flot (`_s05`), tout est deux fois plus petit en largeur et en hauteur : 960 jetons à 1/8 (fenêtres de 240),
+3 840 à 1/4 (fenêtres de 60). À 1920x1152 (travail 1080p), 8 640 jetons à 1/8 et des fenêtres de 2 160.
+
+## Coûts par opération
+
+`python3 tools/gmfss/gmflow_natif_couts.py [--width 1280 --height 768] [--scale 1|0.5]`. FLOP : 2 par
+multiplication-addition. « Mo natif » : ce que lit et écrit le noyau fondu prévu ; « Mo graphe » : le graphe ONNX
+non fondu (matrices de scores, couche cachée du MLP, fenêtrages et décalages en copies). Les tailles sont celles de
+la paire remplie (1280x768 pour 720p de travail ; 1280x720 n'existe pas dans la chaîne, la paire est remplie à un
+multiple de 128).
+
+Flot entier (GMFlow sur 640x384) :
+
+| Opération | × | GFLOP | Mo natif | Mo graphe |
+|---|---|---|---|---|
+| conv1 7x7/2 3→64 | 1 | 2,3 | 19 | 19 |
+| layer1 : conv 3x3 64→64 (320x192, lot 2) | 4 | 36,2 | 126 | 126 |
+| layer2 : conv 3x3/2 64→96, raccourci 1x1/2, 3 conv 3x3 96→96 | 5 | 19,1 | 79 | 79 |
+| layer3 : conv 3x3 96→128, raccourci 1x1, 3 conv 3x3 128→128 | 5 | 34,7 | 75 | 75 |
+| conv2 1x1, trident /1 et /2 | 3 | 12,3 | 41 | 41 |
+| fins de bloc, InstanceNorm | — | 0 | 236 | 472 |
+| 1/8, transformeur : QKV (GEMM 128→384), self et cross | 12 | 9,1 | 94 | 94 |
+| 1/8, attention fenêtrée (960 jetons) + fusion + LayerNorm | 12 | 48,3 | 106 | 967 |
+| 1/8, MLP 256→1024→128 + LayerNorm | 6 | 36,2 | 35 | 260 |
+| 1/8, appariement global (deux sens) | 1 | 7,6 | 4 | 356 |
+| 1/8, propagation globale (q, k, softmax, deux cartes) | 2 | 8,1 | 10 | 364 |
+| 1/4, transformeur : QKV | 12 | 72,5 | 755 | 755 |
+| 1/4, attention fenêtrée (240 jetons) + fusion + LayerNorm | 12 | 114,8 | 849 | 3 492 |
+| 1/4, MLP 256→1024→128 + LayerNorm | 6 | **289,9** | 283 | 2 076 |
+| 1/4, déformation, appariement local r = 4, propagation 3x3 | 3 | 2,7 | 55 | 226 |
+| 1/4, agrandissement (conv 3x3 130→256, 1x1 256→144, convexe) | 2 | 20,7 | 44 | 85 |
+| **Total** | | **714** | **2 811** | **9 487** |
+
+Demi-flot : **150 GFLOP**, 703 Mo natif (1 841 Mo graphe). Travail 1080p (paire 1920x1152) : 1 990 GFLOP au flot
+entier, 365 au demi-flot. Les deux tiers du calcul sont le transformeur à 1/4, et son MLP à lui seul en fait 40 % :
+c'est là que se joue la vitesse.
+
+## Plan natif
+
+Format des activations : NHWC FP16 (celui de `rife_native_kernels.cuh`), le flot en f32 (2 canaux, quelques Mo :
+le FP16 l'arrondirait à 1/16 de pixel au-delà de 64 px, puis ×4 et ×8 à l'agrandissement). Environ 95 lancements
+par paire, capturés dans un graphe CUDA comme les autres moteurs natifs.
+
+**Squelette** : la famille de `rife_native_kernels.cuh` (mma.sync m16n8k16, tuile et halo en mémoire partagée,
+`cp.async`, K par tranches, `ksplit`). À ajouter :
+
+- la première couche 7x7/2 sur trois plans : en `In::kImage` elle compterait 16 canaux par prise (K = 784 pour
+  147 utiles, 5,3 fois trop) ; un im2col en mémoire partagée à K = 147 → 160 ;
+- les 1x1 (raccourcis de pas 2, conv2) : la même famille en KH = 1, ou une GEMM ;
+- **InstanceNorm** : l'épilogue de chaque convolution ajoute Σx et Σx² de ses pixels par (image, canal) en f32
+  (réduction dans le bloc, puis une addition atomique par bloc, ou une réduction en deux temps pour rester
+  déterministe) ; le noyau suivant normalise et applique Relu au chargement de sa tuile, comme `prelu_tile`
+  ajouté pour le GridNet (commit 261814d) ;
+- une fin de bloc élément par élément (deux normalisations, somme, Relu, une écriture FP16) ;
+- la position sinus ajoutée dans l'épilogue du trident (table FP16 de 40x24 ou 20x12 x 128).
+
+**Transformeur** : trois noyaux par couche, 60 en tout.
+
+1. **QKV** : une GEMM 128 → 384 par couche (les trois projections d'un coup ; en cross-attention, k et v se lisent
+   dans l'autre moitié du lot par l'indice, sans copie de `concat1`).
+2. **Attention fenêtrée fondue**, façon FlashAttention-2 : un bloc de 4 warps par (fenêtre, 64 requêtes) ; K et V
+   de la fenêtre par tuiles de 64 clés en double tampon (`cp.async`) ; S = QKᵀ en mma FP16 à sommes f32 ; maximum
+   et somme courants en registres ; P arrondi en FP16 pour le mma P·V ; le décalage Swin par arithmétique
+   d'adresses (modulo, aucun `roll` matérialisé) et le masque par numéros de région calculés à la volée. Dans
+   l'épilogue : O/l, puis la **fusion 128x128** (poids 32 Ko en mémoire partagée), la LayerNorm (la ligne entière
+   est dans le bloc) et, en self-attention, le résiduel. Ni les scores, ni la sortie de l'attention ne passent par
+   la mémoire.
+3. **MLP fondu** (cross-attention seulement) : un bloc de 128 jetons charge [x, message] (256 canaux) ; pour
+   chacune des 8 tranches de 128 de la couche cachée, H = GELU(X·W1) reste sur la puce (FP16, ou E4M3), puis
+   O += H·W2 ; à la fin LayerNorm et résiduel. La couche cachée (126 Mo par couche à 1/4) n'est jamais écrite. W1
+   et W2 (768 Ko en FP16) restent en L2.
+
+Les GEMM de 1 et 3 peuvent venir de CUTLASS (`third_party/cutlass`, déjà là pour SPAN FP8) ou de mma.sync écrits à
+la main ; le MLP fondu n'existe pas tel quel dans CUTLASS (deux GEMM chaînées en mémoire partagée) : à la main.
+
+**Appariement global et propagation globale** : le même noyau à softmax fondu, deux passages pour l'appariement
+(lignes puis colonnes : S est recalculé, 3,8 GFLOP de plus, au lieu de stocker 3 840² scores). V n'a que deux
+colonnes : les coordonnées (calculées depuis l'indice de la clé, rien à lire) ou le flot (f32) ; P·V en f32 sur
+les cœurs CUDA, P exact (59 M multiplications-additions, négligeable). Pour la propagation, une GEMM 128 → 256
+donne q et k d'un coup (k = Wk·q + bk se réécrit k = (Wk·Wq)·f + (Wk·bq + bk), matrices fondues au chargement).
+
+**Fin à 1/4** : déformation bilinéaire de f1 (+ position) ; appariement local r = 4 (tuile + halo de 4, produits
+en half2 ou en mma sur une bande ; 0,6 GFLOP) ; propagation 3x3 (GEMM q, k puis pochoir) ; agrandissement : conv
+3x3 130 (→ 144) → 256 par la famille de RIFE, puis la 1x1 256 → 144 avec, dans son épilogue, le softmax des 9
+poids et la somme convexe : le flot ×4 sort directement, les 144 canaux ne sont jamais écrits.
+
+## Temps estimés sur la RTX 4070 Ti
+
+Modèle (`gmflow_natif_couts.py`) : pics des tensor cores denses de la 4070 Ti (60 SM, 2,61 GHz) : FP16 80 TFLOPS
+à sommes f32, 160 à sommes f16 ; E4M3 160 à sommes f32, 320 à sommes f16 ; 504 Go/s. Rendements supposés :
+convolutions 50 %, GEMM 70 % (SPAN FP8 en CUTLASS tient 76 à 83 %), attention fondue 40 % ; mémoire à 75 % de la
+bande ; 4 µs par lancement. Temps d'un noyau = max(calcul, mémoire) + lancement.
+
+| Bloc (paire 1280x768) | FP16, sommes f32 | FP16, sommes f16 | GEMM du transformeur en E4M3 |
+|---|---|---|---|
+| Squelette | 3,4 ms | 2,2 ms | 3,4 ms |
+| 1/8 : transformeur | 2,5 ms | 2,2 ms | 2,1 ms |
+| 1/8 : appariement et propagation globaux | 0,5 ms | 0,5 ms | 0,5 ms |
+| 1/4 : transformeur | 10,9 ms | 8,3 ms | 7,8 ms |
+| 1/4 : appariement local, propagation, agrandissement | 0,7 ms | 0,5 ms | 0,7 ms |
+| **GMFlow, flot entier** | **18,0 ms** | **13,6 ms** | **14,5 ms** |
+| **GMFlow, demi-flot** | **4,1 ms** | **3,0 ms** | **3,2 ms** |
+| TensorRT FP16 (déduit, voir plus haut) | ≈ 29 à 30 ms / ≈ 6 à 7 ms | | |
+
+La colonne E4M3 n'est là que pour mémoire : l'émulation l'écarte pour la qualité (plus bas). Lecture : sur le
+papier, le natif FP16 à sommes f32 ferait GMFlow en 0,6 fois le temps déduit de TensorRT ; la
+paire entière passerait de 35 à ≈ 23 ms au flot entier et de 12 à ≈ 9,5 ms au demi-flot (FeatureNet et MetricNet
+inchangés). Mais **ces chiffres sont fragiles** : le rendement de l'attention fondue à une tête de 128 sur sm_89
+(pression sur les registres : O fait 64 flottants par fil) n'est pas mesuré, TensorRT fond peut-être déjà
+l'attention (Myelin reconnaît le motif MatMul-Softmax-MatMul), et le temps de GMFlow sous TensorRT est déduit, pas
+mesuré. À 1080p de travail, le flot entier reste hors de portée (≈ 53 ms natif FP16), le demi-flot ≈ 9 ms.
+
+## Émulation
+
+`python -I tools/gmfss/gmflow_natif_emule.py ROUE/vsgmfss_fortuna --work DOSSIER [--width W --height H] [--scale
+1|0.5] [--images] [--recettes …]`.
+
+- **Référence** : le graphe paire union exporté en FP32 pur, exécuté par ONNX Runtime (CPU). **Actuel** : le même
+  graphe en FP16 tel que le lecteur le donne à TensorRT, exécuté par ONNX Runtime (ce n'est pas TensorRT : ordre
+  des sommes et choix de noyaux différents, mais mêmes arrondis de stockage).
+- **Émulation** : `gmflow_natif_reseau.py` refait GMFlow noyau par noyau depuis `flownet.pkl` : stockage FP16 entre
+  les noyaux, statistiques d'InstanceNorm et LayerNorm en f32, attention, appariement global et propagation globale
+  par tuiles de 64 clés avec softmax en ligne (jamais la matrice entière), P arrondi en FP16 avant P·V, flot en
+  f32. Sommes f16 émulées par paquets de 16 (32 en FP8) arrondis après chaque mma ; E4M3 par `float8_e4m3fn`
+  saturé à 448, échelle d'activation par tenseur calibrée (maximum × 1,25 / 448 sur trois paires hors test,
+  comme SPAN) ou par jeton, poids par canal de sortie.
+- **Paires** : six images réelles de `data/calibration/calibration.mkv` (Re:Zero, Frieren, Black Clover), la
+  seconde image obtenue par un mouvement connu : translation (6, −3), panoramique de 60 px, zoom 1,03 + translation,
+  objet découpé qui traverse le décor, rotation de 4° + zoom, mouvement fort (40, −25, 2°) + objet. Mouvements de
+  caméra synthétiques : pas de vraies paires d'anime avec du mouvement dessiné (limite, voir les risques).
+- **Mesures**, sur les deux flots de sortie (motion0_1 et motion1_1, à la demi-taille de la paire) contre la
+  référence FP32 : EPE (erreur de point final, px), 99,9e centile et pire pixel ; PSNR du flot = 10·log10(crête² /
+  EQM), crête = plus grand |flot| de la référence. Avec `--images` : l'image du milieu (t = 0,5) de toute la suite
+  de GMFSS en FP32 PyTorch, seul le flot changeant, contre celle du flot FP32 (PSNR de l'image, l'unité des gardes
+  de [`fp8-interpolation.md`](fp8-interpolation.md) : 42 dB en moyenne, 38 au pire).
+
+### Résultats, paire 640x384 au flot entier (GMFlow sur 320x192, la charge du demi-flot en 720p)
+
+| Recette | EPE moyen | p99,9 pire | PSNR flot moyen / pire | PSNR image moyen / pire |
+|---|---|---|---|---|
+| **actuel** (graphe FP16, ONNX Runtime) | 0,0200 | 0,364 | 58,5 / 46,8 | 60,0 / 54,9 |
+| natif émulé en FP32 (contrôle du découpage) | 0,0000 | 0,000 | 120,6 / 109,0 | 112,9 / 76,9 |
+| **natif FP16, sommes f32** | **0,0057** | **0,149** | **68,9 / 54,7** | **69,6 / 61,7** |
+| natif FP16, sommes f16 (convolutions et GEMM) | 0,0092 | 0,234 | 64,1 / 49,6 | 64,9 / 58,3 |
+| natif FP16, P·V du flot en FP16 (tensor cores) | 0,0059 | 0,130 | 68,7 / 55,3 | 70,0 / 61,3 |
+| GEMM du transformeur en E4M3, échelles par tenseur | 0,2203 | 5,343 | 37,5 / 24,5 | 43,1 / **35,1** |
+| idem, sommes f16 (marge de SPAN) | NaN : débordements | | | 25,5 / 23,1 |
+| tout en E4M3 (squelette et agrandissement compris) | 0,3014 | 6,794 | 34,2 / 21,2 | 41,2 / 33,5 |
+
+Ablation du FP8 (une seule famille de GEMM en E4M3, le reste en FP16 natif ; mêmes paires) :
+
+| GEMM en E4M3 | EPE moyen | PSNR flot moyen / pire | PSNR image moyen / pire |
+|---|---|---|---|
+| QKV seules | 0,103 | 43,4 / 29,1 | 47,7 / 40,6 |
+| fusion seule | 0,085 | 45,2 / 32,9 | 49,9 / 40,8 |
+| MLP, première couche seule | 0,149 | 40,9 / 27,7 | 45,2 / 35,6 |
+| MLP, seconde couche seule | 0,097 | 43,7 / 30,6 | 47,2 / 39,8 |
+| toutes, échelle par jeton (et par tranche de 128 de K) | 0,209 | 37,8 / 25,3 | 43,5 / 35,8 |
+| MLP seul, échelle par jeton | 0,160 | 40,3 / 28,5 | 45,4 / 36,8 |
+
+- **Le découpage est exact** : en FP32, l'émulation rend le graphe FP32 à 1e-4 px près (EPE moyen < 1e-5 ; vérifié
+  aussi contre le GMFlow PyTorch d'origine : 7e-6 px). Fenêtres décalées, masque, cible de la cross-attention,
+  projections enchaînées de la propagation, zéros non masqués de la fenêtre 3x3 : tout est à sa place.
+- **Le natif FP16 est plus juste que le graphe FP16 actuel** : EPE 3,5 fois plus petit, image +9,6 dB en moyenne et
+  +6,8 dB au pire. La raison principale : le flot reste en f32 (le graphe le stocke en FP16 entre l'appariement, la
+  propagation et l'agrandissement) et le softmax en ligne garde S et la somme en f32.
+- **Les sommes f16** coûtent ≈ 5 dB sur l'image mais restent au-dessus de l'actuel (64,9 / 58,3 contre 60,0 / 54,9).
+- **E4M3 ne passe pas** les gardes (35,1 dB au pire sur l'image), et ce n'est pas une affaire d'échelle : chaque
+  famille de GEMM seule en E4M3 coûte déjà 10 à 25 dB sur l'image, et l'échelle par jeton ne fait pas mieux que
+  l'échelle par tenseur. C'est la mantisse de 3 bits (≈ 6 % d'erreur relative par valeur) qui ne passe pas douze
+  couches de transformeur suivies d'un softmax global très pointu : une petite erreur sur les caractéristiques
+  déplace le maximum de la corrélation. Même conclusion que la recherche par groupes de l'ancien FP8 TensorRT
+  (squelette de GMFlow en FP8 : −12 dB). À sommes f16, la marge de SPAN (poids à 448/16) déborde presque partout.
+  **GMFlow reste en FP16** ; le FP8 n'achète rien ici, ni en natif ni sous TensorRT.
+
+### Résultats à la taille de la lecture (paire 1280x768)
+
+Demi-flot (`_s05`, GMFlow sur 320x192, ce que le lecteur joue par défaut en 720p), six paires, image du milieu
+comprise (l'image de l'actuel n'est pas calculée au demi-flot : le graphe ne sort que le flot déjà agrandi) :
+
+| Recette | EPE moyen | p99,9 pire | PSNR flot moyen / pire | PSNR image moyen / pire |
+|---|---|---|---|---|
+| **actuel** (graphe FP16, ONNX Runtime) | 0,0423 | 1,020 | 55,6 / 47,4 | — |
+| natif émulé en FP32 | 0,0000 | 0,000 | 120,0 / 114,9 | 109,8 / 98,8 |
+| **natif FP16, sommes f32** | **0,0094** | **0,160** | **68,0 / 63,1** | **71,9 / 62,6** |
+| natif FP16, sommes f16 | 0,0152 | 0,326 | 63,5 / 57,7 | 67,7 / 58,1 |
+| MLP en E4M3, échelle par jeton | 0,2427 | 5,749 | 41,0 / 34,2 | 47,9 / 37,5 |
+
+Flot entier (GMFlow sur 640x384), flot seulement (l'image du milieu à cette taille est trop longue sur ce poste) :
+
+| Recette | EPE moyen | p99,9 pire | PSNR flot moyen / pire |
+|---|---|---|---|
+| **actuel** (graphe FP16, ONNX Runtime) | 0,0207 | 0,211 | 60,2 / 45,0 |
+| natif émulé en FP32 | 0,0000 | 0,000 | 120,8 / 107,0 |
+| **natif FP16, sommes f32** | **0,0057** | **0,109** | **71,9 / 57,7** |
+| MLP en E4M3, échelle par jeton | 0,1615 | 1,173 | 43,3 / 27,4 |
+
+Au demi-flot sur la petite paire 640x384 (GMFlow sur 160x96, plus petit qu'aucun cas de la lecture), le FP32 lui-même
+trouve des appariements ambigus (pics de 52 px sur le zoom) ; le natif FP16 et l'actuel s'y trompent autant (EPE
+0,20 et 0,21, PSNR image du natif 47,1 / 34,2) : cette taille ne départage rien, elle n'est pas retenue.
+
+## Découpage en PR proposé
+
+| PR | Contenu | Test |
+|---|---|---|
+| 0 | **Mesure** : profil par couche du moteur paire TensorRT (`trtexec --dumpProfile --separateProfileRun`, 1280x768, flot entier et demi-flot) pour séparer GMFlow, FeatureNet et MetricNet, et le temps de chaque bloc de GMFlow ; ces outils d'étude | les chiffres de « Temps estimés » remplacés par des mesures |
+| 1 | Squelette natif : 7x7/2 en im2col, 1x1, statistiques d'InstanceNorm à l'épilogue et normalisation au chargement, fins de bloc, trident + position | sorties 1/4 et 1/8 contre un sous-graphe ONNX exporté (FP32, ONNX Runtime) et contre TensorRT |
+| 2 | GEMM QKV, attention fenêtrée fondue (décalage, masque, fusion, LayerNorm, résiduel) | une couche contre PyTorch FP32 aux deux tailles de fenêtres ; banc contre la même couche sous TensorRT |
+| 3 | MLP fondu (256 → 1024 → 128, GELU, LayerNorm, résiduel) | idem ; c'est le bloc qui décide de la vitesse : banc avant de continuer |
+| 4 | Appariement global et propagation globale (softmax fondu, deux passages, V en f32) | contre `global_correlation_softmax` et `FeatureFlowAttention` |
+| 5 | Fin à 1/4 (déformation, appariement local, propagation 3x3, agrandissement convexe fondu), assemblage de GMFlow, graphe CUDA | flot entier contre ONNX FP32 sur les paires de l'émulation et de vraies paires ; banc ABAB contre la paire TensorRT |
+| 6 | Paire native entière (avec FeatureNet et MetricNet natifs) derrière un réglage de `play.toml`, TensorRT par défaut | voir la conclusion : la bascule ne se fait que sur mesure |
+| 7 (facultatif) | Sommes f16 dans les GEMM et convolutions, avec le garde-fou de débordement de SPAN et repli f32 | perte ≤ 5 dB sur l'image contre le natif f32, et toujours au-dessus de TensorRT |
+
+Pas de PR FP8 : l'ablation l'exclut pour GMFlow.
+
+## Risques
+
+- **Vitesse non prouvée** : tout repose sur des rendements supposés (40 % pour l'attention, 70 % pour les GEMM) et
+  sur un temps de TensorRT déduit. Si Myelin fond déjà l'attention et le MLP, l'écart peut fondre. La PR 0 et le
+  banc de la PR 3 tranchent tôt, avant l'essentiel du code.
+- **Attention à une tête de 128** : le bloc de sortie (64 requêtes × 128 canaux en f32) pèse 64 registres par
+  fil ; avec S, P et les fragments, l'occupation tombe à un bloc par SM. Les fenêtres de 960 (1/8) et 2 160
+  (1080p) jetons se parcourent en tuiles, sans limite de taille, mais avec 15 à 34 tuiles par requête.
+- **Sommes f16** : 5 dB de moins sur l'image ; débordement possible sur une image atypique (la leçon de SPAN :
+  garde-fou et repli f32 à prévoir). Le FP8 à sommes f16 tel quel déborde.
+- **Paires de test** : mouvements de caméra synthétiques sur de vraies images. Le retrait du FP8 de GMFSS le 30/10
+  est venu de mouvements forts que les paires de test ne couvraient pas : avant une bascule, mesurer sur de vraies
+  paires d'anime à mouvement fort (panoramiques rapides, rotations, effets).
+- **InstanceNorm** : une réduction sur toute l'image par couche ; des additions atomiques rendent les sommes non
+  déterministes à l'ulp près (réduction en deux temps si l'on veut des sorties identiques d'un lancement à l'autre).
+- **Maintenance** : ≈ 3 000 lignes de CUDA de plus, Turing (sm_75 : m16n8k8, pas de FP8) à garder ou à exclure.
+- **Supprimer la construction** de TensorRT pour GMFSS demande aussi FeatureNet et MetricNet natifs (chantier
+  voisin) : GMFlow natif seul ne retire que la plus longue part des 179 s.
+
+## Conclusion
+
+Règle posée par le propriétaire : la construction TensorRT de GMFlow ne se supprime que si elle est vraiment
+évitable. L'attente de construction est acceptable si elle achète de la vitesse ou de la sûreté.
+
+**Critère de bascule.** Le natif ne devient le défaut que si les deux conditions sont **mesurées** sur la RTX
+4070 Ti et tenues :
+
+1. **qualité au moins égale** à TensorRT : sur les paires de l'émulation et sur de vraies paires d'anime à
+   mouvement fort, EPE moyen et 99,9e centile du flot contre le FP32, et PSNR moyen et pire de l'image du milieu,
+   au moins aussi bons que ceux du moteur TensorRT FP16 de la paire, mesurés sur la carte et non en émulation ;
+2. **vitesse au moins égale** : médiane ABAB (trtexec contre le banc natif, graphe CUDA, même séance) de la paire
+   entière inférieure ou égale à celle de TensorRT, au flot entier et au demi-flot, à 1280x768 et 1920x1152.
+
+Si une condition manque, même de peu, **TensorRT reste le défaut** et le natif reste un réglage facultatif de
+`play.toml`, pour qui ne veut pas attendre la construction.
+
+**Ce que l'étude permet d'attendre.** Sur la qualité, l'émulation donne au natif FP16 à sommes f32 un flot 3,5 à
+4,5 fois plus proche du FP32 que le graphe FP16 actuel (EPE 0,006 contre 0,021 au flot entier, 0,009
+contre 0,042 au demi-flot à 1280x768), et ≈ 10 dB de mieux sur l'image (paire 640x384) : la condition 1 a de
+bonnes chances de tenir, à confirmer sur la carte. Sur la vitesse, le modèle donne GMFlow natif en ≈ 18 ms au flot
+entier et ≈ 4 ms au demi-flot, contre ≈ 29 et ≈ 6,5 ms déduits pour TensorRT : un avantage sur le papier, mais
+reposant sur des rendements supposés et un temps de TensorRT non mesuré. La condition 2 n'est pas acquise. Le FP8
+est exclu pour GMFlow (−10 à −25 dB sur l'image par famille de GEMM) : la seule voie plus rapide que le FP16 à
+sommes f32 est l'accumulation f16 (−5 dB, encore au-dessus de l'actuel).
+
+**Suite proposée** : la PR 0 (profil par couche de la paire TensorRT), puis les PR 1 à 3 et un banc du MLP fondu
+contre TensorRT avant d'écrire le reste. Si le transformeur à 1/4 natif n'est pas nettement plus rapide que celui
+de TensorRT à ce stade, arrêter : TensorRT garde GMFlow, et l'étude aura servi à mesurer sa part.
