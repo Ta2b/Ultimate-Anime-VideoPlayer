@@ -50,7 +50,7 @@ autre taille d'image refait la session.
 ## Ce que lisent les clients
 
 `src/kernels/spec/scene_flow.h` : `SceneMotion`, ses tuiles, la caméra et les drapeaux ; les seuils dans
-`kernels::scene`, non mesurés, à régler sur le banc 2.1. `drawing_held` ne se dit que sur preuve : un effet
+`kernels::scene`, que règle la porte 2.3 (premier passage plus bas). `drawing_held` ne se dit que sur preuve : un effet
 compte comme ce qui bouge, et sans caméra ajustée (aplat), toute tuile changée l'éteint. Règle absolue :
 `scene` absente donne exactement le comportement d'aujourd'hui, image pour image.
 
@@ -82,5 +82,15 @@ Le banc 2.1 (`tools/bench/qualite/nvof_scene.py`) classe ses tuiles avec son pro
 `tools/bench/qualite/carte_lecteur.py`, qui lit chaque extrait comme le lecteur (taille du flux, toutes les
 paires voisines, doublons compris, réglage moyen, indices temporels) et rejoue la carte par `carte_rejeu`
 (`kernels::ref`, lissage compris, construit à part) : parts des classes et des tuiles sûres, bascule sur toutes
-les paires et sur les plans fixes, queue des coûts de NVOF (pour régler `kSceneCostHigh`), vues PNG pour juger
-la classe des tuiles sûres.
+les paires et sur les plans fixes, diagnostic de l'ajustement de la caméra (tuiles candidates contre le minimum,
+tuiles écartées par l'aplat, le coût ou l'éparpillement, texture), queue des coûts de NVOF (pour régler
+`kSceneCostHigh`), vues PNG pour juger la classe des tuiles sûres.
+
+Premier passage (19 novembre, 6 panoramiques et 2 dialogues, avant les changements ci-dessous) : aucune caméra
+ajustée sur 4 panoramiques sur 6, d'où 83 à 97 % d'incertain, ni dessin ni effet. Deux causes. Une tuile
+n'entrait dans l'ajustement qu'avec une texture d'environ un trait net entier (6 codes par pixel), et il en
+fallait 15 % de l'image (306 tuiles), alors que ces scènes sombres (luma moyenne 31 à 49) n'en ont que 2 à 355
+au-dessus de 3 codes ; le banc 2.1 y ajuste sa caméra sur tout bloc où la luma varie d'un code. L'ajustement
+prend maintenant les tuiles dès 1,5 code (`kFitTexture`) sur 3 % de l'image, l'aplat est sous 3 codes. Et aucun
+vecteur n'était « sans correspondance » : NVOF ne donne presque jamais un coût au-dessus de 32 (99e centile 20,
+99,9e 30), le seuil était à 160 ; il est à 24.
