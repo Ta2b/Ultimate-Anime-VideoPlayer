@@ -21,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "qualite"))
 import fp32  # noqa: E402  (tools/bench/qualite)
 
 MODES = (("f16", "natif f16, bandes du lecteur"), ("b0", "natif f16, sans bandes"),
-         ("pp", "natif f16, poids partagés"), ("f32", "natif f32"))
+         ("pp", "natif f16, poids partagés"), ("wg", "natif f16, Winograd (autres arrondis, pas les mêmes bits)"),
+         ("f32", "natif f32"))
 # Les modes qui doivent rendre la sortie du défaut au bit près.
 MEMES = (("b0", "bandes", "sans bandes"), ("pp", "poids partagés", "des poids partagés"))
 

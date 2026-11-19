@@ -204,6 +204,44 @@ dirait (`span-bilan.md`). Le défaut (`SpanSharedWeights::Auto`) les prend à 48
 `kirari_span_fp8_run --shared-weights` ou `--no-shared-weights` force le choix, et le banc mesure les deux
 dans les mêmes tours que le défaut.
 
+## Winograd (essai perdu, 64 canaux)
+
+Les 3×3 carrées des blocs (trois par bloc, 85 % du calcul du b8f64) passent par Winograd F(2×2, 3×3) :
+Y = Aᵀ [U ⊙ V] A, seize produits par sortie 2×2 au lieu de trente-six, soit 2,25 fois moins de mma. Le
+plafond des seuls mma du b8f64 tombe de 6,3 à 3,0 ms. `span_native_wino.cuh` (`wino_kernel`), derrière
+`SpanFp8Weights::winograd` (`kirari_span_fp8_run --winograd`), éteint par défaut : il a perdu au banc
+(ci-dessous) ; 64 canaux et sommes f16 seulement (le cran Qualité garde la convolution directe ; à 48
+canaux, les 12 sorties par warp ne tombent pas sur les tuiles n16).
+
+- U = G g Gᵀ se calcule à l'envoi, en double, arrondi en f16 (`pack_wino`), et se range comme les poids
+  directs avec 16 points à la place des 9 positions : 128 Ko par couche au lieu de 72.
+- Le bloc garde la tuile 8 × 32 de `conv_kernel` (mêmes bandes, même masque des tuiles, même épilogue :
+  `finish`), soit 4 × 16 tuiles 2×2, en deux moitiés de 32 : V entier ne tient pas à côté de la tuile
+  d'entrée sous 48 Ko. Par moitié et par point ξ : tous les fils calculent V_ξ (sommes f32 de quatre termes,
+  un arrondi f16) en mémoire partagée, barrière, puis le warp w fait V_ξ · U_ξ pour ses 16 sorties (4 pas k,
+  sommes f16) et ajoute M_ξ, borné à ±65 504, aux sorties 2×2 en f32 selon Aᵀ. 64 barrières par tuile au
+  lieu de 2 : c'est le risque, après la leçon des poids partagés. 160 registres, aucun débordement sur sm 8.9
+  et 12.0, 48 960 octets de mémoire partagée (deux blocs par SM).
+- Les tuiles 2×2 partent des lignes paires de l'image quelle que soit la bande (une bande qui commence à une
+  ligne impaire calcule la ligne d'avant sans l'écrire) : en bandes, la sortie est celle de l'image entière
+  au bit près.
+
+Justesse : sur les vrais modèles (`tools/bench/span_native/winograd_db.py`, numpy avec les arrondis des
+noyaux, contre ONNX Runtime FP32), Winograd gagne même un peu (b8f64 65,93 → 65,98 dB, b5f48 66,68 → 70,11)
+parce que ses sommes f16 sont plus courtes. Sur l'émulateur des noyaux (48×80, poids tirés au hasard,
+contre le processeur en f32) : 72,13 dB contre 71,81 au chemin direct, aucune valeur non finie, bornes de la
+mémoire partagée tenues, même sortie au bit près en bandes de 5 et de 8 lignes et sans bandes. Sur GPU, le
+test « Winograd suit le chemin direct » demande 50 dB contre le direct et la même sortie en bandes.
+
+Au banc (#980, RTX 4070 Ti, 1080p → 4K, Re:Zero, 3 tours ABAB) : **13,72 ms au b8f64 contre 10,64 en
+direct (+29 %)**, à 62,96 dB contre 62,83 (export jugé sur processeur contre ONNX Runtime FP32 : juste sur
+GPU aussi). Au b5f48 (48 canaux), sans effet comme prévu : 5,03 ms. Winograd reste donc éteint (Auto). La
+cause probable : les 64 barrières par tuile et le calcul de V (4 lds128 et une écriture par morceau, à
+chaque point) laissent les tensor cores attendre ; deux fois moins de mma ne suffisent pas. Le profil
+Nsight Compute le dirait. Une reprise viserait V une fois pour tous les points (transformée séparable,
+lignes puis colonnes, ou tuile plus petite qui tient V entier sans moitiés), donc moins de barrières ;
+F(4×4, 3×3) (plafond des mma à 1,8 ms) n'a de sens qu'avec elle.
+
 ## Mesurer
 
 Le PC ne mesure que les temps ; la justesse se juge sur processeur, dans le cloud. Un seul banc, sur CachyOS,
@@ -218,10 +256,11 @@ EXPORT=/mnt/project-files/span-native/$(date +%Y%m%d-%H%M) \
 ```
 
 Il construit le moteur TensorRT FP16 de chaque modèle, puis donne en ABAB 3 tours la médiane de TensorRT et
-des noyaux natifs (graphe CUDA tous deux, bandes par défaut), et les natifs à d'autres hauteurs de bande et en
+des noyaux natifs (graphe CUDA tous deux, bandes par défaut), les poids partagés et Winograd forcés dans les
+mêmes tours, et les natifs à d'autres hauteurs de bande et en
 f32. EXPORT est à donner seulement quand les noyaux ont changé : après les temps, le banc dépose pour chaque
 modèle le modèle, l'entrée et une sortie de chaque mode (f16 aux bandes du lecteur, f16 sans bandes, f16 aux
-poids partagés, f32), en demi-flottants, un plan par fichier (16,6 Mo en 4K). Dans le cloud :
+poids partagés, f16 par Winograd, f32), en demi-flottants, un plan par fichier (16,6 Mo en 4K). Dans le cloud :
 
 ```sh
 python3 -I tools/bench/span_native/justesse_cpu.py /mnt/project-files/span-native/<date>/<modèle>
@@ -270,3 +309,10 @@ Banc de #963 (mêmes conditions, 3 tours ABAB) : b8f64 TensorRT FP16 14,76 ms, n
 bandes 0, 64, 192 et 270 à 10,98, 10,98, 10,78 et 11,60 ms, f32 14,44 ms, poids partagés 11,07 ms ; b5f48
 TensorRT 8,80 ms, natif f16 5,21 ms (0,59×), bandes 5,83, 5,22, 5,30 et 5,59 ms, f32 5,95 ms, poids partagés
 5,02 ms, sous les 5,8 ms d'AnimeJaNai.
+
+Banc de #980 (mêmes conditions, 3 tours ABAB, export jugé sur processeur contre ONNX Runtime FP32) : b8f64
+TensorRT FP16 14,70 ms, natif f16 10,64 ms (0,72×) à 62,83 dB, poids partagés 11,11, Winograd 13,72 à
+62,96 dB, bandes 0, 64, 192 et 270 à 11,01, 10,97, 10,76 et 11,62 ms, f32 14,45 ms à 76,93 dB ; b5f48
+TensorRT 8,76 ms, natif f16 5,03 ms (0,57×) à 63,93 dB, sans poids partagés 5,22, bandes 5,54, 5,16, 4,88 et
+5,15 ms, f32 6,00 ms à 77,15 dB. Les bandes de 192 lignes (4,88 ms au b5f48) battent le défaut ici mais
+perdaient au banc de #963 (5,30 contre 5,21) : à remesurer avant de changer auto_band.

@@ -58,6 +58,34 @@ __device__ __forceinline__ void accumulate_shared(Frag<A> (&acc)[kMF][Cout / 8],
   }
 }
 
+// La fin d'une convolution, une fois les sommes dans acc et la mémoire partagée libre : épilogue (porte ou
+// biais et Relu) vers s, puis l'écriture. Commune à conv_kernel et à wino_kernel (span_native_wino.cuh).
+template <int Cout, Mode M, bool Relu, Acc A>
+__device__ __forceinline__ void finish(const Frag<A> (&acc)[kMF][Cout / 8], __half* s, const Params& p,
+                                       int ty0, int tx0, int warp, int lane) {
+  bool hit = false;  // une somme f16 débordée (sums)
+  if constexpr (M == Mode::kGate) {
+    // x de la tuile au pas Cout + 8, puis la 1×1 rangée (Cout² demi-flottants) juste après.
+    const std::uint32_t w1s = smem_u32(s) + static_cast<std::uint32_t>(kTH * kTW * (Cout + 8) * 2);
+    load_nhwc<Cout, 0>(s, p.skip, Cout, p.fh, p.fw, ty0, tx0);
+    for (int i = static_cast<int>(threadIdx.x); i < Cout * Cout / 8; i += kThreads)
+      cp_async16(w1s + static_cast<std::uint32_t>(i * 16), p.w1 + i, true);
+    cp_async_wait_all();
+    __syncthreads();
+    gate<Cout, A>(acc, s, w1s, p, warp, lane, hit);
+  } else {
+    plain<Cout, Relu, A>(acc, s, p.bias, warp, lane, hit);
+  }
+  // Rare : plusieurs fils écrivent la même valeur, sans atomique (note_overflow du FP8).
+  if constexpr (A == Acc::kF16)
+    if (hit && p.overflow != nullptr) *reinterpret_cast<volatile int*>(p.overflow) = 1;
+  __syncthreads();
+  if constexpr (M == Mode::kPixel)
+    store_pixel(s, p, ty0, tx0);
+  else
+    store_nhwc<Cout>(s, p, ty0, tx0);
+}
+
 // Une convolution entière. Sources : 1 (kImage, ou une NHWC), ou 4 (conv_cat, K = 4 · Cin). Shared : les
 // poids partagés (accumulate_shared), leurs deux pas juste après la tuile.
 template <int Cin, int Cout, int Taps, int Sources, Src From, Mode M, bool Relu, Acc A, bool Shared = false>
@@ -100,29 +128,8 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
       accumulate<Cin, Cout, Taps, A>(acc, s, p.w, src * Taps * (Cin / 16), warp, lane);
     }
   }
-  __syncthreads();   // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
-  bool hit = false;  // une somme f16 débordée (sums)
-
-  if constexpr (M == Mode::kGate) {
-    // x de la tuile au pas Cout + 8, puis la 1×1 rangée (Cout² demi-flottants) juste après.
-    const std::uint32_t w1s = smem_u32(s) + static_cast<std::uint32_t>(kTH * kTW * (Cout + 8) * 2);
-    load_nhwc<Cout, 0>(s, p.skip, Cout, p.fh, p.fw, ty0, tx0);
-    for (int i = static_cast<int>(threadIdx.x); i < Cout * Cout / 8; i += kThreads)
-      cp_async16(w1s + static_cast<std::uint32_t>(i * 16), p.w1 + i, true);
-    cp_async_wait_all();
-    __syncthreads();
-    gate<Cout, A>(acc, s, w1s, p, warp, lane, hit);
-  } else {
-    plain<Cout, Relu, A>(acc, s, p.bias, warp, lane, hit);
-  }
-  // Rare : plusieurs fils écrivent la même valeur, sans atomique (note_overflow du FP8).
-  if constexpr (A == Acc::kF16)
-    if (hit && p.overflow != nullptr) *reinterpret_cast<volatile int*>(p.overflow) = 1;
-  __syncthreads();
-  if constexpr (M == Mode::kPixel)
-    store_pixel(s, p, ty0, tx0);
-  else
-    store_nhwc<Cout>(s, p, ty0, tx0);
+  __syncthreads();  // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
+  finish<Cout, M, Relu, A>(acc, s, p, ty0, tx0, warp, lane);
 }
 
 }  // namespace kirari::gpu::cuda::span_native
