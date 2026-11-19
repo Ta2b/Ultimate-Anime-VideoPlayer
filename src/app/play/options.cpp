@@ -180,8 +180,8 @@ constexpr std::array<Flag, 58> kFlags{{
     {"--anime-shots", &PlayOptions::anime_shots, true},
     // Le relèvement fixe, la lumière de la scène mesurée en direct.
     {"--no-anime-shots", &PlayOptions::anime_shots, false},
-    {"--effect-highlights", &PlayOptions::effect_highlights, true},
-    {"--no-effect-highlights", &PlayOptions::effect_highlights, false},  // le défaut, gardé
+    {"--effect-highlights", &PlayOptions::map_effects, true},
+    {"--no-effect-highlights", &PlayOptions::effect_highlights, false},
     {"--effect-mask-view", &PlayOptions::effect_mask_view, true},
     {"--no-vrr", &PlayOptions::no_vrr, true},
     {"--display-loss-pressure", &PlayOptions::display_loss_pressure, true},

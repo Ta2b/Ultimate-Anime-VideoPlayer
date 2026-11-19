@@ -260,11 +260,11 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   bougie de 16:19 est expliquée par un glissement ; aucun effet sûr, aucun gain). Un bloc qui domine
   nettement sa zone (0,20 PQ au-dessus du niveau de la zone, plein à 0,35) monte donc comme un effet sûr :
   porte plus basse, montée une fois et demie plus haute. Une lumière à peine plus claire que sa zone, le
-  fond et la peau ne changent pas (`grade_gpu_effects_test.cpp`). L'export fait de même.
-- **Éteints par défaut** pour la première release, les effets de la carte comme les lueurs vues dans l'image :
-  `--effect-highlights` (essai, avec `--debug`) les rallume, à l'écran et à l'export ; `--no-effect-highlights`
-  reste accepté.
-- **Sans carte** (AMD, Intel, NVOF refusé, sans `--effect-highlights`), le masque revient lentement au neutre
+  fond et la peau ne changent pas (`grade_gpu_effects_test.cpp`). L'export fait de même ;
+  `--no-effect-highlights` l'éteint, à l'écran et à l'export.
+- **Les effets de la carte, éteints par défaut** pour la première release : seules les lueurs vues dans l'image
+  portent les éclats. `--effect-highlights` (essai, avec `--debug`) rallume le masque des effets de la carte.
+- **Sans carte** (AMD, Intel, NVOF refusé, sans `--effect-highlights` ou avec `--no-effect-highlights`), le masque revient lentement au neutre
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format
   échantillonnable pour sa texture), le journal le dit une fois et le grade reste celui d'aujourd'hui.

@@ -157,10 +157,13 @@ struct PlayOptions {
   // (anime_shots.h) ; --no-anime-shots garde le relèvement fixe. Sans effet en sortie HDR
   // (render::steady_hdr).
   bool anime_shots = true;  // par défaut (jugé à l'image)
-  // Éclats HDR sur les seuls effets (render/effect_mask.h), là où la carte de la scène existe (NVIDIA), et
-  // sur les lueurs vues dans l'image : éteints par défaut pour la première release, --effect-highlights
-  // (essai) les rallume. Éteints, la marge des éclats reste sur toute lumière, comme sans carte.
-  bool effect_highlights = false;
+  // Éclats HDR : les lueurs vues dans l'image montent comme un effet sûr (GradeParams::fx_glow), à l'écran et
+  // à l'export ; --no-effect-highlights les coupe, avec les effets de la carte.
+  bool effect_highlights = true;
+  // --effect-highlights (essai) : éclats aussi sur les effets de la carte de la scène (render/effect_mask.h,
+  // NVIDIA). Éteints par défaut pour la première release : la marge des éclats reste alors sur toute
+  // lumière hors des lueurs, comme sans carte.
+  bool map_effects = false;
   // --effect-mask-view (essai) : le grade peint le masque au lieu de l'image (lumières en rouge, effets sûrs
   // en vert, marge retenue en bleu), pour le voir sur un instantané.
   bool effect_mask_view = false;

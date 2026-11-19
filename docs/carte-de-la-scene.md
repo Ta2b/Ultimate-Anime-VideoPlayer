@@ -13,7 +13,8 @@ entraînement.
   exactement comme sans la carte.
 - Interrupteur : allumée par défaut depuis la première release (la caméra, le décor et l'affinage à l'heure ont
   passé leurs mesures, pour les calques et la plaque de décor) ; `--no-scene-map` (essai) l'éteint. Les éclats
-  sur les effets, qui lisent sa classe Effet, restent éteints par défaut (`--effect-highlights`, essai).
+  sur ses effets (classe Effet) restent éteints par défaut (`--effect-highlights`, essai, les rallume) ; les
+  lueurs vues dans l'image par le grade n'en dépendent pas (`docs/hdr-anime.md`).
 - Journal de fin : `carte de la scène : N paires lancées, N relues, N posées sur leur paire ; N sautées (NVOF
   occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, dont N
   relus ensuite, N pas lancés ; N lancés derrière le flux depuis la caméra du plan, N écartés), N coupes
