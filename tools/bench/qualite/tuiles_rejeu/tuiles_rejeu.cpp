@@ -2,7 +2,7 @@
 // processeur (CMakeLists.txt à côté ; docs/tuiles-span.md, « Rejeu sur processeur »).
 //
 //   tuiles_rejeu [--diviseur D] [--blocs N] [--debande] [--sans-reprise] [--detail] [--dossier DOSSIER]
-//                [--ancre-composee | --somme-des-paires | --somme-bornee [--seuil C] [--masques DOSSIER]]
+//                [--ancre-composee | --somme-des-paires | --somme-bornee [--seuil C]] [--masques DOSSIER]
 //                < tâches
 //
 // Les tâches de carte_rejeu, d'un seul extrait : une paire voisine par ligne, dans l'ordre de lecture,
@@ -11,38 +11,38 @@
 // au flux (scene_flow_divisor), le travail fait LARGEUR × D sur HAUTEUR × D. DOSSIER : des tâches écrites
 // sur une autre machine, dont chaque fichier se cherche par son seul nom dans DOSSIER.
 //
-// Pour chaque image, comme le lecteur :
-// - la carte de la paire (précédente, image) : kernels::ref, caméra ajustée puis affinée, lissage des
-// classes,
-//   historique vidé après une coupe (app/play/scene_map.cpp) ;
+// Pour chaque image, comme le lecteur sous --span-tiles :
 // - la mesure de la paire et l'écart à l'ancre (kernels/spec/detect.h) : pire bloc et écart de chaque bloc,
 //   en 1/256 de niveau, sur des blocs de 16 pixels de travail (16 / D pixels du flux) ;
 // - SpanReuse::decide puis, sur les images calculées, SpanTiles::plan : le code du lecteur, compilé tel quel,
 //   sur la grille du SPAN FP16 natif à N blocs (8 par défaut : tuiles de 64 × 16 pixels de travail, halo
 //   d'une colonne et de quatre lignes, gpu/cuda/backend/span_native16.cu). --debande : l'entrée de SPAN
-//   débandée (le rayon du débandage s'ajoute au halo) ; --sans-reprise : --no-span-reuse.
+//   débandée (le rayon du débandage s'ajoute au halo) ; --sans-reprise : --no-span-reuse ;
+// - la carte de la paire (précédente, image), que le lecteur ne lit plus pour les tuiles : kernels::ref,
+//   caméra ajustée puis affinée, lissage des classes, historique vidé après une coupe
+//   (app/play/scene_map.cpp), pour les colonnes de --detail et les coupes de l'essai.
 //
 // Sortie : avec --detail, une ligne par image, « image K SORTE TUILES SX SY CŒUR TOTAL AJUSTÉE CX CY PAIRE »
 // : SORTE C (calculée entière), R (reprise entière), T (par tuiles) ; TUILES 1 si par tuiles ; SX SY le
-// décalage de la sortie d'avant ; CŒUR sur TOTAL les tuiles recalculées ; AJUSTÉE 1 si la carte a une caméra
-// ; CX CY son déplacement au centre de l'image (pixels de travail) ; PAIRE le pire bloc de la paire
-// (niveaux) ; avec --ancre-composee, la sorte et le cœur de l'essai. Puis les deux lignes du journal de fin
-// du lecteur, « SPAN repris : … » et « SPAN par tuiles : … », ce que le corps de SPAN a calculé (sa part
-// d'une image entière à chaque image), et la ligne de l'essai.
+// décalage de la sortie d'avant (toujours nul) ; CŒUR sur TOTAL les tuiles recalculées ; AJUSTÉE 1 si la
+// carte a une caméra ; CX CY son déplacement au centre de l'image (pixels de travail) ; PAIRE le pire bloc de
+// la paire (niveaux) ; avec --ancre-composee, la sorte et le cœur de l'essai. Puis les deux lignes du journal
+// de fin du lecteur, « SPAN repris : … » et « SPAN par tuiles : … », ce que le corps de SPAN a calculé (sa
+// part d'une image entière à chaque image), et la ligne de l'essai.
 //
 // --ancre-composee : à côté du lecteur, l'essai d'ancre_tuiles.h, les tuiles décidées sur l'écart des pixels
 // à l'image composée de ce qui a produit la sortie, sans NVOF ; C : le seuil d'un bloc, centièmes de niveau
 // (70, celui du lot A, par défaut). --somme-des-paires, --somme-bornee : ses variantes qui majorent l'écart
 // sans image composée, par la somme des paires, resserrée ou non par l'écart à la dernière image calculée.
-// --masques : pour chaque image K, K.coeur dans DOSSIER, les tuiles que
-// l'essai a calculées (un octet par tuile, ligne par ligne ; toutes pour une image entière, aucune pour une
-// reprise), que tuiles_controle.py rejoue contre un réseau 2×.
+// --masques : pour chaque image K, K.coeur dans DOSSIER, les tuiles que le lecteur (l'essai avec
+// --ancre-composee et ses variantes) a calculées (un octet par tuile, ligne par ligne ; toutes pour une image
+// entière, aucune pour une reprise), que tuiles_controle.py rejoue contre un réseau 2×.
 //
 // Écarts au lecteur : la mesure de la paire lit ici la luma du flux, réduite d'un facteur D par moyenne de
 // surface, et non le RGB de travail ou la copie de RIFE : le grain s'y moyenne, une paire y paraît un peu
 // plus tenue (plus de reprises entières) et le filet des blocs un peu moins nerveux ; un vrai changement
 // garde son écart moyen sur la même surface. La carte ne manque jamais une paire (pas de carte en retard ni
-// perdue). La chaîne est celle d'une lecture SPAN avant le warp, sortie d'avant intacte (décalage possible).
+// perdue). La chaîne est celle d'une lecture SPAN avant le warp, sortie d'avant intacte.
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -169,8 +169,6 @@ class Replay {
     facts.has_output = true;
     facts.pair_held = is_held(paired.worst);
     facts.tiles_stale = app::play::TileStale::None;
-    facts.can_shift = true;
-    facts.scene = &*scene;
     facts.spread_px = options_.debanded ? kDebandSpread : 0;
     facts.input_key = kInputKey;
     facts.blocks = app::play::PairBlocks{.deviation = paired.deviation,
@@ -182,7 +180,8 @@ class Replay {
     if (kind != app::play::ReuseKind::Whole) anchor_ = b;
     count(kind);
     const char composed = composed_ ? composed_->next(b, *scene) : ' ';
-    if (composed_ && !options_.masks.empty() && !write_mask(composed_->last_core())) return false;
+    if (!options_.masks.empty() && !write_mask(composed_ ? composed_->last_core() : player_core(kind)))
+      return false;
     print(kind, *scene, paired.worst, composed);
     ++frame_;
     return true;
@@ -231,6 +230,13 @@ class Replay {
     if (out) return true;
     std::cerr << "tuiles_rejeu : écriture impossible : " << path.string() << "\n";
     return false;
+  }
+
+  // Les tuiles que le lecteur a calculées : toutes, aucune (reprise entière) ou le cœur du plan.
+  std::vector<std::uint8_t> player_core(app::play::ReuseKind kind) const {
+    if (kind == app::play::ReuseKind::Tiles) return reuse_.tile_plan.core;
+    const auto count = static_cast<std::size_t>(reuse_.tiles.grid().count());
+    return std::vector<std::uint8_t>(count, kind == app::play::ReuseKind::Compute ? 1 : 0);
   }
 
   // Le corps de SPAN calcule l'image entière, ou la région dilatée du halo d'une image par tuiles.
@@ -323,7 +329,8 @@ int main(int argc, char** argv) {
   Options options;
   if (!parse(argc, argv, options)) {
     std::cerr << "usage : tuiles_rejeu [--diviseur D] [--blocs N] [--debande] [--sans-reprise] [--detail] "
-                 "[--dossier DOSSIER] < tâches\n";
+                 "[--dossier DOSSIER] [--ancre-composee | --somme-des-paires | --somme-bornee [--seuil C]] "
+                 "[--masques DOSSIER] < tâches\n";
     return 2;
   }
   Replay replay(options);

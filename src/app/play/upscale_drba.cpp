@@ -178,8 +178,8 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   drba_.after_id = after->id;
   drba_.after_epoch = after->epoch;
   drba_.after_reduce = spec.reduce;
-  // La carte de (frame, after), comme look_ahead : là quand after sera l'image en cours, avant son SPAN (les
-  // tuiles qui bougent, upscale_tiles.h). Jamais d'une époque à l'autre.
+  // La carte de (frame, after), comme look_ahead : là quand after sera l'image en cours, avant son SPAN.
+  // Jamais d'une époque à l'autre.
   if (after->epoch == frame.epoch)
     scene_.start(ops, rgb_[current_]->tensor(), drba_.after->tensor(), frame.id, after->id, frame.epoch);
   drba_.left_pts_us = frame.pts_us;

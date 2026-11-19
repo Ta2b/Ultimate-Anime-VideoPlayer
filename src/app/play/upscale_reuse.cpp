@@ -22,8 +22,6 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
     // Les tuiles suivent chaque image calculée, même entière : leur état repart de là.
     tile_plan = tiles.plan(TileFacts{
         .stale = facts.tiles_stale != TileStale::Chain && restart ? TileStale::Restart : facts.tiles_stale,
-        .can_shift = facts.can_shift,
-        .scene = facts.scene,
         .spread_px = facts.spread_px,
         .input_key = facts.input_key,
         .blocks = facts.blocks});
@@ -44,8 +42,12 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
     ++stopped_limit_;
     return compute();
   }
+  if (!tiles.holds(facts.blocks)) {
+    ++stopped_tiles_;
+    return compute();
+  }
   take();
-  tiles.held(facts.scene);
+  tiles.held(facts.blocks);
   return ReuseKind::Whole;
 }
 
@@ -53,7 +55,7 @@ void SpanReuse::force() {
   ++seen_;
   anchor_ready_ = false;  // la série imposée reprend a sans en copier l'image
   tile_plan = TilePlan{};
-  tiles.held(nullptr);
+  tiles.held(PairBlocks{});
   take();
 }
 
@@ -79,6 +81,7 @@ std::string SpanReuse::summary() const {
       "{}, images abîmées {}{}",
       reused_, seen_, share, longest_, stopped_limit_, stopped_anchor_, corrupt_,
       anchor_measure ? "" : " (sans mesure contre l'ancre : deux de suite au plus)");
+  if (stopped_tiles_ > 0) line += std::format(", arrêts aux tuiles {}", stopped_tiles_);
   if (std::ranges::any_of(pairs_, [](std::uint64_t n) { return n > 0; }))
     line += std::format(
         " ; paires par pire bloc (niveaux) : jusqu'à 0.7 {}, 1 {}, 1.5 {}, 2 {}, 3 {}, 5 {}, au-delà {}",
