@@ -54,9 +54,10 @@ class SceneFlow {
   // Avant que la voie lane écrive les lumas du plan : elle attend que NVOF ait lu ces tampons (déjà fait si
   // plan les a rendus).
   std::expected<void, Refusal> before_lumas(cudaStream_t lane, const Lumas& lumas);
-  // Après : le flux, la réduction et la copie sur la file de NVOF ; rend le ticket.
+  // Après : le flux, la réduction et la copie sur la file de NVOF ; rend le ticket. Deux mesures : le flux
+  // (le bloc NVOFA, à côté des SM : une latence, pas un coût par image) et la réduction (sur les SM).
   std::expected<std::uint64_t, Refusal> run(cudaStream_t lane, const Lumas& lumas, bool restart,
-                                            GpuTiming& timing);
+                                            GpuTiming& flow_timing, GpuTiming& tiles_timing);
   // La grille d'un ticket si sa copie est passée, sans attendre ; nullopt sinon. Périmé : SequenceOrder.
   std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> take(std::uint64_t ticket);
 
