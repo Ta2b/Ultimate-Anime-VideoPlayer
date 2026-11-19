@@ -132,6 +132,42 @@ __global__ void traits_kernel(const __half* in, int ih, int iw, __half* out, int
     out[c * plane + static_cast<long long>(y) * w + x] = __float2half_rn(tfix::resized(v, c, iw, ax, ay));
 }
 
+// La dernière couche de la tête (un canal, sans activation ni résiduel) : un fil par point, sommes f32 sur
+// les cœurs CUDA ; la tuile de 16 canaux des tensor cores y ferait seize fois le travail utile. w : [9][cin].
+__global__ void single_kernel(const __half* in, int in_ld, __half* out, int out_ld, const float* w,
+                              float bias, int cin, int h, int width) {
+  extern __shared__ float taps[];
+  const int threads = static_cast<int>(blockDim.x * blockDim.y);
+  for (int i = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x); i < 9 * cin; i += threads)
+    taps[i] = w[i];
+  __syncthreads();
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= width || y >= h) return;
+  const long plane = static_cast<long>(h) * width;
+  const __half* image = in + static_cast<long>(blockIdx.z) * plane * in_ld;
+  float sum = bias;
+  for (int tap = 0; tap < 9; ++tap) {
+    const int sy = y + tap / 3 - 1;
+    const int sx = x + tap % 3 - 1;
+    if (sy < 0 || sy >= h || sx < 0 || sx >= width) continue;
+    const auto* at = reinterpret_cast<const uint4*>(image + (static_cast<long>(sy) * width + sx) * in_ld);
+    for (int c8 = 0; c8 < cin / 8; ++c8) {
+      const uint4 v = at[c8];
+      const auto* pairs = reinterpret_cast<const __half2*>(&v);
+      const float* t = taps + tap * cin + c8 * 8;
+      for (int k = 0; k < 4; ++k) {
+        const float2 f = __half22float2(pairs[k]);
+        sum += f.x * t[2 * k] + f.y * t[2 * k + 1];
+      }
+    }
+  }
+  __half* o =
+      out + static_cast<long>(blockIdx.z) * plane * out_ld + (static_cast<long>(y) * width + x) * out_ld;
+  o[0] = __float2half_rn(sum);
+  for (int c = 1; c < out_ld; ++c) o[c] = __float2half_rn(0.F);
+}
+
 struct Layer {
   Kind kind = Kind::kSame;
   Launch launch = nullptr;
@@ -140,6 +176,8 @@ struct Layer {
   int in_ld = 0, out_ld = 0, cin = 0;
   bool residual = false;
   bool activation = false;
+  bool single = false;  // single_kernel : poids f32 [9][cin] dans w, biais dans single_bias
+  float single_bias = 0.F;
   Buffer w, bias, slope;
   dim3 grid;
   int smem = 0;
@@ -271,6 +309,16 @@ class Net final : public TfixNativeNet {
     layer.residual = !conv.scale.empty();
     layer.activation = !conv.slope.empty();
     const int cin = layer.cin;
+    if (last && conv.cout == 1 && layer.kind == Kind::kSame && !layer.residual && !layer.activation) {
+      layer.single = true;
+      layer.out_ld = kernels::tfix_out_ld(1, true);
+      layer.single_bias = folded.bias(0);
+      std::vector<float> taps(static_cast<std::size_t>(9) * cin);
+      for (int tap = 0; tap < 9; ++tap)
+        for (int c = 0; c < cin; ++c)
+          taps[static_cast<std::size_t>(tap) * cin + c] = folded.weight(0, tap, c);
+      return sent(layer.w.upload(taps.data(), taps.size() * sizeof(float)));
+    }
     const int cout = pad16(conv.cout);
     const bool half = layer.kind != Kind::kSame;
     layer.kc = layer.kind == Kind::kImage ? 16 : (cin % 64 == 0 && !half) ? 64 : cin % 32 == 0 ? 32 : 16;
@@ -358,6 +406,16 @@ class Net final : public TfixNativeNet {
       const Layer& layer = piece.layers[i];
       const bool last = i + 1 == piece.layers.size();
       __half* to = last ? static_cast<__half*>(out) : buffers[i % 2];
+      if (layer.single) {
+        const dim3 block(32, 8);
+        const dim3 grid(static_cast<unsigned>((layer.ow + 31) / 32),
+                        static_cast<unsigned>((layer.oh + 7) / 8), static_cast<unsigned>(piece.batch));
+        single_kernel<<<grid, block, static_cast<std::size_t>(9) * layer.cin * sizeof(float), stream>>>(
+            from, layer.in_ld, to, layer.out_ld, layer.w.as<float>(), layer.single_bias, layer.cin, layer.oh,
+            layer.ow);
+        from = to;
+        continue;
+      }
       rn::BatchParams p;
       p.in = from;
       p.in_ld = layer.in_ld;
