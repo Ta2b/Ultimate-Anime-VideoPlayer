@@ -19,7 +19,9 @@
 // travail (32 en 1080p). Pour chaque tuile, sur ses vecteurs dans l'image (cells, sum_x, sum_y, sum_xx,
 // sum_yy, cost, unmatched : coût ≥ kSceneCostHigh) et sur ses pixels du flux dans l'image (pixels ; texture :
 // Σ |a(x+1, y) − a(x, y)| + |a(x, y+1) − a(x, y)|, chaque terme compté seulement si le voisin est dans
-// l'image ; diff : Σ |b − a| ; signed_diff : Σ (b − a)), en codes entiers sommés en float. Référence :
+// l'image ; diff : Σ |b − a| ; signed_diff : Σ (b − a)). Tout est sommé en entiers (vecteurs en S10.5,
+// codes), puis rendu en float : sum_x et sum_y ÷ 32, sum_xx et sum_yy ÷ 1024 ; le résultat ne dépend donc pas
+// de l'ordre de la réduction. Référence :
 // ref::scene_tile_sums ; port : gpu/cuda/backend/scene_flow_kernels.cu.
 //
 // Carte (ref::scene_motion_of, code du lecteur) : voir SceneMotion plus bas et kernels/ref/scene_flow.cpp.

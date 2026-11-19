@@ -147,6 +147,7 @@ struct ChainEngines {
   bool rife_warm = false;               // --rife-warm (UpscaleSetup::rife_warm)
   bool rife_encode_all = false;         // --rife-encode-all (UpscaleSetup::rife_encode_all)
   bool rife_at_slot = false;            // --rife-at-slot (UpscaleSetup::rife_at_slot)
+  bool scene_map = false;               // --scene-map (UpscaleSetup::scene_map)
   bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   // La stabilisation temporelle avant SPAN (chain_temporal.cpp), à la taille de travail ; nul : éteinte ou

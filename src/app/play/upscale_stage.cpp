@@ -201,8 +201,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     count_measured(facts);
     mark_pair(frame, facts);
   }
-  // Smooth : une tenue de deux à six sources fondue en un mouvement (upscale_smooth.cpp).
-  smooth_advance(frame, facts, on_grid);
+  // La carte de la scène (scene_pair), puis Smooth : une tenue fondue en un mouvement (upscale_smooth.cpp).
+  smooth_advance(frame, scene_pair(frame, facts), on_grid);
   if (auto ok = smooth_decide(frame, spec, facts, on_grid); !ok)
     return std::unexpected(std::move(ok.error()));
   // L'image seule si l'interpolation ne tourne pas ; la grille repart alors d'elle.
