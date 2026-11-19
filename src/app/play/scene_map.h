@@ -3,11 +3,12 @@
 // carte (kernels/ref/scene_flow.h, scene_motion_of), posée dans PairFacts::scene pour la paire qu'elle
 // décrit.
 //
-// Deux cadences. Avec l'image suivante ingérée en avance (RIFE, GMFSS : looks_ahead), la paire (N, N+1) est
-// lancée pendant l'image N et sa carte est là quand l'étage décide de cette paire, avant RIFE et SPAN. Sans
-// elle (sans interpolation, DistilDRBA, ou image suivante pas encore décodée), la paire (N−1, N) est lancée à
-// l'image N et sa carte n'arrive qu'à l'image suivante : latest() la garde, avec sa paire, mais PairFacts ne
-// la reçoit pas. Une paire n'est lancée qu'une fois (started), et jamais à cheval sur deux époques.
+// Deux cadences. Avec l'image suivante ingérée en avance (RIFE, GMFSS : looks_ahead ; DistilDRBA :
+// drba_next), la paire (N, N+1) est lancée pendant l'image N et sa carte est là quand l'étage décide de cette
+// paire, avant l'interpolation et SPAN. Sans elle (sans interpolation, ou image suivante pas encore décodée),
+// la paire (N−1, N) est lancée à l'image N et sa carte n'arrive qu'à l'image suivante : latest() la garde,
+// avec sa paire, mais PairFacts ne la reçoit pas. Une paire n'est lancée qu'une fois (started), et jamais à
+// cheval sur deux époques.
 //
 // NVOF encore occupé (plus lent que la chaîne de deux paires) : la paire n'est pas lancée, rien n'attend, et
 // la suivante repart sans indices (sautées au journal de fin). Une carte pas encore relue quand l'étage
@@ -87,6 +88,10 @@ class SceneMap {
   std::uint64_t cuts_ = 0;
   std::uint64_t fades_ = 0;
   std::uint64_t camera_fits_ = 0;
+  // Temps de l'hôte (le thread du lecteur), µs : lancer une paire (scene_flow_start) et tirer une carte
+  // (scene_motion_of). Avec les lumas et les tuiles sur les SM, c'est ce que la carte ajoute à chaque image.
+  double start_us_ = 0.0;
+  double map_us_ = 0.0;
 };
 
 }  // namespace kirari::app::play

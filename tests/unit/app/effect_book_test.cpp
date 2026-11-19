@@ -139,4 +139,40 @@ TEST_CASE("Éclats des effets : le grade avant le warp suit une fois par paire, 
   CHECK(follower.mask().neutral());
 }
 
+TEST_CASE("Éclats des effets : le journal de fin compte les images et garde les moments marqués", "[app]") {
+  EffectTally tally;
+  render::EffectMask none;
+  tally.count(false, false, none, 0);  // sans carte
+  CHECK(tally.images() == 1);
+  CHECK(tally.noted() == 0);
+  // Un masque posé d'un coup : moitié effet (1), moitié décor sûr (0), dilaté puis flouté.
+  const auto mask_of = [](float left, float right) {
+    render::EffectTiles t;
+    t.cols = 8;
+    t.rows = 2;
+    t.cut = true;
+    for (int r = 0; r < 2; ++r)
+      for (int c = 0; c < 8; ++c) t.effect.push_back(c < 4 ? left : right);
+    render::EffectMask m;
+    m.update(t);
+    return m;
+  };
+  const render::EffectMask half = mask_of(1.0F, 0.0F);
+  const render::EffectMask still = mask_of(0.0F, 0.0F);  // aucun effet : jamais un moment marqué
+  tally.count(true, true, half, 5'000'000);
+  tally.count(true, true, still, 60'000'000);
+  tally.count(true, true, half, 8'000'000);  // à moins de 10 s du premier, pas plus fort : ignoré
+  tally.count(true, true, half, 30'000'000);
+  tally.count(true, false, half, 40'000'000);  // masque non posé (GPU refusé) : pas compté
+  CHECK(tally.images() == 6);
+  CHECK(tally.noted() == 5);
+  CHECK(tally.masked() == 4);
+  CHECK(tally.held() > 0.2);
+  CHECK(tally.held() < 1.0);
+  CHECK(tally.moments()[0].pts_us == 5'000'000);
+  CHECK(tally.moments()[0].held > 0.0);
+  CHECK(tally.moments()[1].pts_us == 30'000'000);
+  CHECK(tally.moments()[2].held == 0.0);  // la troisième place reste vide
+}
+
 }  // namespace kirari::app::play

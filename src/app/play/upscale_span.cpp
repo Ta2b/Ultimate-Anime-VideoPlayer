@@ -251,6 +251,7 @@ std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
   if (!setup_.grader || setup_.yuv_slots) return {};
   KIRARI_TRACE("grade avant le warp");
   const GradedSource source{.epoch = head_.epoch,
+                            .pts_us = head_.pts_us,
                             .effects = setup_.live
                                            ? setup_.live->effect_book().for_source(head_.epoch, head_.pts_us)
                                            : std::nullopt};

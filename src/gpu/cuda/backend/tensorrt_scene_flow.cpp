@@ -80,7 +80,10 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Te
     timing.end(stream_);
   }
   if (!ready) return std::unexpected(std::move(ready.error()));
-  return scene_flow_->run(stream_, lumas, cold, stage("carte de la scène : NVOF et tuiles"));
+  // Le flux tourne sur le bloc NVOFA, à côté des SM : sa mesure est une latence, pas un temps ajouté à chaque
+  // image. Ce qui s'ajoute, ce sont les lumas et les tuiles (docs/carte-de-la-scene.md).
+  return scene_flow_->run(stream_, lumas, cold, stage("carte de la scène : flux (NVOFA)"),
+                          stage("carte de la scène : tuiles"));
 }
 
 std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> TensorRtBackend::scene_flow_take(

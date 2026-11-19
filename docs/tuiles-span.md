@@ -15,8 +15,8 @@ Aucun modèle nouveau : SPAN tel quel, la carte de la scène (`docs/carte-de-la-
 - **La carte de la scène** (`--scene-map`, RTX 30 et après) : sans elle, l'image entière se calcule, image pour
   image comme avant.
 - **SPAN avant le warp** (RIFE ou DistilDRBA en variante mouvement, `warp_after_span`) : la carte de la paire
-  (N − 1, N) arrive avant le SPAN de N. En SPAN seul, elle n'arrive qu'à l'image suivante : pas de tuiles. Le
-  chemin SPAN après RIFE sait faire les tuiles sur place (sans décalage) quand une carte est là.
+  (N − 1, N), lancée pendant l'image N − 1 (`look_ahead`, `drba_next` sous DistilDRBA), arrive avant le SPAN
+  de N. Le chemin SPAN après RIFE sait faire les tuiles sur place (sans décalage) quand une carte est là.
 - **En lecture** : jamais à l'export (la carte arrive quand elle peut ; l'export rejoue la chaîne au bit
   près), ni avec TemporalFix (la carte ne voit pas sa sortie), ni avec « Lisser les dessins tenus » (SPAN fait
   en avance), ni avec la plaque de décor, ni quand le grade avant le warp a réécrit la sortie d'avant sur
