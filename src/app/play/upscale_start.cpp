@@ -46,6 +46,7 @@ UpscaleStage::~UpscaleStage() {
         "RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs (dont {} sans passe au milieu)",
         rife_runs_, single_pairs_, multi_pairs_, direct_pairs_);
   }
+  triage_.log();  // --pair-triage : la ligne à comparer d'une séance à l'autre (rife_triage.h)
   if (strong_derived_ != 0)
     log_channel("gpu")->info("paires fortes : {} instants déduits du milieu (moins de passes RIFE)",
                              strong_derived_);
