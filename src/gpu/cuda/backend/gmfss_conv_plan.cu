@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/gmfss_conv_plan.cuh"
+#include "gpu/cuda/backend/gmfss_grid_folded.cuh"
 #include "gpu/cuda/backend/gmfss_grid_head.cuh"
 #include "gpu/cuda/backend/gmfss_grid_join.cuh"
 #include "gpu/cuda/backend/gmfss_grid_rgb.cuh"
@@ -268,6 +269,10 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
   join_on_ = false;
   planar_head_ = -1;
   tail_on_ = false;
+  folded_tail_on_ = false;
+  folded_weights_.release();
+  folded_edges_.release();
+  folded_bias_.release();
   const char* tail = std::getenv("KIRARI_AB_GMFSS_GRID_TAIL");  // env: banc
   try_tail_ = io.rgb >= 0 && width_ <= 960 && height_ >= gmfss_grid_tail::kRingRows &&
               (tail == nullptr || std::string_view(tail) != "0") && on_ada();
@@ -386,6 +391,43 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
       zone_bytes_ = original_bytes;
     }
   }
+  const char* folded = std::getenv("KIRARI_AB_GMFSS_FOLDED_TAIL");  // env: banc
+  if (grid.folded_tail_verified && (folded == nullptr || std::string_view(folded) != "0") && try_join) {
+    const std::size_t up_index = layers_.size() - 2;
+    const Layer& up = layers_[up_index];
+    const Layer& rgb = layers_.back();
+    const auto& first = grid.steps[up_index].conv;
+    const auto& last = grid.steps.back().conv;
+    const Placed& intermediate = tensor(up.to);
+    if (up.kind == Kind::kShuffle && first.stride == 1 && !first.transposed && first.cin == 64 &&
+        first.cout == 256 && up.ih == height_ && up.iw == width_ && up.in_ld == 64 && !up.blocked8 &&
+        up.in_slope == 1.F && !up.activation && up.skip < 0 && up.piece == rgb.piece && rgb.rgb &&
+        rgb.from == up.to && rgb.in_slope == 1.F && rgb.oh == 2 * height_ && rgb.ow == 2 * width_ &&
+        intermediate.first == static_cast<int>(up_index) &&
+        intermediate.last == static_cast<int>(up_index + 1)) {
+      const auto weights = gmfss_grid_folded::pack(first, last);
+      auto status = folded_weights_.upload(weights.interior.data(), weights.interior.size() * sizeof(uint2),
+                                           tuner.stream);
+      if (status == cudaSuccess)
+        status =
+            folded_edges_.upload(weights.edges.data(), weights.edges.size() * sizeof(float), tuner.stream);
+      if (status == cudaSuccess)
+        status = folded_bias_.upload(weights.bias.data(), weights.bias.size() * sizeof(float), tuner.stream);
+      // Les poids côté hôte restent vivants jusqu'à la fin de toute copie déjà soumise.
+      if (const auto synced = cudaStreamSynchronize(tuner.stream); synced != cudaSuccess) status = synced;
+      if (status != cudaSuccess) {
+        folded_weights_.release();
+        folded_edges_.release();
+        folded_bias_.release();
+        if (status != cudaErrorMemoryAllocation) {
+          error = std::string("queue composée : ") + cudaGetErrorString(status);
+          return false;
+        }
+        static_cast<void>(cudaGetLastError());
+        tuner.tuning.notes.emplace_back("queue composée indisponible : mémoire CUDA");
+      }
+    }
+  }
   tuner.tuning.layers += static_cast<int>(layers_.size());
   return true;
 }
@@ -477,6 +519,18 @@ bool ConvNet::run(cudaStream_t stream, void* zone, float* partial, std::span<con
     if (planar_head && static_cast<int>(i) == planar_head_) {
       const auto launch = gmfss_grid_head::pick(shape.cfg, layer.sums);
       launch(shape.grid, shape.smem, stream, p, {(*planar_head)[0], (*planar_head)[1], (*planar_head)[2]});
+    } else if (folded_tail_on_ && i + 2 == layers_.size() && rgb != nullptr &&
+               (piece < 0 || rgb != address(layers_.back().to, zone, bound))) {
+      gmfss_grid_folded::enqueue({.input = p.in,
+                                  .output = rgb,
+                                  .weights = folded_weights_.as<const uint2>(),
+                                  .bias = folded_bias_.as<const float>(),
+                                  .edges = folded_edges_.as<const float>(),
+                                  .height = height_,
+                                  .width = width_},
+                                 stream);
+      ++i;
+      written = true;
     } else if (tail_on_ && i + 2 == layers_.size() && rgb != nullptr &&
                (piece < 0 || rgb != address(layers_.back().to, zone, bound))) {
       const Layer& head = layers_[++i];

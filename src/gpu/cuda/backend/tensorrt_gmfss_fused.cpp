@@ -5,6 +5,7 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <string_view>
 #include <utility>
 
 #include "core/utf8_path.h"
@@ -33,7 +34,17 @@ std::expected<prepare::GmfssGrid, Refusal> native_grid(const std::filesystem::pa
   auto bytes =
       prepare::read_gmfss_piece(manifest_path.parent_path(), manifest->pieces[0], manifest->digests[0]);
   if (!bytes) return std::unexpected(std::move(bytes.error()));
-  return prepare::gmfss_grid(*bytes);
+  auto grid = prepare::gmfss_grid(*bytes);
+  // Le graphe de models-interp-1, préparé pour 1920 × 1152 par la dérivation t2. La queue composée
+  // a été vérifiée sur cette version, y compris le PixelShuffle et les deux convolutions.
+  constexpr std::string_view kVerifiedFusion =
+      "76b14e6b8fc49cc12b914f82bc8accfbc5ff0abc684b902ec056e762c1320f9e";
+  if (grid && manifest->digests[0] == kVerifiedFusion) {
+    prepare::Sha256 sha;
+    sha.update(*bytes);
+    grid->folded_tail_verified = sha.hex() == kVerifiedFusion;
+  }
+  return grid;
 }
 
 std::expected<std::array<RifeNativePiece, 4>, Refusal> native_ifnet(

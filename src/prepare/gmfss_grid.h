@@ -48,6 +48,7 @@ inline constexpr int kGmfssFeatureChannels = 64;  // les caractéristiques de wa
 struct GmfssGrid {
   std::vector<GmfssGridTensor> tensors;
   std::vector<GmfssGridStep> steps;
+  bool folded_tail_verified = false;  // la fusion exacte de models-interp-1 validée à 960 × 576
 };
 
 // Les morceaux du GridNet, dont l'essai au chargement choisit les sommes à part (docs/gmfss-natif.md) : les

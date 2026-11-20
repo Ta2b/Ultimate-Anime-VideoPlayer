@@ -45,6 +45,8 @@ class GmfssNativeNet : public GmfssNativeParts {
   virtual void use_join(bool enabled) = 0;
   virtual bool tail_ready() const = 0;
   virtual void use_tail(bool enabled) = 0;
+  virtual bool folded_tail_ready() const = 0;
+  virtual void use_folded_tail(bool enabled) = 0;
   virtual bool planar_head_ready() const = 0;
   virtual void use_planar_head(bool enabled) = 0;
   // Les convolutions d'un morceau seul, sur ce que la zone garde : pour son temps.

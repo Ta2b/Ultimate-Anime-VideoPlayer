@@ -148,6 +148,8 @@ class ConvNet {
   bool planar_head_ready() const;
   bool join_ready() const;
   bool tail_ready() const;
+  bool folded_tail_ready() const { return folded_weights_.as<const void>() != nullptr; }
+  void use_folded_tail(bool enabled) { folded_tail_on_ = enabled && folded_tail_ready(); }
   void use_tail(bool enabled) { tail_on_ = enabled; }
   // Au chargement seulement, stream vidé entre les deux placements.
   void use_join(bool enabled);
@@ -183,6 +185,8 @@ class ConvNet {
   bool join_on_ = false;
   bool try_tail_ = false;
   bool tail_on_ = false;
+  bool folded_tail_on_ = false;
+  rn::Buffer folded_weights_, folded_edges_, folded_bias_;
   int planar_head_ = -1;
   std::vector<Layer> layers_;
   std::int64_t zone_bytes_ = 0;
