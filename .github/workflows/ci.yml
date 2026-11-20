@@ -177,12 +177,13 @@ jobs:
     container: archlinux:latest
     env:
       KIRARI_DEPS_PREFIX: /opt/kirari-deps
-      KIRARI_TEST_VULKAN_VALIDATION: "off"
+      KIRARI_TEST_VULKAN_VALIDATION: require
       CCACHE_DIR: /tmp/ccache
     steps:
       - run: >-
           pacman -Syu --noconfirm --needed base-devel git cmake ninja ccache pkgconf python meson nasm autoconf automake
-          libtool python-jinja vulkan-headers vulkan-icd-loader vulkan-swrast shaderc glslang spirv-tools freetype2
+          libtool python-jinja vulkan-headers vulkan-icd-loader vulkan-swrast vulkan-validation-layers
+          shaderc glslang spirv-tools freetype2
           harfbuzz fribidi fontconfig lcms2 dav1d svt-av1 alsa-lib libpulse libx11 libxext libxrandr libxcursor libxi
           libxss libxtst libxfixes libxinerama libxkbcommon libxkbcommon-x11 wayland wayland-protocols libdecor
           libdrm libva mesa dbus xorg-server-xvfb xorg-xauth ttf-dejavu
