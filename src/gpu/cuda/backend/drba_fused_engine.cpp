@@ -23,7 +23,7 @@ DrbaFusedEngine::~DrbaFusedEngine() {
 
 std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
     nvinfer1::IRuntime& runtime, const std::filesystem::path& cache_dir, const DrbaFusedKey& key,
-    const std::shared_ptr<SharedActivations>& shared) {
+    const std::shared_ptr<SharedActivations>& shared, std::span<const RifeNativeConv> native_tail) {
   if (!shared) return refuse(RefusalCode::GraphInvalid, "DistilDRBA fusionné : zone d'activation absente");
   if (!kernels::drba_fused_size_valid(key.plan, key.height, key.width) ||
       key.engines.size() != static_cast<std::size_t>(kernels::kDrbaFusedBlocks) + 1)
@@ -125,6 +125,12 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   // en vol sur les voies (SPAN, un autre moteur) finit avant (A03-05). enqueue déclare ce qu'il y écrit :
   // un autre moteur qui y gardait ses tampons les refait.
   if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) return failed(e, "cudaDeviceSynchronize");
+  if (engine->packed_tail_ && !native_tail.empty()) {
+    auto trial = engine->try_native_tail(scratch.stream, shared, native_tail);
+    if (!trial && trial.error().code == RefusalCode::DeviceLost)
+      return std::unexpected(std::move(trial.error()));
+    engine->tail_notice_ = trial ? std::move(*trial) : std::move(trial.error().detail);
+  }
   const auto out = reinterpret_cast<std::uintptr_t>(scratch_output);
   const Tensor inputs[]{fused_tensor(reinterpret_cast<std::uintptr_t>(scratch_input01), 0,
                                      kernels::kDrbaFusedInputPlanes, h, w),
@@ -240,6 +246,13 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
   }
   for (int b = 0; b < kernels::kDrbaFusedBlocks; ++b) {
     const auto i = static_cast<std::size_t>(b);
+    if (tail_ && b == kLastBlock) {
+      if (auto ok = cuda_check(tail_->enqueue(stream, at_ptr(packed_x_), at_ptr(layout_.y[i]), times_only),
+                               "DistilDRBA : bloc 2 natif");
+          !ok)
+        return ok;
+      break;
+    }
     const kernels::DrbaFusedDims x = kernels::drba_fused_x(plan_, b, h, w);
     const kernels::DrbaFusedDims y = kernels::drba_fused_y(plan_, b, h, w);
     const auto in = packed_tail_ && b == kLastBlock ? packed_x_ : layout_.x[i];
@@ -276,7 +289,9 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                             .out = outputs.size() == 1 ? fused_address(outputs[0]) : nullptr,
                             .flow = outputs.size() == 2 ? fused_address(outputs[0]) : nullptr,
                             .mask = outputs.size() == 2 ? fused_address(outputs[1]) : nullptr,
-                            .y_pitch = packed_tail_ ? kPackedY2 : 0,
+                            .y_pitch = tail_          ? DrbaTailNative::kOutputPitch
+                                       : packed_tail_ ? kPackedY2
+                                                      : 0,
                             .shared_resize = shared_finish_,
                         },
                         stream),

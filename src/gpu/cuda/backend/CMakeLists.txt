@@ -1,7 +1,7 @@
 # kirari_backend_tensorrt.so : le backend TensorRT (gpu/backend.h), chargé à l'exécution.
 # Il emporte prepare (constructeur trtexec) et sa propre copie de spdlog ; ses symboles
 # restent cachés, sauf les trois points d'entrée.
-add_library(kirari_backend_tensorrt_kernels STATIC deband_kernels.cu doubt_kernels.cu drba_fused_kernels.cu export_kernels.cu
+add_library(kirari_backend_tensorrt_kernels STATIC deband_kernels.cu doubt_kernels.cu drba_fused_kernels.cu drba_tail_native.cu export_kernels.cu
   gmflow_attention_net.cu gmflow_backbone_net.cu gmflow_convex_kernels.cu gmflow_convex_net.cu gmflow_global_kernels.cu gmflow_local_kernels.cu
   gmflow_mlp_net.cu gmflow_scale_kernels.cu gmfss_conv_plan.cu gmfss_conv_tune.cu gmfss_kernels.cu gmfss_splat_indexed.cu
   gmfss_ifnet_native.cu gmfss_native_net.cu gmfss_pair_flow_glue.cu gmfss_pair_native_net.cu layer_kernels.cu rife_fused_kernels.cu rife_kernels.cu
@@ -78,7 +78,7 @@ else()
 endif()
 
 add_library(kirari_backend_tensorrt MODULE
-  drba_fused_engine.cpp entry.cpp fused_graphs.cpp gmflow_pair_flow_net.cpp gmflow_transformer_net.cpp gmfss_fused_engine.cpp gmfss_fused_trial.cpp gmfss_pair_engine.cpp gmfss_pair_trial.cpp gmfss_trial.cpp gpu_timing.cpp host_upload.cpp ring_slot.cpp rife_fused_engine.cpp rife_fused_native.cpp
+  drba_fused_engine.cpp drba_fused_native.cpp entry.cpp fused_graphs.cpp gmflow_pair_flow_net.cpp gmflow_transformer_net.cpp gmfss_fused_engine.cpp gmfss_fused_trial.cpp gmfss_pair_engine.cpp gmfss_pair_trial.cpp gmfss_trial.cpp gpu_timing.cpp host_upload.cpp ring_slot.cpp rife_fused_engine.cpp rife_fused_native.cpp
   rife_native_mix.cpp rife_native_trial.cpp
   ingest_chroma.cpp nvof_session.cpp scene_camera.cpp scene_flow.cpp scene_roundtrip.cpp shared_activations.cpp span_fp8_check.cpp span_fp8_engine.cpp span_fp8_tiles.cpp tensorrt_backend.cpp tensorrt_doubt.cpp tensorrt_export.cpp tensorrt_kernels.cpp
   tensorrt_gmfss.cpp tensorrt_gmfss_fused.cpp tensorrt_gmfss_pair.cpp tensorrt_layers.cpp tensorrt_lanes.cpp tensorrt_drba_fused.cpp tensorrt_rife.cpp tensorrt_rife_fused.cpp tensorrt_scene_flow.cpp tensorrt_span_derive.cpp

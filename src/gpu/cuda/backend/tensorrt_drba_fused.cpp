@@ -3,18 +3,58 @@
 // et fait un essai de toute la chaîne. Tout refus ici fait reprendre la chaîne sur le moteur DistilDRBA
 // entier (chain_setup.cpp) : l'ONNX d'origine n'est jamais touché.
 #include <algorithm>
+#include <cstdlib>
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <string_view>
 #include <system_error>
 
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "prepare/drba_split.h"
+#include "prepare/model_source.h"
+#include "prepare/rife_native.h"
 #include "prepare/sha256.h"
 
 namespace kirari::gpu::cuda {
+namespace {
+
+RifeNativePiece native_tail_recipe(const std::filesystem::path& artifact, const DrbaFusedKey& key) {
+  if (key.height != 1088 || key.width != 1920 || key.plan.tail != 4) return {};
+  const char* setting = std::getenv("KIRARI_AB_DRBA_NATIVE_TAIL");  // env: banc
+  if (setting != nullptr && std::string_view(setting) == "0") return {};
+  std::ifstream file(artifact, std::ios::binary);
+  const std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+  auto manifest = prepare::parse_drba_manifest(text);
+  if (!manifest || manifest->pieces.empty()) return {};
+  const auto path = artifact.parent_path() / core::path_from_utf8(manifest->pieces.back());
+  const auto bytes = prepare::read_onnx_bytes(path);
+  if (!bytes) return {};
+  // Dernier bloc de distil_drba_v2_lite du paquet models-interp-1 en 1920×1088.
+  const auto data = std::string_view(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+  if (prepare::sha256_hex(data) != "32fe601966d60e38af254b366a8b44808e82a02a8d1532cd2a07984a53a0432f")
+    return {};
+  auto layers = prepare::rife_native_layers(*bytes);
+  if (!layers || !prepare::rife_native_check(*layers, 109, 52)) return {};
+  RifeNativePiece native;
+  native.reserve(layers->size());
+  for (auto& layer : *layers) {
+    native.push_back({.transposed = layer.transposed,
+                      .cin = layer.cin,
+                      .cout = layer.cout,
+                      .stride = layer.stride,
+                      .weights = std::move(layer.weights),
+                      .bias = std::move(layer.bias),
+                      .slope = std::move(layer.slope),
+                      .scale = std::move(layer.scale)});
+  }
+  return native;
+}
+
+}  // namespace
+
 std::expected<Artifact, Refusal> TensorRtBackend::build_drba_fused(const ModelSpec& model,
                                                                    const ShapeSet& shapes,
                                                                    Progress& progress) {
@@ -88,8 +128,12 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_drba_fused(const ModelSp
 std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_drba_fused(const Artifact& artifact) {
   const std::optional<DrbaFusedKey> key = drba_fused_artifact_key_parse(artifact.cache_key);
   if (!key) return refuse(RefusalCode::GraphInvalid, "DistilDRBA fusionné : clé d'artefact illisible");
-  auto engine = DrbaFusedEngine::load(*runtime_, cache_dir_, *key, arena());
+  const auto native_tail = properties_.major == 8 && properties_.minor == 9
+                               ? native_tail_recipe(artifact.path, *key)
+                               : RifeNativePiece{};
+  auto engine = DrbaFusedEngine::load(*runtime_, cache_dir_, *key, arena(), native_tail);
   if (!engine) return std::unexpected(std::move(engine.error()));
+  if (!(*engine)->tail_notice().empty()) log(BackendLogLevel::Info, (*engine)->tail_notice());
   log(BackendLogLevel::Info, std::format("DistilDRBA fusionné chargé : {}×{}, réduction {}", key->width,
                                          key->height, key->plan.tail));
   return std::unique_ptr<Engine>(std::move(*engine));

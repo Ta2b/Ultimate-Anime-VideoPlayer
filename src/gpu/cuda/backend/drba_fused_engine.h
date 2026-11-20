@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "gpu/backend.h"
+#include "gpu/cuda/backend/drba_tail_native.h"
 #include "gpu/cuda/backend/fused_graphs.h"
 #include "gpu/cuda/backend/fused_keys.h"
 #include "gpu/cuda/backend/trt_engine.h"
@@ -40,7 +41,7 @@ class DrbaFusedEngine final : public Engine {
   // inattendue, mémoire, erreur CUDA de l'essai.
   static std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> load(
       nvinfer1::IRuntime& runtime, const std::filesystem::path& cache_dir, const DrbaFusedKey& key,
-      const std::shared_ptr<SharedActivations>& shared);
+      const std::shared_ptr<SharedActivations>& shared, std::span<const RifeNativeConv> native_tail);
   ~DrbaFusedEngine() override;
   DrbaFusedEngine(const DrbaFusedEngine&) = delete;
   DrbaFusedEngine& operator=(const DrbaFusedEngine&) = delete;
@@ -63,6 +64,7 @@ class DrbaFusedEngine final : public Engine {
 
   // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
   std::string take_notice() { return graphs_.take_notice(); }
+  std::string_view tail_notice() const { return tail_notice_; }
 
  private:
   DrbaFusedEngine() = default;
@@ -81,9 +83,14 @@ class DrbaFusedEngine final : public Engine {
   // génération, ou si un moteur entier y monte plus haut qu'eux.
   std::expected<void, Refusal> follow_zone(const std::shared_ptr<SharedActivations>& arena);
   std::size_t scratch_offset_for(SharedActivations& zone);
+  std::expected<std::string, Refusal> try_native_tail(cudaStream_t stream,
+                                                      const std::shared_ptr<SharedActivations>& arena,
+                                                      std::span<const RifeNativeConv> recipe);
 
   std::unique_ptr<TrtEngine> encode_;
   std::array<std::unique_ptr<TrtEngine>, kernels::kDrbaFusedBlocks> blocks_;
+  std::unique_ptr<DrbaTailNative> tail_;
+  std::string tail_notice_;
   kernels::DrbaFusedPlan plan_;
   int height_ = 0;
   int width_ = 0;
