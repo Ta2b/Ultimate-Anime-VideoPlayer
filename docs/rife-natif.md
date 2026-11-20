@@ -50,7 +50,10 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   LeakyRelu se font à l'écriture de la sortie ; deux tampons alternent, l'entrée reste lisible ;
 - **transposée 4 × 4 de pas 2** en quatre convolutions 2 × 2, une par phase de sortie, écrites directement dans Y
   au pas 56 ; celle de l'encodeur (4 canaux) en une convolution 3 × 3 à 16 sorties (phase · 4 + canal) qui écrit
-  les quatre plans d'encodage ;
+  les quatre canaux contigus par pixel. Les colles lisent les quatre composantes de chaque prise ensemble.
+  Les encodeurs TensorRT restent planaires. Sur les deux RIFE livrés, la comparaison des deux rangements
+  retrouve les mêmes codes RGB jusque dans la chaîne mixte à 640 × 384. À 1080p, la passe CUDA de 4.25
+  gagne 0,04 à 0,05 ms dans deux alternances sous composition HDR. La cadence composée varie entre passages ;
 - **première couche de l'encodeur** lue dans les trois plans de l'image d'entrée, sans copie ;
 - **entrée du dernier bloc à la volée** (`rife_native_glue.cu`). En pleine résolution (d = 1), X du dernier bloc
   pèse 64 octets par pixel, soit 134 Mo en 1920 × 1088 : la colle l'écrivait, sa première couche le relisait

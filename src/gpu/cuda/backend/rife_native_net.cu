@@ -114,9 +114,10 @@ class Net final : public RifeNativeNet {
 
   std::int64_t workspace_bytes() const override { return 2 * peak_ + partial_; }
 
-  cudaError_t encode(cudaStream_t stream, const void* image, void* encoded, void* workspace) const override {
+  cudaError_t encode(cudaStream_t stream, const void* image, void* encoded, void* workspace,
+                     bool hwc4) const override {
     if (first_block_ == 0) return cudaErrorInvalidValue;
-    return run(stream, 0, image, encoded, workspace, {}, {});
+    return run(stream, 0, image, encoded, workspace, {}, {.encode_hwc4 = hwc4});
   }
   cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace,
                     const FusedGlueParams* glue, const FusedFinishParams* finish) const override {
@@ -373,6 +374,7 @@ class Net final : public RifeNativeNet {
   struct Ends {
     const FusedGlueParams* glue = nullptr;
     const FusedFinishParams* finish = nullptr;
+    bool encode_hwc4 = false;
   };
 
   // Les couches d'un morceau ; marks (vide hors profil) : un événement avant la première et après chacune.
@@ -407,8 +409,10 @@ class Net final : public RifeNativeNet {
         p.tiles = l.finish_tiles;
         l.finish(l.finish_grid, l.finish_smem, stream, p, with_window(*ends.finish));
       } else {
-        rn::enqueue(layers[i], stream,
-                    rn::params(layers[i], from, to, partial, layers[i].w.as<const void>()));
+        const Layer& layer = layers[i];
+        auto p = rn::params(layer, from, to, partial, layer.w.as<const void>());
+        if (ends.encode_hwc4 && layer.kind == Kind::kPlanes4) p.out_ld = 4;
+        rn::enqueue(layer, stream, p);
       }
       from = to;
       result = mark(i + 1);

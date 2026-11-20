@@ -177,6 +177,11 @@ std::expected<std::vector<double>, Refusal> RifeFusedEngine::trial_mix_times(
 }
 
 void RifeFusedEngine::set_route(std::vector<int> route) {
+  // Une autre route peut changer le rangement de l'encodage ou les Y gardés.
+  if (route != route_) {
+    kept_.reset();
+    warm_ready_ = false;
+  }
   route_ = std::move(route);
   native_on_ = false;
   native_workspace_ = 0;

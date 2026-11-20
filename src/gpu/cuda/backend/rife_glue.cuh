@@ -85,6 +85,43 @@ __device__ __forceinline__ void warped(const FusedGlueParams& p, int px, int py,
   }
 }
 
+__device__ __forceinline__ void warped_hwc4(const FusedGlueParams& p, int px, int py, const float (&fl)[4],
+                                            float (&v)[28]) {
+  const std::size_t plane = static_cast<std::size_t>(p.height) * p.width;
+  const auto* input = static_cast<const __half*>(p.input);
+  const warp::Bounds bounds{0, 0, p.width, p.height};
+#pragma unroll
+  for (int n = 0; n < 2; ++n) {
+    const warp::Tap tap = warp::tap_at(px, py, fl[2 * n], fl[2 * n + 1], bounds);
+#pragma unroll
+    for (int ch = 0; ch < 3; ++ch)
+      v[3 * n + ch] = warp::rounded(warp::bilinear(input + (3 * n + ch) * plane, tap, p.width));
+    const auto* image = static_cast<const uint2*>(n == 0 ? p.encode : p.encode_b);
+    const int r0 = tap.y0 * p.width, r1 = tap.y1 * p.width;
+    const uint2 a = image[r0 + tap.x0], b = image[r0 + tap.x1];
+    const uint2 d = image[r1 + tap.x0], e = image[r1 + tap.x1];
+#pragma unroll
+    for (int ch = 0; ch < 4; ++ch) {
+      auto channel = [ch](uint2 t) {
+        const std::uint32_t word = ch < 2 ? t.x : t.y;
+        return __half2float(__ushort_as_half(static_cast<unsigned short>(word >> ((ch & 1) * 16))));
+      };
+      const float aa = channel(a), bb = channel(b), dd = channel(d), ee = channel(e);
+      v[6 + 4 * n + ch] = warp::rounded((aa * (1.F - tap.wx) + bb * tap.wx) * (1.F - tap.wy) +
+                                        (dd * (1.F - tap.wx) + ee * tap.wx) * tap.wy);
+    }
+  }
+}
+
+template <bool Packed>
+__device__ __forceinline__ void warp_images(const FusedGlueParams& p, int x, int y, const float (&flow)[4],
+                                            float (&values)[28]) {
+  if constexpr (Packed)
+    warped_hwc4(p, x, y, flow, values);
+  else
+    warped(p, x, y, flow, values);
+}
+
 // L'instant, à l'élément 0 du plan 6 de l'entrée (étape 5.2) : canal 14.
 __device__ __forceinline__ float instant(const FusedGlueParams& p) {
   const std::size_t plane = static_cast<std::size_t>(p.height) * static_cast<std::size_t>(p.width);
@@ -93,14 +130,14 @@ __device__ __forceinline__ float instant(const FusedGlueParams& p) {
 
 // Les 28 canaux de X au point pleine résolution (px, py) d'une entrée réduite d'un facteur d : warps,
 // instant, masque et attributs du dernier bloc (canaux 15 à 23), flot accumulé × (1/d).
-template <int K>
+template <int K, bool Packed>
 __device__ __forceinline__ void values(const FusedGlueParams& p, const warp::Staged (&src)[K], int px, int py,
                                        int d, float (&v)[28]) {
   float fl[4];
   warp::Axis ax{};
   warp::Axis ay{};
   flow_at<K>(p, src, px, py, fl, ax, ay);
-  warped(p, px, py, fl, v);
+  warp_images<Packed>(p, px, py, fl, v);
   v[14] = instant(p);
 #pragma unroll
   for (int k = 0; k < 9; ++k) v[15 + k] = z_enlarge(src[K - 1], 4 + k, ax, ay);

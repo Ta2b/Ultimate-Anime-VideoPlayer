@@ -38,7 +38,7 @@ struct Params {
   long in_plane = 0;           // kImage : éléments d'un plan
   int ih = 0, iw = 0;          // taille de l'entrée
   __half* out = nullptr;
-  int out_ld = 0;                // canaux par pixel (kNhwc, kPhase)
+  int out_ld = 0;                // canaux par pixel ; 4 pour l’encodeur par pixel
   int out_ch = 0;                // canaux écrits : les canaux de rembourrage au-delà ne le sont pas
   long out_plane = 0;            // kPlanes4 : éléments d'un plan de sortie
   int oh = 0, ow = 0;            // grille de la convolution (avant le doublement d'une transposée)
@@ -427,6 +427,13 @@ __device__ __forceinline__ void store(const __half* o, const Params& p, int ty0,
       const int y = ty0 + q / kTW, x = tx0 + q % kTW;
       if (y >= p.oh || x >= p.ow) continue;
       const __half* v = o + q * kLdo;
+      if (p.out_ld == 4) {
+        // Les deux phases horizontales se suivent déjà en mémoire partagée.
+        auto* dst = reinterpret_cast<uint4*>(p.out + 4 * (static_cast<long>(2 * y) * w2 + 2 * x));
+        *dst = *reinterpret_cast<const uint4*>(v);
+        dst[w2 / 2] = *reinterpret_cast<const uint4*>(v + 8);
+        continue;
+      }
 #pragma unroll
       for (int c = 0; c < 4; ++c)
 #pragma unroll

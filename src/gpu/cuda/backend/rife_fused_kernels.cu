@@ -66,6 +66,7 @@ __device__ __forceinline__ void store_chunk(__half* x, std::size_t pixel, int q,
 }
 
 // Bloc 0 : 15 canaux = moyenne 2 × 2 (ou d × d centrés) des images, de l'encodage et de l'instant.
+template <bool Packed>
 __global__ void __launch_bounds__(256) fused_entry(FusedEntryParams p) {
   const int ox = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int oy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -85,6 +86,15 @@ __global__ void __launch_bounds__(256) fused_entry(FusedEntryParams p) {
   float v[15];
 #pragma unroll
   for (int c = 0; c < 15; ++c) {
+    if constexpr (Packed) {
+      if (c >= 6 && c < 14) {
+        const __half* channels = c < 10 ? encode + c - 6 : encode_b + c - 10;
+        v[c] = (__half2float(channels[4 * i00]) + __half2float(channels[4 * (i00 + 1)]) +
+                __half2float(channels[4 * (i00 + w)]) + __half2float(channels[4 * (i00 + w + 1)])) *
+               0.25F;
+        continue;
+      }
+    }
     const __half* src = c < 6    ? input + static_cast<std::size_t>(c) * plane
                         : c < 10 ? encode + static_cast<std::size_t>(c - 6) * plane
                         : c < 14 ? encode_b + static_cast<std::size_t>(c - 10) * plane
@@ -127,7 +137,7 @@ __device__ __forceinline__ void stage_sources(const FusedGlueParams& p, warp::Sp
 
 // __maxnreg__ plutôt que __launch_bounds__ : nvcc 13 débordait de 4 octets à 48 registres (pleine résolution,
 // un flot).
-template <bool Coarse, int K>
+template <bool Coarse, int K, bool Packed>
 __global__ void __maxnreg__(128) fused_glue(FusedGlueParams p) {
   using Tile = GlueTile<Coarse>;
   __shared__ __align__(16) __half stage[((K - 1) * glue::kFlowStride + glue::kLastStride) * Tile::kCapacity];
@@ -168,7 +178,7 @@ __global__ void __maxnreg__(128) fused_glue(FusedGlueParams p) {
   const int py = d * oy + base + ty;
 
   float v[28];
-  glue::values<K>(p, src, px, py, d, v);
+  glue::values<K, Packed>(p, src, px, py, d, v);
 
   const std::size_t out_plane =
       static_cast<std::size_t>(p.out_height) * static_cast<std::size_t>(p.out_width);
@@ -236,7 +246,10 @@ void glue_launch(const FusedGlueParams& p, cudaStream_t stream) {
   using Tile = GlueTile<Coarse>;
   const dim3 grid((static_cast<unsigned>(p.out_width) + Tile::kWidth - 1U) / Tile::kWidth,
                   (static_cast<unsigned>(p.out_height) + Tile::kHeight - 1U) / Tile::kHeight);
-  fused_glue<Coarse, K><<<grid, 256, 0, stream>>>(p);
+  if (p.encode_hwc4)
+    fused_glue<Coarse, K, true><<<grid, 256, 0, stream>>>(p);
+  else
+    fused_glue<Coarse, K, false><<<grid, 256, 0, stream>>>(p);
 }
 
 template <bool Coarse>
@@ -261,7 +274,11 @@ void glue_launch(const FusedGlueParams& p, cudaStream_t stream) {
 
 cudaError_t launch_fused_entry(const FusedEntryParams& params, cudaStream_t stream) {
   const dim3 block(32, 8);
-  fused_entry<<<grid_for(params.out_width, params.out_height, block), block, 0, stream>>>(params);
+  const auto grid = grid_for(params.out_width, params.out_height, block);
+  if (params.encode_hwc4)
+    fused_entry<true><<<grid, block, 0, stream>>>(params);
+  else
+    fused_entry<false><<<grid, block, 0, stream>>>(params);
   return cudaGetLastError();
 }
 

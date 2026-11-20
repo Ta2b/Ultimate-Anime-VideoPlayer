@@ -204,7 +204,8 @@ FusedGlueParams RifeFusedEngine::glue_params(const void* in, int block, std::byt
       .encode = at_ptr(encode_a),
       .encode_b = at_ptr(encode_b),
       .x = at_ptr(layout_.x[i]),
-      .x_pitch = native && block + 1 == plan_.blocks ? kRifeCompactFlowPitch : pitch(next.channels)};
+      .x_pitch = native && block + 1 == plan_.blocks ? kRifeCompactFlowPitch : pitch(next.channels),
+      .encode_hwc4 = piece_net(0) != nullptr};
   for (int k = 0; k < block; ++k) {
     const auto j = static_cast<std::size_t>(k);
     const kernels::FusedDims yk = kernels::rife_fused_y(plan_, k, h, w);
@@ -259,7 +260,7 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
   const auto at_ptr = [base](std::size_t offset) { return static_cast<void*>(base + offset); };
   const void* const in = fused_address(input);
 
-  // Deux emplacements d'encodage (4 plans chacun) : A dans a_slot, B dans l'autre, une image par passe de
+  // Deux emplacements d'encodage (4 canaux chacun) : A dans a_slot, B dans l'autre, une image par passe de
   // l'encodeur ; l'image B est aux plans 3 à 5 de l'entrée. Second : l'encodage de B de l'appel précédent,
   // intact, devient celui de A sans copie (a_slot a basculé), et B s'encode à la place de l'ancien A.
   const std::size_t image_bytes =
@@ -270,7 +271,7 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
                                 std::size_t encode_offset) -> std::expected<void, Refusal> {
     if (const RifeNativeNet* net = piece_net(0))
       return cuda_check(net->encode(stream, static_cast<const std::byte*>(in) + image_offset,
-                                    at_ptr(encode_offset), arena->data()),
+                                    at_ptr(encode_offset), arena->data(), true),
                         "RIFE natif : encodeur");
     const Tensor image = fused_tensor(input.handle, input.offset + image_offset, 3, h, w);
     const Tensor encoded = fused_tensor(at(encode_offset), 0, 4, h, w);
@@ -303,7 +304,8 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
                                                  .encode = at_ptr(encode_a),
                                                  .encode_b = at_ptr(encode_b),
                                                  .x = at_ptr(layout_.x[0]),
-                                                 .x_pitch = pitch(x0.channels)},
+                                                 .x_pitch = pitch(x0.channels),
+                                                 .encode_hwc4 = piece_net(0) != nullptr},
                                                 stream),
                              "fused_entry<<<>>>");
         !ok)
@@ -458,7 +460,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
           route_code_ << 25U};
   const auto chain = [&] { return run(stream, arena, inputs[0], outputs, pass); };
   if (l2_persisting_ == 0 || l2_max_window_ == 0) return graphs_.launch(stream, key, chain);
-  // Les deux emplacements de l'encodage (4 plans FP16 chacun), relus par la colle de chaque bloc.
+  // Les deux emplacements de l'encodage (4 canaux FP16 chacun), relus par la colle de chaque bloc.
   auto* encode = static_cast<std::byte*>(arena->data()) + scratch_offset_ + layout_.encode;
   const std::size_t bytes = std::min(
       std::size_t{16} * static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_), l2_max_window_);

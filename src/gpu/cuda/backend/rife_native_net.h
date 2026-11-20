@@ -68,9 +68,9 @@ class RifeNativeNet {
                                                      int width, cudaStream_t stream, std::string& error);
   // La zone de travail (activations entre les couches) : octets, et son adresse pour les appels suivants.
   virtual std::int64_t workspace_bytes() const = 0;
-  // L'encodeur sur une image (3 plans height × width) vers encoded (4 plans).
-  virtual cudaError_t encode(cudaStream_t stream, const void* image, void* encoded,
-                             void* workspace) const = 0;
+  // L'encodeur sur trois plans vers quatre canaux, en plans ou groupés par pixel.
+  virtual cudaError_t encode(cudaStream_t stream, const void* image, void* encoded, void* workspace,
+                             bool hwc4 = false) const = 0;
   // Le bloc k : x (X_k par pixel), y (Y_k par pixel, pas 56). glue, pour un bloc dont ce réseau calcule
   // l'entrée à la volée (glues) : sa première couche lit la colle au lieu de x et n'écrit dans glue->x (X_k)
   // que le flot accumulé, que lit la fin ; nul sinon.

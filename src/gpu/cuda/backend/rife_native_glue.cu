@@ -32,7 +32,7 @@ __device__ __forceinline__ std::uint32_t half_bits(float lo, float hi) {
 
 // Les 16 canaux de la tranche Half de X en un point pleine résolution (x, y) : tranche 0, warps, instant,
 // masque ; tranche 1, attributs, flot × 1/d, zéros de rembourrage. fl : le flot accumulé au point.
-template <int K, int Half, bool Reuse = false>
+template <int K, int Half, bool Reuse, bool Packed>
 __device__ __forceinline__ void glue_point(const FusedGlueParams& g, const warp::Staged (&src)[K], int x,
                                            int y, float flow_scale, float (&v)[16], float (&fl)[4],
                                            const __half* cached = nullptr) {
@@ -50,7 +50,7 @@ __device__ __forceinline__ void glue_point(const FusedGlueParams& g, const warp:
   }
   if constexpr (Half == 0) {
     float w[28];
-    glue::warped(g, x, y, fl, w);
+    glue::warp_images<Packed>(g, x, y, fl, w);
 #pragma unroll
     for (int c = 0; c < 14; ++c) v[c] = w[c];
     v[14] = glue::instant(g);
@@ -75,7 +75,7 @@ __device__ __forceinline__ __half* flow_slot(const FusedGlueParams& params, std:
 // flot des pixels propres de la tuile dans g.x : tous sauf ceux de la première ligne
 // et de la première colonne, propres aux tuiles voisines. D = 2 : la moyenne des points (2x + tx, 2y + ty),
 // sommés dans l'ordre de warp::sum_quad (fused_glue) : ((00 + 10) + (01 + 11)) / 4.
-template <int K, int D, int Half, bool Reuse, class Geo = G>
+template <int K, int D, int Half, bool Reuse, bool Packed, class Geo = G>
 __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, const warp::Staged (&src)[K],
                                           int y0, int x0) {
   static_assert(D == 1 || D == 2, "pleine résolution ou moitié");
@@ -89,7 +89,7 @@ __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, c
     if (y >= 0 && y < xh && x >= 0 && x < xw) {
       float fl[4];
       if constexpr (D == 1) {
-        glue_point<K, Half, Reuse>(g, src, x, y, 1.F, v, fl, slot + 16);
+        glue_point<K, Half, Reuse, Packed>(g, src, x, y, 1.F, v, fl, slot + 16);
         if constexpr (Reuse && Half == 0) {
           // flow_at arrondit son dernier Add en FP16. Le padding est hors de la tranche lue par accumulate.
           *reinterpret_cast<uint2*>(slot + 16) = make_uint2(half_bits(fl[0], fl[1]), half_bits(fl[2], fl[3]));
@@ -104,24 +104,24 @@ __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, c
         float top[16];
         float a[16];
         float top_flow[4], bottom_flow[4];
-        glue_point<K, Half, Reuse>(g, src, 2 * x, 2 * y, 0.5F, top, fl);
+        glue_point<K, Half, Reuse, Packed>(g, src, 2 * x, 2 * y, 0.5F, top, fl);
         if constexpr (Reuse && Half == 0) {
 #pragma unroll
           for (int k = 0; k < 4; ++k) top_flow[k] = warp::rounded(fl[k] * 0.5F);
         }
-        glue_point<K, Half, Reuse>(g, src, 2 * x + 1, 2 * y, 0.5F, a, fl);
+        glue_point<K, Half, Reuse, Packed>(g, src, 2 * x + 1, 2 * y, 0.5F, a, fl);
         if constexpr (Reuse && Half == 0) {
 #pragma unroll
           for (int k = 0; k < 4; ++k) top_flow[k] += warp::rounded(fl[k] * 0.5F);
         }
 #pragma unroll
         for (int c = 0; c < 16; ++c) top[c] += a[c];
-        glue_point<K, Half, Reuse>(g, src, 2 * x, 2 * y + 1, 0.5F, v, fl);
+        glue_point<K, Half, Reuse, Packed>(g, src, 2 * x, 2 * y + 1, 0.5F, v, fl);
         if constexpr (Reuse && Half == 0) {
 #pragma unroll
           for (int k = 0; k < 4; ++k) bottom_flow[k] = warp::rounded(fl[k] * 0.5F);
         }
-        glue_point<K, Half, Reuse>(g, src, 2 * x + 1, 2 * y + 1, 0.5F, a, fl);
+        glue_point<K, Half, Reuse, Packed>(g, src, 2 * x + 1, 2 * y + 1, 0.5F, a, fl);
 #pragma unroll
         for (int c = 0; c < 16; ++c) v[c] = (top[c] + (v[c] + a[c])) * 0.25F;
         if constexpr (Reuse && Half == 0) {
@@ -145,7 +145,7 @@ __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, c
 }
 
 // La couche : 32 canaux d'entrée (28 de X et 4 nuls) vers CT sorties, en une tuile (blockIdx.z = 0).
-template <int K, int D, int CT, Acc A, bool Reuse = false>
+template <int K, int D, int CT, Acc A, bool Reuse, bool Packed>
 __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedGlueParams g) {
   extern __shared__ __align__(16) unsigned char smem_raw[];
   auto* s = reinterpret_cast<__half*>(smem_raw);
@@ -172,11 +172,11 @@ __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedG
 #pragma unroll
     for (int nt = 0; nt < CT / 8; ++nt) acc[f][nt].clear();
   // Les deux tranches, comme les deux tours de conv_kernel<16, …> : prises 0 à 8 de chacune.
-  glue_half<K, D, 0, Reuse>(s, g, src, y0, x0);
+  glue_half<K, D, 0, Reuse, Packed>(s, g, src, y0, x0);
   __syncthreads();
   accumulate<16, CT, 3, 2, 1, A>(acc, s, p.w, 0, 2, 0, 9, warp, lane);
   __syncthreads();
-  glue_half<K, D, 1, Reuse>(s, g, src, y0, x0);
+  glue_half<K, D, 1, Reuse, Packed>(s, g, src, y0, x0);
   __syncthreads();
   accumulate<16, CT, 3, 2, 1, A>(acc, s, p.w, 1, 2, 0, 9, warp, lane);
   __syncthreads();  // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
@@ -205,7 +205,7 @@ __device__ __forceinline__ void stage_motion(__half* s, const FusedGlueParams& g
   }
 }
 
-template <class Geo>
+template <class Geo, bool Packed>
 __device__ __forceinline__ void warp_staged_tile(__half* s, const FusedGlueParams& g, int x0, int y0) {
   for (int q = static_cast<int>(threadIdx.x); q < Geo::kIR * Geo::kIC; q += kThreads) {
     const int r = q / Geo::kIC, c = q % Geo::kIC;
@@ -216,7 +216,7 @@ __device__ __forceinline__ void warp_staged_tile(__half* s, const FusedGlueParam
       const auto pack = *reinterpret_cast<const uint2*>(slot + 16);
       const float2 a = half_pair(pack.x), b = half_pair(pack.y);
       const float flow[4]{a.x, a.y, b.x, b.y};
-      glue::warped(g, x, y, flow, v);
+      glue::warp_images<Packed>(g, x, y, flow, v);
       v[14] = glue::instant(g);
       v[15] = __half2float(slot[20]);
     }
@@ -236,7 +236,7 @@ struct Narrow {
 
 // La tuile 16 × 4 conserve un seul fragment M16 par warp. Avec les calculs du warp et du flot dans
 // deux étapes, leur consommation de registres n'est plus simultanée.
-template <int K>
+template <int K, bool Packed>
 __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGlueParams g) {
   using N = Narrow;
   constexpr int CT = 16, Rows = 1;
@@ -288,11 +288,11 @@ __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGluePa
   };
   stage_motion<K, N>(s, g, src, x0, y0);
   __syncthreads();
-  warp_staged_tile<N>(s, g, x0, y0);
+  warp_staged_tile<N, Packed>(s, g, x0, y0);
   __syncthreads();
   conv(0);
   __syncthreads();
-  glue_half<K, 1, 1, true, N>(s, g, src, y0, x0);
+  glue_half<K, 1, 1, true, Packed, N>(s, g, src, y0, x0);
   __syncthreads();
   conv(1);
   __syncthreads();
@@ -323,12 +323,20 @@ __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGluePa
 
 template <int K>
 void staged_one(dim3 grid, int smem, cudaStream_t stream, const Params& p, const FusedGlueParams& g) {
-  glue_staged<K><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+  if (g.encode_hwc4)
+    glue_staged<K, true><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+  else
+    glue_staged<K, false><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
 }
 
 template <int K, int D, int CT, Acc A>
 void glue_one(dim3 grid, int smem, cudaStream_t stream, const Params& p, const FusedGlueParams& g) {
-  glue_conv_kernel<K, D, CT, A, true><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+  if (g.encode_hwc4)
+    glue_conv_kernel<K, D, CT, A, true, true>
+        <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+  else
+    glue_conv_kernel<K, D, CT, A, true, false>
+        <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
 }
 
 template <int K, int D, Acc A>

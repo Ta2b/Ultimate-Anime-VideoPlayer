@@ -41,6 +41,7 @@ struct FusedEntryParams {
   const void* encode_b = nullptr;  // 4 plans : celui de B (deux emplacements qui alternent, sans copie)
   void* x = nullptr;               // 15 × out_height × out_width
   int x_pitch = 0;                 // 0 : plans ; 16 : par pixel (HWC8)
+  bool encode_hwc4 = false;        // faux : quatre plans
 };
 
 // La colle native du dernier bloc écrit seulement ses quatre canaux de flot, groupés par pixel.
@@ -61,7 +62,8 @@ struct FusedGlueParams {
   const void* encode = nullptr;    // A
   const void* encode_b = nullptr;  // B
   void* x = nullptr;
-  int x_pitch = 0;  // 0 : plans ; 32 : HWC8 ; 4 : flot seul, colle native du dernier bloc
+  int x_pitch = 0;           // 0 : plans ; 32 : HWC8 ; 4 : flot seul, colle native du dernier bloc
+  bool encode_hwc4 = false;  // faux : quatre plans
 };
 
 // La fin : flot du dernier bloc ajouté, puis soit l'image (warp des deux images, masque sigmoïde, mélange),
