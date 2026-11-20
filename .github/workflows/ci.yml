@@ -589,7 +589,7 @@ jobs:
       - run: >-
           cmake --preset linux-prefix-cuda "-DKIRARI_TENSORRT_ROOT=$KIRARI_TENSORRT_ROOT"
           "-DKIRARI_CUDA_ARCHITECTURES=75-real;86-real;89-real;120-real;120-virtual"
-      - run: cmake --build --preset linux-prefix-cuda
+      - run: cmake --build --preset linux-prefix-cuda -- -k 0
       - name: Sauver le cache de compilation (main)
         if: always() && github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

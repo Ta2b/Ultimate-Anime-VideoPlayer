@@ -43,7 +43,8 @@ Tatoub. Le workflow `release.yml` fait le reste :
 2. **Plateformes**, en parallèle (`release-linux.yml`, `release-windows.yml`, `release-macos.yml`) :
    - Linux et Windows construisent d'abord leur **paquet TensorRT** s'il manque pour l'empreinte de ses entrées
      (`tools/release/trt-fingerprint.sh`, `--windows`), et le publient dans la release fixe `trt-<empreinte>` ou
-     `trt-win-<empreinte>`. Une release finale sans paquet TensorRT Linux ou Windows échoue ;
+     `trt-win-<empreinte>`. Un échec du job TensorRT bloque le paquet de la plateforme, préversions comprises.
+     Si le job réussit mais que son index manque, une préversion peut publier avec un avertissement.
    - un paquet TensorRT publié est **immuable** : `attach-nvidia-*` refuse de réécrire une release `trt-*` qui a déjà
      son index (le SHA-256 du paquet est dans l'index signé des releases), et un seul paquet de chaque système se
      construit à la fois (`concurrency`) ; la liste blanche de `check-engine-archive.sh` n'admet dans l'archive que

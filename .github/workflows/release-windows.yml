@@ -10,8 +10,9 @@ name: Release Windows
 # « trt-win-<empreinte de ses entrées> » (tools/release/trt-fingerprint.sh --windows), comme celui de Linux : il ne se
 # construit que quand l'empreinte change, ici même, avant le paquet du lecteur, qui reprend son index (A28-01, A28-17).
 # Pour une étiquette, le propriétaire du dépôt accepte les licences du kit CUDA et de TensorRT de NVIDIA en
-# poussant l'étiquette (décision de Tatoub : chaque release a un paquet TensorRT Windows et Linux). Une release
-# finale sans TensorRT Windows échoue ; une préversion n'a qu'un avertissement.
+# poussant l'étiquette (décision de Tatoub : chaque release a un paquet TensorRT Windows et Linux).
+# Une erreur de construction de ce paquet bloque aussi une préversion. Si la construction aboutit mais que l'index
+# manque, une préversion avertit et une finale échoue.
 on:
   workflow_dispatch:
     inputs:

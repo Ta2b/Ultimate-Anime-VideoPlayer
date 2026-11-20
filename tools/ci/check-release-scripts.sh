@@ -109,6 +109,8 @@ git init -q fingerprint && (
   printf 'header\n' > third_party/nvidia-optical-flow/nvOpticalFlowCuda.h
   printf 'documentation\n' > third_party/nvidia-optical-flow/README.md
   printf 'recette\n' > tools/release/trt-package.sh
+  printf 'index Linux\n' > tools/release/attach-nvidia-linux.sh
+  printf 'index Windows\n' > tools/release/attach-nvidia-windows.ps1
   git add -A
 )
 linux_fp="$("$R/trt-fingerprint.sh" fingerprint)"
@@ -122,4 +124,13 @@ linux_fp="$("$R/trt-fingerprint.sh" fingerprint)"
 printf 'header modifié\n' > fingerprint/third_party/nvidia-optical-flow/nvOpticalFlowCuda.h
 expect 0 "empreinte TensorRT Linux sensible à l'en-tête NVOF" "" test "$linux_fp" != "$("$R/trt-fingerprint.sh" fingerprint)"
 expect 0 "empreinte TensorRT Windows sensible à l'en-tête NVOF" "" test "$windows_fp" != "$("$R/trt-fingerprint.sh" --windows fingerprint)"
+linux_fp="$("$R/trt-fingerprint.sh" fingerprint)"
+windows_fp="$("$R/trt-fingerprint.sh" --windows fingerprint)"
+printf 'index Windows modifié\n' > fingerprint/tools/release/attach-nvidia-windows.ps1
+expect 0 "empreinte TensorRT Windows sensible à son index" "" test "$windows_fp" != "$("$R/trt-fingerprint.sh" --windows fingerprint)"
+expect 0 "empreinte TensorRT Linux indépendante de l'index Windows" "" test "$linux_fp" = "$("$R/trt-fingerprint.sh" fingerprint)"
+windows_fp="$("$R/trt-fingerprint.sh" --windows fingerprint)"
+printf 'index Linux modifié\n' > fingerprint/tools/release/attach-nvidia-linux.sh
+expect 0 "empreinte TensorRT Linux sensible à son index" "" test "$linux_fp" != "$("$R/trt-fingerprint.sh" fingerprint)"
+expect 0 "empreinte TensorRT Windows indépendante de l'index Linux" "" test "$windows_fp" = "$("$R/trt-fingerprint.sh" --windows fingerprint)"
 exit "$fail"

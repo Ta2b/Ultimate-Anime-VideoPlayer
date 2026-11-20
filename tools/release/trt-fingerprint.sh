@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# L'empreinte des entrées du paquet TensorRT (notre module + trtexec) : douze caractères qui ne changent que si ce
-# qui entre dans le module change. Le paquet se joint alors à une release fixe, « trt-<empreinte> » pour Linux
+# L'empreinte du paquet TensorRT (notre module + trtexec) et de son index : douze caractères selon les entrées de
+# la construction et de la publication. Le paquet se joint alors à une release fixe, « trt-<empreinte> » pour Linux
 # (tools/release/trt-package.sh, .github/workflows/trt-package.yml), « trt-win-<empreinte> » pour Windows
 # (release-windows.yml), que les releases du lecteur lisent pour TOUTES les étiquettes : le paquet ne se reconstruit
 # que quand l'empreinte change, et la CI de release le construit elle-même s'il manque.
@@ -27,11 +27,12 @@ paths=(src/core src/gpu src/kernels src/prepare third_party/cutlass 'third_party
   CMakeLists.txt CMakePresets.json tools/release/versions.env)
 if [ "$platform" = linux ]; then
   paths+=(tools/deps/linux-from-source.sh tools/deps/linux-tensorrt.sh tools/release/package-linux.sh
-    tools/release/trt-package.sh
+    tools/release/trt-package.sh tools/release/attach-nvidia-linux.sh
     tools/release/preflight/Dockerfile tools/release/nvidia-vendor/tensorrt-linux-x64.lock
     .github/workflows/trt-package.yml)
 else
   paths+=(vcpkg.json ports tools/deps/windows-tensorrt.ps1 tools/release/package-windows.ps1
+    tools/release/attach-nvidia-windows.ps1
     tools/release/nvidia-vendor/tensorrt-windows-x64.lock tools/release/windows/sign.ps1)
 fi
 {

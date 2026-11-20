@@ -9,7 +9,8 @@ name: Release Linux
 # Rien ne s'empaquette sans les règles (rules.yml) ni, pour une étiquette, sans la garde (release-guard.yml : commit
 # et version de l'étiquette, ci.yml vert). Le paquet TensorRT Linux vit dans la release « trt-<empreinte de ses
 # entrées> » : trt-package.yml le construit et le publie s'il manque, avant le paquet du lecteur (A28-01). Une
-# release finale sans TensorRT Linux échoue ; une préversion n'a qu'un avertissement. Les tests tournent sur le build
+# erreur de construction de ce paquet bloque aussi une préversion. Si la construction aboutit mais que l'index
+# manque, une préversion avertit et une finale échoue. Les tests tournent sur le build
 # même du paquet, rendu compris (Vulkan logiciel sous Xvfb), et les tests de découpe sur les modèles qu'il livre
 # (A28-07). ci.yml n'a plus de tâche « version livrée » : c'était la même configuration, testée ici. Versions, paquets et dépôt
 # des releases : tools/release/versions.env.

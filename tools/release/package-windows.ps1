@@ -33,21 +33,21 @@ $Extra = @()
 # Arbre de construction de vcpkg ailleurs (un chemin court : les sources de certains ports
 # dépassent les 260 caractères de MSVC sous build/).
 if ($env:KIRARI_VCPKG_BUILDTREES) { $Extra += "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:KIRARI_VCPKG_BUILDTREES" }
-# Triplet sans Debug (x64-windows-release) : la moitié des ports à compiler sur la CI.
-# SPAN FP8 CUTLASS sous MSVC (12.4) : à l'essai, éteint par défaut hors Linux.
-if ($Cuda -eq "ON" -and $env:KIRARI_WITH_SPAN_FP8) { $Extra += "-DKIRARI_WITH_SPAN_FP8=$env:KIRARI_WITH_SPAN_FP8" }
+# Un build TensorRT réutilisé peut avoir servi à un essai CUTLASS. Rétablir le défaut Windows à chaque appel.
+if ($Cuda -eq "ON") {
+  $SpanFp8 = if ($env:KIRARI_WITH_SPAN_FP8) { $env:KIRARI_WITH_SPAN_FP8 } else { "OFF" }
+  $Extra += "-DKIRARI_WITH_SPAN_FP8:BOOL=$SpanFp8"
+}
 if ($Cuda -eq "ON" -and $env:KIRARI_TENSORRT_ROOT) { $Extra += "-DKIRARI_TENSORRT_ROOT=$env:KIRARI_TENSORRT_ROOT" }
 if ($Cuda -eq "ON" -and $env:KIRARI_TRTEXEC) { $Extra += "-DKIRARI_TRTEXEC:FILEPATH=$env:KIRARI_TRTEXEC" }
 # sccache sur la CI (release-windows.yml) : les objets de cl.exe repris d'une construction à l'autre.
 if ($env:KIRARI_COMPILER_LAUNCHER) {
   $Extra += "-DCMAKE_C_COMPILER_LAUNCHER=$env:KIRARI_COMPILER_LAUNCHER", "-DCMAKE_CXX_COMPILER_LAUNCHER=$env:KIRARI_COMPILER_LAUNCHER"
 }
-# Release rapide : les tests unitaires ne se compilent pas (KIRARI_BUILD_TESTS=OFF), le paquet est le même.
-if ($TensorRtOnly) {
-  $Extra += "-DKIRARI_BUILD_TESTS=OFF"
-} elseif ($env:KIRARI_BUILD_TESTS) {
-  $Extra += "-DKIRARI_BUILD_TESTS=$env:KIRARI_BUILD_TESTS"
-}
+# Un paquet complet réactive les tests après une release rapide dans le même build.
+$BuildTests = if ($TensorRtOnly) { "OFF" } elseif ($env:KIRARI_BUILD_TESTS) { $env:KIRARI_BUILD_TESTS } else { "ON" }
+$Extra += "-DKIRARI_BUILD_TESTS:BOOL=$BuildTests"
+# Triplet sans Debug (x64-windows-release) : la moitié des ports à compiler sur la CI.
 if ($env:KIRARI_VCPKG_TRIPLET) {
   $Extra += "-DVCPKG_TARGET_TRIPLET=$env:KIRARI_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:KIRARI_VCPKG_TRIPLET"
 }
