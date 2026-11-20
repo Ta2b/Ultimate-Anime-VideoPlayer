@@ -380,10 +380,10 @@ void override_swapchain_depth(pl_vulkan_swapchain_params& sw_params, spdlog::log
   }
 }
 
-GpuDevice describe_device(pl_vulkan vk) {
+GpuDevice describe_device(pl_vulkan vk, const VulkanDevice& description) {
   GpuDevice device{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};
   for (std::size_t i = 0; i < device.uuid.size(); ++i) device.uuid[i] = vk->gpu->uuid[i];
-  device.vulkan = vulkan_description(vk);
+  device.vulkan = description;
   device.luid = device_luid(vk);
   // Le fabricant se déduit du vendorID, jamais du nom : sans lui la télémétrie NVML, l'avertissement de
   // pilote et le choix de décodeur voient un fabricant inconnu.
@@ -662,10 +662,11 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->open_shader_cache(options.shader_cache);
   impl->renderer = pl_renderer_create(impl->log, gpu);
 
-  impl->device = describe_device(impl->vk);
+  const VulkanDevice description = vulkan_description(impl->vk);
+  impl->device = describe_device(impl->vk, description);
   watch_presentation(*impl, options, stalled);
-  const QueueRef engines = impl->device.vulkan->compute;
-  if (impl->device.vulkan->lock_queue == nullptr) {
+  const QueueRef engines = description.compute;
+  if (description.lock_queue == nullptr) {
     impl->channel->info("moteurs sur leur propre file (famille {}, file {}), à côté de l'affichage",
                         engines.family, engines.index);
   } else {
