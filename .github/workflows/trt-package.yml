@@ -97,6 +97,7 @@ jobs:
         if: env.SKIP != '1'
         env:
           KIRARI_WITH_CUDA: "ON"
+          KIRARI_BUILD_TESTS: "OFF"  # les tests TensorRT relèvent de la CI, le paquet ne livre que le module
           KIRARI_WITHOUT_MODELS: "1"
           KIRARI_PACKAGE_NVIDIA: "1"
         run: |
