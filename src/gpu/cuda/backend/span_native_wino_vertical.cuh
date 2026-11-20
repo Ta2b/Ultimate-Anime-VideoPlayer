@@ -177,6 +177,7 @@ template <int C, bool Gate, bool Flat, bool Cat>
 __device__ __forceinline__ void convolution_tile(Params p, Params cat) {
   static_assert(C == 48 || C == 64);
   constexpr bool Prepared = C == 48;
+  constexpr bool Packed = C == 48 || Flat;
   static_assert((kWidth * kHeight * kStride<C> + C * C) * sizeof(__half) <= kShared<C>);
   extern __shared__ __align__(16) unsigned char raw[];
   auto* s = reinterpret_cast<__half*>(raw);
@@ -276,9 +277,8 @@ __device__ __forceinline__ void convolution_tile(Params p, Params cat) {
 #pragma unroll
       for (int h = 0; h < 2; ++h) {
         const int x = g + 8 * h + 16 * f, at = (local_y * kWidth + x) * kStride<C> + c;
-        constexpr bool packed = C == 64 && Flat;
-        const auto a = fixed_pair<packed>(acc[f][0][n], h), b = fixed_pair<packed>(acc[f][1][n], h);
-        const auto d = fixed_pair<packed>(acc[f][2][n], h), e = fixed_pair<packed>(acc[f][3][n], h);
+        const auto a = fixed_pair<Packed>(acc[f][0][n], h), b = fixed_pair<Packed>(acc[f][1][n], h);
+        const auto d = fixed_pair<Packed>(acc[f][2][n], h), e = fixed_pair<Packed>(acc[f][3][n], h);
         const auto put = [&](int index, float lo, float hi) {
           const auto narrowed = to_half2(lo, hi);
           if constexpr (Gate)
@@ -295,7 +295,7 @@ __device__ __forceinline__ void convolution_tile(Params p, Params cat) {
   }
   __syncthreads();
   if constexpr (Gate) {
-    vertical_gate<C, C == 64 && Flat>(s, p, x0, y0, warp, lane);
+    vertical_gate<C, Packed>(s, p, x0, y0, warp, lane);
     __syncthreads();
   }
   if constexpr (Cat) {
