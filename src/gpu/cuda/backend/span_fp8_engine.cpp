@@ -81,8 +81,16 @@ std::expected<void, Refusal> smoke_test(SpanFp8Net& net, int height, int width) 
 }
 
 constexpr double kKernelTrialDb = 50.0;
+// CRC du paquet FP16 dérivé de 2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.
+constexpr std::uint32_t kPerformanceFp16Crc = 0x30469c4eU;
+
+struct PreciseTrial {
+  const SpanFp8Weights& weights;
+  void* workspace;
+};
 struct KernelTrial {
   double db = 0.0;
+  std::optional<double> fp32_gain_db;
   float reference_ms = 0.F, native_ms = 0.F;
 };
 
@@ -148,6 +156,37 @@ double trial_db(const std::vector<std::uint16_t>& reference, const std::vector<s
   return worst;
 }
 
+// Le C48 Performance amplifie les erreurs d'arrondi près des couleurs saturées. Comparer les deux
+// accumulations f16 entre elles mesure leur désaccord, pas leur écart au calcul avec sommes f32.
+std::optional<double> precision_gain(std::span<const std::uint16_t> fp32,
+                                     std::span<const std::uint16_t> direct,
+                                     std::span<const std::uint16_t> winograd) {
+  const std::size_t per = fp32.size() / 3;
+  const std::size_t tail = per - 1 - per / 1000;
+  std::vector<float> direct_error(per), wino_error(per);
+  double gain = 200.0;
+  for (std::size_t b = 0; b < 3; ++b) {
+    double direct_square = 0., wino_square = 0.;
+    for (std::size_t i = 0; i < per; ++i) {
+      const std::size_t pos = b * per + i;
+      const float want = kernels::ref::half_to_float(fp32[pos]);
+      const float da = std::abs(kernels::ref::half_to_float(direct[pos]) - want);
+      const float wa = std::abs(kernels::ref::half_to_float(winograd[pos]) - want);
+      if (!std::isfinite(da) || !std::isfinite(wa)) return std::nullopt;
+      direct_error[i] = da;
+      wino_error[i] = wa;
+      direct_square += double{da} * da;
+      wino_square += double{wa} * wa;
+    }
+    if (wino_square > direct_square) return std::nullopt;
+    std::ranges::nth_element(direct_error, direct_error.begin() + static_cast<std::ptrdiff_t>(tail));
+    std::ranges::nth_element(wino_error, wino_error.begin() + static_cast<std::ptrdiff_t>(tail));
+    if (wino_error[tail] > direct_error[tail]) return std::nullopt;
+    if (wino_square > 0.) gain = std::min(gain, 10. * std::log10(direct_square / wino_square));
+  }
+  return gain;
+}
+
 std::expected<void, Refusal> trial_step(cudaError_t error, const char* step, std::string_view label) {
   return cuda_check(error, std::format("SPAN : essai {} ({})", label, step));
 }
@@ -178,7 +217,8 @@ std::expected<float, Refusal> measure_trial(Scratch& scratch, SpanFp8Net& net, s
 }
 
 std::expected<KernelTrial, Refusal> compare_kernels(SpanFp8Net& reference, SpanFp8Net& candidate, int height,
-                                                    int width, std::string_view label) {
+                                                    int width, std::string_view label,
+                                                    const PreciseTrial* precise = nullptr) {
   Scratch scratch;
   const auto image = trial_image(height, width);
   const std::size_t in_bytes = image.size() * sizeof(image[0]), out_bytes = 4 * in_bytes;
@@ -208,10 +248,27 @@ std::expected<KernelTrial, Refusal> compare_kernels(SpanFp8Net& reference, SpanF
   const auto got = fetch(candidate);
   if (!got) return std::unexpected(got.error());
   const double db = trial_db(*want, *got);
-  if (!(db >= kKernelTrialDb))
-    return refuse(
-        RefusalCode::VendorCallFailed,
-        std::format("essai {} à {:.1f} dB contre la voie actuelle, seuil {:.0f}", label, db, kKernelTrialDb));
+  std::optional<double> fp32_gain;
+  if (!(db >= kKernelTrialDb)) {
+    if (precise != nullptr && std::isfinite(db)) {
+      auto weights = precise->weights;
+      weights.sums = SpanNativeSums::F32;
+      weights.winograd = SpanWinograd::Off;
+      SpanFp8Status status = SpanFp8Status::Ok;
+      std::string why;
+      auto judge = SpanFp8Net::create(weights, height, width, status, why);
+      if (!judge || judge->workspace_bytes() != reference.workspace_bytes())
+        return refuse(RefusalCode::VendorCallFailed, "essai Winograd : référence FP32 indisponible");
+      judge->bind(precise->workspace);
+      const auto fp32 = fetch(*judge);
+      if (!fp32) return std::unexpected(fp32.error());
+      fp32_gain = precision_gain(*fp32, *want, *got);
+    }
+    if (!fp32_gain)
+      return refuse(RefusalCode::VendorCallFailed,
+                    std::format("essai {} à {:.1f} dB contre la voie actuelle, seuil {:.0f}", label, db,
+                                kKernelTrialDb));
+  }
 
   for (auto* event : {&scratch.start, &scratch.stop})
     if (auto ok = step(cudaEventCreate(event), "événement"); !ok)
@@ -226,7 +283,8 @@ std::expected<KernelTrial, Refusal> compare_kernels(SpanFp8Net& reference, SpanF
       times[choice][round] = *ms;
     }
   for (auto& samples : times) std::ranges::sort(samples);
-  return KernelTrial{.db = db, .reference_ms = times[0][1], .native_ms = times[1][1]};
+  return KernelTrial{
+      .db = db, .fp32_gain_db = fp32_gain, .reference_ms = times[0][1], .native_ms = times[1][1]};
 }
 
 // L'essai de zéros, puis, pour le SPAN FP16 natif, le jugement contre le calcul du processeur
@@ -330,6 +388,8 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   std::unique_ptr<SpanFp8Engine> engine(new SpanFp8Engine());
   engine->net_ = std::move(net);
   engine->fp16_ = parsed->fp16;
+  engine->performance_fp16_ =
+      crc == kPerformanceFp16Crc && weights.fp16 && weights.channels == 48 && weights.blocks == 5;
   engine->sums_ = weights.sums;
   engine->native_edges_ = weights.native_edges;
   engine->input_ = Shape{.dims = {1, 3, height, width}};
@@ -380,15 +440,19 @@ std::expected<bool, Refusal> SpanFp8Engine::try_vertical_net(const span_fp8::Pac
   if (!candidate) return reject("poids : " + why);
   if (candidate->workspace_bytes() != net_->workspace_bytes()) return reject("taille de la zone différente");
   candidate->bind(workspace);
-  auto compared = compare_kernels(*net_, *candidate, height, width, "Winograd vertical");
+  const PreciseTrial precise{weights, workspace};
+  auto compared = compare_kernels(*net_, *candidate, height, width, "Winograd vertical",
+                                  performance_fp16_ ? &precise : nullptr);
   if (!compared) {
     if (compared.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(compared.error()));
     return reject(compared.error().detail);
   }
   // La petite marge évite de choisir sur le bruit de trois chronométrages au chargement.
   const bool faster = compared->native_ms < 0.97F * compared->reference_ms;
-  const auto result = std::format("{:.2f} ms contre {:.2f} ms, parité {:.1f} dB", compared->native_ms,
-                                  compared->reference_ms, compared->db);
+  auto result = std::format("{:.2f} ms contre {:.2f} ms, parité {:.1f} dB", compared->native_ms,
+                            compared->reference_ms, compared->db);
+  if (compared->fp32_gain_db)
+    result += std::format(", gain de {:.2f} dB ou plus face aux sommes FP32", *compared->fp32_gain_db);
   if (!faster) return reject(result);
 
   auto checked = try_kernels(*candidate, package, height, width);
@@ -447,9 +511,9 @@ std::expected<void, Refusal> SpanFp8Engine::validate_nets(const span_fp8::Packag
                                                           const SpanFp8Weights& weights, void* workspace,
                                                           bool native_blocks, bool vertical_winograd) {
   const int height = static_cast<int>(input_.dims[2]), width = static_cast<int>(input_.dims[3]);
+  const bool balanced = weights.channels == span_fp8::kChannels && weights.blocks == span_fp8::kBlocks;
   if (vertical_winograd && weights.fp16 && weights.sums == SpanNativeSums::F16 &&
-      weights.channels == span_fp8::kChannels && weights.blocks == span_fp8::kBlocks &&
-      !weights.compact_workspace && height == 1080 && width == 1920) {
+      (balanced || performance_fp16_) && !weights.compact_workspace && height == 1080 && width == 1920) {
     auto selected = try_vertical_net(package, weights, workspace);
     if (!selected) return std::unexpected(std::move(selected.error()));
     if (*selected) return {};

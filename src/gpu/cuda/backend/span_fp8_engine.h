@@ -50,7 +50,8 @@ class SpanFp8Engine final : public Engine {
   // réécrit depuis la construction (GraphInvalid), taille ou appareil que les noyaux ne prennent pas,
   // mémoire. native_edges : les bords du FP8 par les noyaux du FP16 natif. native_blocks : essaie les
   // deux 3×3 avec ReLU du FP8 C48 ou C64, puis compare au même réseau CUTLASS avant de les retenir.
-  // vertical_winograd : essaie sur Ada les paires de lignes du SPAN FP16 C64 à huit blocs en 1080p.
+  // vertical_winograd : essaie sur Ada les paires de lignes en 1080p du SPAN FP16 C64 à huit blocs et du
+  // paquet officiel Performance C48.
   static std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> load(
       const std::filesystem::path& package, std::uint32_t crc, int height, int width,
       const std::shared_ptr<SharedActivations>& shared, bool native_edges = false, bool native_blocks = false,
@@ -155,6 +156,7 @@ class SpanFp8Engine final : public Engine {
   BodyGraphs full_graphs_, tiled_graphs_;
   std::optional<double> native_check_db_;
   bool fp16_ = false;
+  bool performance_fp16_ = false;
   SpanNativeSums sums_ = SpanNativeSums::F16;
   bool native_edges_ = false;
   bool native_blocks_ = false;
