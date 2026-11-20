@@ -84,8 +84,9 @@ __global__ void __launch_bounds__(256) compose_layers(LayerArgs p) {
     d = fabsf(kLumaR * (value[0][0] - value[1][0]) + kLumaG * (value[0][1] - value[1][1]) +
               kLumaB * (value[0][2] - value[1][2]));
   } else if (p.count == 1) {
-    d = fabsf(kLumaR * (value[0][0] - here[0]) + kLumaG * (value[0][1] - here[1]) +
-              kLumaB * (value[0][2] - here[2]));
+    // La plaque : l'écart le plus grand des trois canaux (spec layers.h, étape 4).
+#pragma unroll
+    for (int c = 0; c < 3; ++c) d = fmaxf(d, fabsf(value[0][c] - here[c]));
   }
   const float k = 1.0F - fminf(fmaxf((d - p.guard_low) / (p.guard_high - p.guard_low), 0.0F), 1.0F);
   const float mk = m * k;

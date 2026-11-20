@@ -24,7 +24,8 @@ entraînement.
   avec SPAN ×2 et le grade HDR. Au PC de Tatoub, `--no-scene-map` le fait disparaître ; `--no-span-tiles` et
   `--no-span-reuse` ne changent rien. Cause trouvée le même jour : la **plaque de décor**, qui dépend de la carte
   et s'applique avec tous les moteurs ; `background_plate = false` seul le fait partir, la carte restant
-  allumée (détail et contournement : [`calques.md`](calques.md)).
+  allumée ; correctif : la garde de la plaque compare les trois canaux au lieu de la luma (détail :
+  [`calques.md`](calques.md)).
 - Journal de fin : `carte de la scène : N paires lancées, N relues, N posées sur leur paire ; N sautées (NVOF
   occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, dont N
   relus ensuite, N pas lancés ; N lancés derrière le flux depuis la caméra du plan, N écartés), N coupes
