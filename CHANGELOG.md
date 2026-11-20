@@ -6,7 +6,7 @@ reprend telles quelles. La version vient de `project()` dans `CMakeLists.txt` ; 
 
 | Version | Notes |
 |---|---|
-| 0.13.0 | [v0.13.0-rc.1](tools/release/notes/v0.13.0-rc.1.md) : carte de la scène par le flux optique de NVIDIA, calques et plaque de décor, tuiles de SPAN, RIFE natif par défaut, lecture à 165 Hz |
+| 0.13.0 | [v0.13.0-rc.2](tools/release/notes/v0.13.0-rc.2.md) : la rc.1 publiée par la Release rapide, après le correctif de sa release ; [v0.13.0-rc.1](tools/release/notes/v0.13.0-rc.1.md) (étiquette sans release) : carte de la scène par le flux optique de NVIDIA, calques et plaque de décor, tuiles de SPAN, RIFE natif par défaut, lecture à 165 Hz |
 | 0.11.0 | [v0.11.0](tools/release/notes/v0.11.0.md) : la chaîne suit la source, deux audits, Anime4K, RIFE fusionné et SPAN FP8 plus rapides, sous-titres après un saut ; [v0.11.0-rc.8](tools/release/notes/v0.11.0-rc.8.md) : second audit, Anime4K et ArtCNN C4F16, RIFE fusionné plus rapide, niveaux d'interpolation, options RIFE et peau des visages à l'essai ; [v0.11.0-rc.7](tools/release/notes/v0.11.0-rc.7.md) : corrections de l'audit (qualité, interpolation, écran, TensorRT), préversion sans macOS |
 | 0.10.3 | [v0.10.3](tools/release/notes/v0.10.3.md) : corrections Windows et Vulkan (ArtCNN, netteté) |
 | 0.10.2 | [v0.10.2](tools/release/notes/v0.10.2.md) : la 0.10.1 reconstruite (modèle ArtCNN livré, macOS) |

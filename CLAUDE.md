@@ -82,8 +82,11 @@ dépendances, `vendor-watch.yml`, `resign-manifest.yml`) et `release-linux.yml` 
 ses PR pour les actions épinglées par SHA et les requirements de `tools/ci/requirements` ; `vcpkg.json` garde sa
 `builtin-baseline`, que `deps-watch.yml` fait avancer. Avant d'ouvrir une PR, lancer en local les étapes de `rules.yml` (les scripts de `tools/ci/`) et les
 tests des modules touchés ; une PR risquée (Windows, CUDA, CMake) se vérifie par un lancement de ci.yml sur sa
-branche. Après un lot de PR fusionnées, un lancement sur main ; avant chaque étiquette, un lancement vert sur son
-commit, que la garde de release exige (`docs/signature-des-releases.md`).
+branche. Après un lot de PR fusionnées, un lancement sur main ; avant une étiquette poussée, un lancement vert sur son
+commit, que la garde de release exige (`docs/signature-des-releases.md`). Au choix de Tatoub, la **Release rapide
+(sans tests)** (`release-rapide.yml`) pose l'étiquette et publie sans CI ni tests : la compilation, les paquets
+TensorRT s'ils manquent, la publication (même document). ci.yml se lance aussi par parties (entrées `coeur`,
+`lecteur_linux`, `windows`, `cuda`).
 
 ## Conventions et pièges
 

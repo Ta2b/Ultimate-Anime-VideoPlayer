@@ -151,6 +151,12 @@ suivant, seuls les réseaux du mélange sont réglés, puis la chaîne passe une
 contre TensorRT, au plus 1 dB sous la valeur du verdict ; sinon la chaîne revient à TensorRT et l'essai complet
 se refait. Un verdict « TensorRT garde tout » se garde aussi. Effacer le fichier refait l'essai.
 
+**Savoir lequel tourne** : l'affichage des statistiques dit « RIFE … fusionné » dans les deux cas (le « native »
+de la même ligne est celui de SPAN). Le journal (`kirari.log`, `docs/support.md`) le dit au chargement : les lignes
+« RIFE natif » donnent le temps et la justesse de chaque morceau, puis le verdict ; « RIFE natif refusé, TensorRT
+garde la chaîne », ou un verdict dont toutes les options sont à 0, veut dire TensorRT. Aucune option ne force le
+natif par-dessus l'essai.
+
 L'essai complet :
 
 1. **quatre réseaux natifs**, du plus rapide au plus juste : sommes f16 ; f16 et tête f32 ; mixtes et tête f32 ;

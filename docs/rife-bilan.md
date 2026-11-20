@@ -267,7 +267,8 @@ seulement après les chantiers qui n'ont pas encore passé leur porte.
 **Après la séance du 19 novembre** (dans l'ordre du gain) :
 
 a. **Fusion de #961**, puis la PR « natif par défaut » (`--no-rife-native`, verdict gardé : `rife_native_verdict.h`,
-   `RifeFusedEngine::try_cached`), avec ci.yml, pour la rc.1.
+   `RifeFusedEngine::try_cached`), avec ci.yml, pour la rc.1. Fait : #961 fusionnée le 19 novembre (520f4632), natif
+   par défaut dans la préversion v0.13.0-rc.2 (20 novembre).
 b. **La garde des morceaux de la porte** : 60 dB contre TensorRT ne passe jamais (TensorRT FP16 est lui-même à
    51 à 59 dB de nos morceaux f32). Juger chaque morceau f32 contre un témoin qui ne doit rien à TensorRT : le
    même morceau en f32 par un chemin indépendant (la forme de référence du banc, tranche et tuile de 16, sans K
