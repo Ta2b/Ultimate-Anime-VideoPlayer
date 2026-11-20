@@ -31,7 +31,7 @@ struct ShaderTime {
   std::string shader;
   std::uint32_t dispatches = 0;
   double ms = 0.0;     // médiane, sur les exécutions, de la somme de ses dispatchs
-  double share = 0.0;  // part de ProfileReport::total_ms, entre 0 et 1
+  double share = 0.0;  // part de la somme des médianes par shader
 };
 
 struct ProfileReport {
@@ -57,7 +57,7 @@ struct NodeTime {
   std::string shaders;  // « net_conv_coopmat_f16 », plusieurs séparés par « + »
   std::uint32_t dispatches = 0;
   double ms = 0.0;
-  double share = 0.0;  // part du total des dispatchs, entre 0 et 1
+  double share = 0.0;  // part de la somme des médianes par nœud
 };
 
 // Par nœud, dans l'ordre du programme. Vide sans exécution.

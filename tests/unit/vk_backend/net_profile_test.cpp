@@ -3,6 +3,7 @@
 #include "gpu/vulkan/backend/net_profile.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -54,6 +55,29 @@ Buffer filled_input(NetRig& rig, std::uint64_t bytes) {
 
 }  // namespace
 
+TEST_CASE("Profil des dispatchs : les parts utilisent les médianes du même tableau",
+          "[vk_backend][net_profile]") {
+  const std::array dispatches{net::Dispatch{.node = 0, .shader = "a"},
+                              net::Dispatch{.node = 1, .shader = "b"}};
+  const std::array runs{net::ProfileRun{.dispatch_ms = {100.0, 0.0}, .span_ms = 120.0},
+                        net::ProfileRun{.dispatch_ms = {0.0, 100.0}, .span_ms = 120.0},
+                        net::ProfileRun{.dispatch_ms = {10.0, 10.0}, .span_ms = 25.0}};
+  const net::ProfileReport report = net::summarize_profile(dispatches, runs);
+  CHECK(report.total_ms == 100.0);
+  CHECK(report.span_ms == 120.0);
+  REQUIRE(report.shaders.size() == 2);
+  for (const net::ShaderTime& shader : report.shaders) {
+    CHECK(shader.ms == 10.0);
+    CHECK(shader.share == 0.5);
+  }
+  const auto nodes = net::summarize_nodes(ir::Graph{}, dispatches, runs);
+  REQUIRE(nodes.size() == 2);
+  for (const net::NodeTime& node : nodes) {
+    CHECK(node.ms == 10.0);
+    CHECK(node.share == 0.5);
+  }
+}
+
 TEST_CASE("Profil des dispatchs : un graphe mesuré par shader", "[vk_backend][net_profile]") {
   NetRig rig = make_net_rig();
   require_f16(rig);
@@ -98,9 +122,9 @@ TEST_CASE("Profil des dispatchs : un graphe mesuré par shader", "[vk_backend][n
   CHECK(profiled == dispatches);
   CHECK(report.total_ms > 0.0);
   CHECK(report.span_ms >= report.total_ms * 0.99);
-  CHECK(share == Catch::Approx(1.0).margin(0.05));
+  CHECK(share == Catch::Approx(1.0));
   CHECK(std::ranges::is_sorted(report.shaders, std::greater<>{}, &net::ShaderTime::ms));
-  // Par nœud : chaque dispatch compté une fois, dans l'ordre du programme, la même somme que par shader.
+  // Par nœud : chaque dispatch compté une fois, dans l'ordre du programme. Les parts reprennent ses médianes.
   const std::vector<net::NodeTime> nodes = engine->node_profile();
   std::uint32_t by_node = 0;
   double node_share = 0.0;
@@ -111,7 +135,7 @@ TEST_CASE("Profil des dispatchs : un graphe mesuré par shader", "[vk_backend][n
     CHECK_FALSE(row.shaders.empty());
   }
   CHECK(by_node == dispatches);
-  CHECK(node_share == Catch::Approx(1.0).margin(0.05));
+  CHECK(node_share == Catch::Approx(1.0));
   REQUIRE_FALSE(nodes.empty());
   CHECK(nodes.front().node == engine->program().dispatches.front().node);
   engine.reset();  // journalise les tableaux

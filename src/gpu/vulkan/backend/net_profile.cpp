@@ -10,6 +10,18 @@
 #include "gpu/vulkan/backend/net_measure.h"
 
 namespace kirari::gpu::vk::net {
+namespace {
+
+// Les médianes de plusieurs catégories ne s'additionnent pas à la médiane du total.
+template <class Row>
+void distribute(std::vector<Row>& rows) {
+  double sum = 0.0;
+  for (const Row& row : rows) sum += row.ms;
+  if (sum <= 0.0) return;
+  for (Row& row : rows) row.share = row.ms / sum;
+}
+
+}  // namespace
 
 ProfileReport summarize_profile(std::span<const Dispatch> dispatches, std::span<const ProfileRun> runs) {
   ProfileReport report;
@@ -36,11 +48,9 @@ ProfileReport summarize_profile(std::span<const Dispatch> dispatches, std::span<
   report.span_ms = median(spans);
   for (const auto& [shader, values] : sums) {
     const double ms = median(values);
-    report.shaders.push_back({.shader = shader,
-                              .dispatches = counts[shader],
-                              .ms = ms,
-                              .share = report.total_ms > 0.0 ? ms / report.total_ms : 0.0});
+    report.shaders.push_back({.shader = shader, .dispatches = counts[shader], .ms = ms});
   }
+  distribute(report.shaders);
   std::ranges::sort(report.shaders, std::greater<>{}, &ShaderTime::ms);
   return report;
 }
@@ -85,22 +95,14 @@ std::vector<NodeTime> summarize_nodes(const ir::Graph& graph, std::span<const Di
     slot[k] = it->second;
   }
   std::vector<std::vector<double>> sums(nodes.size());
-  std::vector<double> totals;
   for (const ProfileRun& run : runs) {
     std::vector<double> sum(nodes.size(), 0.0);
-    double total = 0.0;
-    for (std::size_t k = 0; k < dispatches.size() && k < run.dispatch_ms.size(); ++k) {
+    for (std::size_t k = 0; k < dispatches.size() && k < run.dispatch_ms.size(); ++k)
       sum[slot[k]] += run.dispatch_ms[k];
-      total += run.dispatch_ms[k];
-    }
     for (std::size_t r = 0; r < nodes.size(); ++r) sums[r].push_back(sum[r]);
-    totals.push_back(total);
   }
-  const double total = median(totals);
-  for (std::size_t r = 0; r < nodes.size(); ++r) {
-    nodes[r].ms = median(sums[r]);
-    nodes[r].share = total > 0.0 ? nodes[r].ms / total : 0.0;
-  }
+  for (std::size_t r = 0; r < nodes.size(); ++r) nodes[r].ms = median(sums[r]);
+  distribute(nodes);
   return nodes;
 }
 

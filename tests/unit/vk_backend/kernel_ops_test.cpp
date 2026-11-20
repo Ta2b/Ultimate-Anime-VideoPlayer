@@ -370,8 +370,8 @@ TEST_CASE("KernelOps : les enregistrements d'un ring changé de génération s'o
 }
 
 TEST_CASE("Voies : les dépendances d'une voie à l'autre se déduisent des tampons", "[vk_backend][kernels]") {
-  // Un appareil à une file (lavapipe) : les voies en plus reprennent la file principale, mais
-  // chacune a sa timeline et ses attentes, que la couche de validation vérifie.
+  // Les voies en plus reprennent la file principale si l'appareil manque de files physiques. Chacune a
+  // sa timeline et ses attentes, que la couche de validation vérifie.
   TempDir dir("voies");
   auto backend = make_backend(dir.path(), {.alias_lanes = true});
   REQUIRE(backend->capabilities().lanes == 3);
