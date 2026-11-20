@@ -95,7 +95,7 @@ check_portable() {  # dossier des binaires vérifiés, [autres dossiers livrés 
       bad=1
     done < <(readelf -d "$f" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
     # Aucun RUNPATH dans le paquet (voir origin) ; trtexec reste tel que la configuration l'a rangé.
-    if [ "$(basename "$f")" != trtexec ] && readelf -d "$f" | grep -q '(RUNPATH)'; then
+    if [ "$(basename "$f")" != trtexec ] && readelf -d "$f" | grep -F '(RUNPATH)' >/dev/null; then
       echo "$f porte un RUNPATH, que LD_LIBRARY_PATH devance : patchelf --force-rpath" >&2
       bad=1
     fi
@@ -240,8 +240,9 @@ if [ -f "$TRT_MODULE" ] && [ -n "${KIRARI_PACKAGE_NVIDIA:-}" ]; then
   [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] || { echo "trtexec introuvable (KIRARI_TRTEXEC_PACKAGED : « $TRTEXEC »)" >&2; exit 1; }
   cp "$TRTEXEC" "$dir/trtexec"
   # Le module ne lance que le trtexec dont il garde l'empreinte : un paquet où elle manque ne construirait rien.
+  # Lire la sortie jusqu'au bout évite que strings reçoive SIGPIPE avec pipefail quand l'empreinte est présente.
   if [ -f "$dir/trtexec" ] && ! strings "$dir/kirari_backend_tensorrt.so" |
-      grep -qx "$(sha256sum "$dir/trtexec" | cut -d' ' -f1)"; then
+      grep -Fx "$(sha256sum "$dir/trtexec" | cut -d' ' -f1)" >/dev/null; then
     echo "trtexec : son SHA-256 n'est pas celui que le module attend (reconfigurer la construction)" >&2
     exit 1
   fi
