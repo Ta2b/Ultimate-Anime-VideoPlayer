@@ -30,8 +30,13 @@ arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
   false` (section `[interpolation]` de `play.toml`, dans le dossier des données) le fait disparaître, la carte
   restant allumée ; `--no-scene-map` aussi, puisqu'il éteint la plaque ; `--no-span-tiles` et
   `--no-span-reuse` ne changent rien. Lecture probable : la clé du plan contenait un dessin à cet endroit, et la
-  plaque recolle son décor décalé là où la source n'a plus ce dessin ; la garde par pixel (6 à 18 codes contre
-  SPAN de b) et le retrait des tuiles de dessin ne l'ont pas écarté. Correctif en cours.
+  plaque recolle son décor décalé là où la source n'a plus ce dessin (un bout de main ou de contour immobile au
+  moment de la clé, rangé dans le décor) ; la garde par pixel ne comparait que la luma, et un trait violet ou
+  rose a presque celle du ciel bleu qui l'a remplacé. **Correctif** : la garde de la plaque prend l'écart le
+  plus grand des trois canaux R, G, B (toujours 6 à 18 codes), dans la référence, le noyau CUDA et la spec
+  (`kernels/spec/layers.h`, étape 4) ; la garde des calques à deux sources reste en luma. Un test reproduit un
+  trait violet sur un ciel bleu de même luma (`tests/unit/kernels/layers_test.cpp`). À vérifier à 1:59 au PC de
+  Tatoub avec un nouveau paquet TensorRT (le noyau change l'empreinte).
 
 Sans carte (AMD, Intel, Turing, NVOF refusé, pas encore relue), ou dès qu'elle doute de la paire (coupe, fondu,
 caméra non ajustée ou non affinée par Lucas-Kanade, résidu au-delà de 0,5 pixel de travail, moins de 5 % de

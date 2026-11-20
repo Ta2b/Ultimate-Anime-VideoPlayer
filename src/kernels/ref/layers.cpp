@@ -90,7 +90,9 @@ void compose_pixel(RgbImage& out, const std::array<const RgbImage*, 2>& images, 
   if (params.count == 2 && inside[0] && inside[1]) {
     d = std::fabs(luma(value[0]) - luma(value[1]));
   } else if (params.count == 1) {
-    d = std::fabs(luma(value[0]) - luma(here));
+    // La plaque : l'écart le plus grand des trois canaux, pas la luma seule. Un trait violet resté dans
+    // l'image clé a presque la luma du ciel bleu qui l'a remplacé ; comparée en luma, la plaque le recollait.
+    for (std::size_t c = 0; c < 3; ++c) d = std::fmax(d, std::fabs(value[0][c] - here[c]));
   }
   const float k =
       1.0F - std::clamp((d - params.guard_low) / (params.guard_high - params.guard_low), 0.0F, 1.0F);
