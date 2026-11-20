@@ -43,6 +43,8 @@ class GmfssNativeNet : public GmfssNativeParts {
   // Le placement par anneaux est essayé après le choix des précisions et de l'IFNet.
   virtual bool join_ready() const = 0;
   virtual void use_join(bool enabled) = 0;
+  virtual bool planar_head_ready() const = 0;
+  virtual void use_planar_head(bool enabled) = 0;
   // Les convolutions d'un morceau seul, sur ce que la zone garde : pour son temps.
   virtual cudaError_t run_piece(cudaStream_t stream, int piece) const = 0;
 };

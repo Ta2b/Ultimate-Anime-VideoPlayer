@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/gmfss_conv_plan.cuh"
+#include "gpu/cuda/backend/gmfss_grid_head.cuh"
 #include "gpu/cuda/backend/gmfss_grid_join.cuh"
 #include "gpu/cuda/backend/gmfss_grid_ring.cuh"
 #include "gpu/cuda/backend/gmfss_grid_rgb.cuh"
@@ -239,6 +240,7 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
   }
   join_tensors_.clear();
   join_on_ = false;
+  planar_head_ = -1;
   place(grid, io);
   layers_ = std::vector<Layer>(grid.steps.size());
   for (std::size_t i = 0; i < grid.steps.size(); ++i) {
@@ -264,6 +266,19 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
     return value != nullptr && std::string_view(value) == "1";
   }();
   const bool try_join = io.rgb >= 0 && grid.steps.size() == 45 && width_ == 960 && height_ == 576 && on_ada();
+  if (try_join && std::ranges::count_if(grid.steps, [](const auto& step) {
+        return step.from == 0 || step.skip == 0 || step.to == 0;
+      }) == 1) {
+    for (std::size_t i = 0; i < layers_.size(); ++i) {
+      const Layer& l = layers_[i];
+      if (l.from == 0 && l.skip < 0 && l.kind == Kind::kSame && !l.blocked8 &&
+          grid.steps[i].conv.cin == 9 && l.cin == 16 && l.cout == 64 && l.in_ld == 16 && l.out_ld == 64 &&
+          l.iw == width_ && l.ow == width_ && l.ih == height_ && l.oh == height_) {
+        planar_head_ = static_cast<int>(i);
+        break;
+      }
+    }
+  }
   const auto residual_pair = [&](std::size_t i) {
     const Layer& a = layers_[i];
     const Layer& b = layers_[i + 1];
@@ -366,6 +381,15 @@ bool ConvNet::has_head(int piece) const {
   return std::ranges::any_of(layers_, [&](const Layer& l) { return l.piece == piece && l.head; });
 }
 
+bool ConvNet::planar_head_ready() const {
+  if (planar_head_ < 0) return false;
+  const Layer& l = layers_[static_cast<std::size_t>(planar_head_)];
+  const Shape& shape = l.shape();
+  const auto& c = shape.cfg;
+  return shape.launch != nullptr && shape.launch == rn::pick_for(l.sums, l.kind, c.kc, c.ct, c.rows, c.ahead) &&
+         gmfss_grid_head::pick(c, l.sums) != nullptr;
+}
+
 bool ConvNet::joins_at(std::size_t i) const {
   constexpr auto f16 = RifeNativeSums::kF16;
   return layers_[i].join_next && layers_[i].sums == f16 && layers_[i + 1].sums == f16 &&
@@ -400,7 +424,7 @@ void ConvNet::trim() {
 }
 
 bool ConvNet::run(cudaStream_t stream, void* zone, float* partial, std::span<const void* const> bound,
-                  int piece, __half* rgb) const {
+                  int piece, __half* rgb, const std::array<const __half*, 3>* planar_head) const {
   const auto parameters = [&](const Layer& layer, __half* out) {
     const Shape& shape = layer.shape();
     const __half* skip = layer.skip >= 0 ? address(layer.skip, zone, bound) : nullptr;
@@ -415,7 +439,10 @@ bool ConvNet::run(cudaStream_t stream, void* zone, float* partial, std::span<con
     const bool direct = rgb != nullptr && supports_rgb(layer, shape);
     const rn::Params p = parameters(layer, direct ? rgb : address(layer.to, zone, bound));
     constexpr auto f16 = RifeNativeSums::kF16;
-    if (piece == -1 && join_on_ && joins_at(i)) {
+    if (planar_head && static_cast<int>(i) == planar_head_) {
+      const auto launch = gmfss_grid_head::pick(shape.cfg, layer.sums);
+      launch(shape.grid, shape.smem, stream, p, {(*planar_head)[0], (*planar_head)[1], (*planar_head)[2]});
+    } else if (piece == -1 && join_on_ && joins_at(i)) {
       const Layer& b = layers_[i + 1];
       const Layer& up = layers_[i + 2];
       const Layer& add = layers_[i + 3];

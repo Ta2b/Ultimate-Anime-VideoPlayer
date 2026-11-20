@@ -135,6 +135,8 @@ class Net final : public GmfssNativeNet {
   bool has_head(int piece) const override { return net_.has_head(piece); }
   bool join_ready() const override { return net_.join_ready(); }
   void use_join(bool enabled) override { net_.use_join(enabled); }
+  bool planar_head_ready() const override { return net_.planar_head_ready(); }
+  void use_planar_head(bool enabled) override { planar_head_ = enabled; }
   void use(std::span<const RifeNativePrecision> precisions) override { net_.use(precisions); }
   void trim() override { net_.trim(); }
   GmfssTuning& tuning() { return tuning_; }
@@ -155,7 +157,9 @@ class Net final : public GmfssNativeNet {
     const auto* w01 = static_cast<const __half*>(in.warped0[0]);
     const auto* w11 = static_cast<const __half*>(in.warped1[0]);
     const long p0 = plane(0);
-    pack_head<<<blocks_for(p0), 256, 0, stream>>>(w01, static_cast<const __half*>(in.rife), w11, p0, at(0));
+    const std::array<const __half*, 3> images{w01, static_cast<const __half*>(in.rife), w11};
+    if (!planar_head_)
+      pack_head<<<blocks_for(p0), 256, 0, stream>>>(images[0], images[1], images[2], p0, at(0));
     if (!in.packed_features) {
       const int features = prepare::kGmfssFeatureChannels;
       const auto planes = [&](const void* a, const void* b, long n, int count, int tensor) {
@@ -177,7 +181,7 @@ class Net final : public GmfssNativeNet {
       }
     }
     auto* rgb = static_cast<__half*>(out);
-    if (!net_.run(stream, zone, partial_.as<float>(), {}, -1, rgb)) {
+    if (!net_.run(stream, zone, partial_.as<float>(), {}, -1, rgb, planar_head_ ? &images : nullptr)) {
       const long full = 4 * p0;
       unpack_image<<<blocks_for(full), 256, 0, stream>>>(gmfss_plan::ConvNet::at(zone, net_.tensor(out_)), full,
                                                          rgb);
@@ -216,6 +220,7 @@ class Net final : public GmfssNativeNet {
   int height_;
   int width_;
   bool features_c8_;
+  bool planar_head_ = false;
   gmfss_plan::ConvNet net_;
   GmfssTuning tuning_;
   int out_ = 0;

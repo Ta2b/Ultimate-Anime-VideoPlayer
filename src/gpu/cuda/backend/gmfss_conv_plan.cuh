@@ -145,6 +145,7 @@ class ConvNet {
   }
 
   bool has_head(int piece) const;
+  bool planar_head_ready() const;
   bool join_ready() const;
   // Au chargement seulement, stream vidé entre les deux placements.
   void use_join(bool enabled);
@@ -156,8 +157,9 @@ class ConvNet {
   // Les convolutions sur stream ; bound : la mémoire des tenseurs externes, dans l'ordre d'Io::external ;
   // piece positif : celles de ce morceau seulement, sur ce que la zone garde (pour son temps).
   // Avec rgb, essaie d'écrire directement en trois plans. Renvoie vrai si ces plans ont été écrits.
+  // planar_head désigne les trois images de l'entrée x0 quand la fusion de sa lecture est validée.
   bool run(cudaStream_t stream, void* zone, float* partial, std::span<const void* const> bound,
-           int piece = -1, __half* rgb = nullptr) const;
+           int piece = -1, __half* rgb = nullptr, const std::array<const __half*, 3>* planar_head = nullptr) const;
 
  private:
   void lifetimes(const prepare::GmfssGrid& grid, const Io& io);
@@ -176,6 +178,7 @@ class ConvNet {
   std::vector<Placed> tensors_;
   std::vector<Placed> join_tensors_;
   bool join_on_ = false;
+  int planar_head_ = -1;
   std::vector<Layer> layers_;
   std::int64_t zone_bytes_ = 0;
   std::int64_t partial_bytes_ = 0;

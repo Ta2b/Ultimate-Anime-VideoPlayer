@@ -199,36 +199,55 @@ std::expected<std::vector<std::string>, Refusal> GmfssFusedEngine::try_native(
       outcome->lines.push_back("GMFSS natif, IFNet : " + tested.error().detail);
     }
   }
-  if (native_on_ && native_->join_ready()) {
+  if (native_on_ && (native_->join_ready() || native_->planar_head_ready())) {
     const auto bytes = elements * sizeof(__half);
     const auto pass = [&](int marker) -> std::expected<std::vector<__half>, Refusal> {
       if (auto ok = cuda_check(cudaMemsetAsync(fused_address(*out), marker, bytes, scratch.stream),
-                               "GMFSS natif : préparation de la sortie des anneaux"); !ok)
+                               "GMFSS natif : préparation de la sortie du GridNet"); !ok)
         return std::unexpected(std::move(ok.error()));
       auto launched = enqueue_native(scratch.stream, shared, inputs, *out);
-      if (auto ok = cuda_check(cudaStreamSynchronize(scratch.stream), "GMFSS natif : essai des anneaux"); !ok)
+      if (auto ok = cuda_check(cudaStreamSynchronize(scratch.stream), "GMFSS natif : essai du GridNet"); !ok)
         return std::unexpected(std::move(ok.error()));
       if (!launched) return std::unexpected(std::move(launched.error()));
       return unit.fetch(0);
     };
-    const auto check_bits = [&]() -> std::expected<bool, Refusal> {
-      auto reference = pass(0xff);
-      if (!reference) return std::unexpected(std::move(reference.error()));
-      native_->use_join(true);
-      auto candidate = pass(0x7e);
-      if (!candidate) return std::unexpected(std::move(candidate.error()));
-      return std::memcmp(reference->data(), candidate->data(), bytes) == 0;
-    };
-    const auto same = check_bits();
-    if (!same || !*same) native_->use_join(false);
-    if (!same) {
-      if (same.error().code == RefusalCode::DeviceLost) return std::unexpected(same.error());
+    const auto reference = pass(0xff);
+    if (!reference) {
+      if (reference.error().code == RefusalCode::DeviceLost) return std::unexpected(reference.error());
       if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-        return std::unexpected(lost_refusal(lost, "GMFSS natif : essai des anneaux"));
-      outcome->lines.push_back("GMFSS natif, anneaux C64 avec addition écartés : " + same.error().detail);
+        return std::unexpected(lost_refusal(lost, "GMFSS natif : essai du GridNet"));
+      outcome->lines.push_back("GMFSS natif, référence des variantes du GridNet indisponible : " +
+                               reference.error().detail);
     } else {
-      outcome->lines.emplace_back(*same ? "GMFSS natif, anneaux C64 avec addition retenus (FP16 identique)"
-                                       : "GMFSS natif, anneaux C64 avec addition écartés (sortie FP16 différente)");
+      const auto verify = [&](auto switch_on, std::string_view kept, std::string_view refused)
+          -> std::expected<void, Refusal> {
+        switch_on(true);
+        const auto candidate = pass(0x7e);
+        if (candidate && std::memcmp(reference->data(), candidate->data(), bytes) == 0) {
+          outcome->lines.emplace_back(kept);
+          return {};
+        }
+        switch_on(false);
+        if (!candidate && candidate.error().code == RefusalCode::DeviceLost)
+          return std::unexpected(candidate.error());
+        if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+          return std::unexpected(lost_refusal(lost, "GMFSS natif : essai du GridNet"));
+        outcome->lines.push_back(std::string(refused) +
+                                 (candidate ? "sortie FP16 différente" : candidate.error().detail));
+        return {};
+      };
+      if (native_->join_ready()) {
+        auto checked = verify([&](bool on) { native_->use_join(on); },
+                              "GMFSS natif, anneaux C64 avec addition retenus (FP16 identique)",
+                              "GMFSS natif, anneaux C64 avec addition écartés : ");
+        if (!checked) return std::unexpected(std::move(checked.error()));
+      }
+      if (native_->planar_head_ready()) {
+        auto checked = verify([&](bool on) { native_->use_planar_head(on); },
+                              "GMFSS natif, lecture de la tête en neuf plans retenue (FP16 identique)",
+                              "GMFSS natif, lecture de la tête en neuf plans écartée : ");
+        if (!checked) return std::unexpected(std::move(checked.error()));
+      }
     }
   }
   return std::move(outcome->lines);
