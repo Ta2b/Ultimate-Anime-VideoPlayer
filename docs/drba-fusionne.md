@@ -40,6 +40,11 @@ tient dans six noyaux.
   pixels `x + flot` en FP32 (`pixel_tap`, `tap_of`), égale à la grille normalisée `base + flot × pas` du graphe ramenée en
   pixels, sans l'arrondi FP16 de la base ni de la somme (A46-04). Le graphe livré (`models-interp-1`, réexporté avec
   `DRBA_GRID_OPS`) garde lui aussi sa grille en FP32 depuis le 10 novembre 2026 (A03-18).
+- Sur Ada en 1920×1088, le dernier bloc officiel est candidat au calcul CUDA natif. Ses huit résidus utilisent un
+  Winograd vertical et la projection calcule les vingt canaux lus par le warp. Pour les autres instants d'un même
+  trio, les sommes FP32 des 48 canaux fixes de la première convolution sont reprises dans le même ordre. Le
+  chargement compare flot et masque à TensorRT, vérifie au bit près la reprise du cache et chronomètre les deux
+  voies sous graphe CUDA. Un échec de ces contrôles garde le bloc TensorRT.
 - Repli sur le DistilDRBA entier : réglage éteint, autre backend, cran Qualité avec son graphe `_fp32` (un cran dont
   le graphe manque garde la chaîne, et Performance la préfère au graphe `_fp8` : `drba_tier`), structure inconnue,
   taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne passe trois fois sur
