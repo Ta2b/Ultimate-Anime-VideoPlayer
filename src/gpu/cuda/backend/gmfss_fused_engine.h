@@ -80,6 +80,10 @@ class GmfssFusedEngine final : public Engine {
                                                 const std::shared_ptr<SharedActivations>& shared,
                                                 std::span<const Tensor> inputs, const Tensor& out,
                                                 double min_db);
+  std::expected<void, Refusal> try_grid_variants(cudaStream_t stream,
+                                                 const std::shared_ptr<SharedActivations>& shared,
+                                                 std::span<const Tensor> inputs, const Tensor& out,
+                                                 double min_db, std::vector<std::string>& lines);
 
   // Les entrées de la fusion, par nom.
   enum Input : std::size_t { kHalf0, kHalf1, kTime, kW01, kW02, kW03, kW11, kW12, kW13, kInputs };

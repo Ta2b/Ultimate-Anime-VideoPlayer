@@ -81,9 +81,15 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   engine->own_activation_ = activation;
   engine->scratch_offset_ = engine->scratch_offset_for(*shared);
   if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
+  if (auto ok = engine->check_loaded(shared); !ok) return std::unexpected(std::move(ok.error()));
+  return engine;
+}
 
+std::expected<void, Refusal> RifeFusedEngine::check_loaded(const std::shared_ptr<SharedActivations>& shared) {
   // Une image de zéros trois fois par toute la chaîne, sur un flux à part : exécution à froid, capture,
   // rejeu.
+  const int h = height_;
+  const int w = width_;
   const std::size_t in_bytes = std::size_t{kernels::kFusedInputPlanes} * static_cast<std::size_t>(h) *
                                static_cast<std::size_t>(w) * 2U;
   const std::size_t out_bytes =
@@ -113,7 +119,7 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   const auto out = reinterpret_cast<std::uintptr_t>(scratch_output);
   const Tensor input = fused_tensor(in, 0, kernels::kFusedInputPlanes, h, w);
   std::vector<Tensor> outputs;
-  if (key.motion) {
+  if (motion_) {
     outputs = {
         fused_tensor(out, 0, 4, h, w),
         fused_tensor(out + 4U * static_cast<std::size_t>(h) * static_cast<std::size_t>(w) * 2U, 0, 1, h, w)};
@@ -122,7 +128,7 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   }
   for (int pass = 0; pass < 3; ++pass) {
     const Tensor inputs[]{input};
-    if (auto ok = engine->enqueue(scratch.stream, shared, inputs, outputs); !ok)
+    if (auto ok = enqueue(scratch.stream, shared, inputs, outputs); !ok)
       return std::unexpected(std::move(ok.error()));
     if (cudaError_t e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess)
       return failed(e, "exécution");
@@ -131,12 +137,8 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   // graphes de l'essai, sur des adresses qui disparaissent, ne servent plus ; les séries d'échecs repartent
   // de zéro, et sa notice part avec eux. L'encodage que l'essai a gardé venait de ses tampons, libérés au
   // retour : une entrée de la chaîne allouée à la même adresse ne doit pas le reprendre.
-  engine->graphs_.clear();
-  static_cast<void>(engine->graphs_.take_notice());
-  engine->kept_.reset();
-  engine->hint_ = Hint::None;
-  engine->warm_ready_ = false;
-  return engine;
+  forget_passes();
+  return {};
 }
 
 // Les moteurs des blocs, de formes vérifiées, tous en plans ou tous en HWC8 (hwc8_) ; rend leurs plus

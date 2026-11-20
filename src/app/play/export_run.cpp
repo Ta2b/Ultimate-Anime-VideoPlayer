@@ -126,9 +126,15 @@ std::optional<ExportEnd> poll_export_events(PlaceboScreen& screen, bool& details
 // 512 Mio, et la taille de la source de préférence), et un FAT32 (4 Gio par fichier) est signalé.
 std::optional<Refusal> destination_problem(const std::filesystem::path& output,
                                            const std::filesystem::path& source) {
-  const std::filesystem::path dir = output.parent_path().empty() ? "." : output.parent_path();
-  const std::filesystem::path probe = dir / ".kirari-write-probe";
   std::error_code error;
+  if (output.empty() || std::filesystem::equivalent(output, source, error))
+    return Refusal{RefusalCode::FileUnwritable, "le fichier exporté remplacerait la source"};
+  const auto parent = output.parent_path();
+  if (!parent.empty() && !std::filesystem::is_directory(parent, error))
+    return Refusal{RefusalCode::FileUnwritable,
+                   std::format("dossier introuvable : {}", prepare::utf8_path(parent))};
+  const std::filesystem::path dir = parent.empty() ? "." : parent;
+  const std::filesystem::path probe = dir / ".kirari-write-probe";
   {
     std::ofstream file(probe, std::ios::binary);
     if (!(file << 'x'))
@@ -217,16 +223,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
     return ExportOutcome{.end = ExportEnd::Failed,
                          .notice = i18n::ui_tr_format("Export stopped: {}", visible_error(refusal))};
   };
-  std::error_code unknown;
-  if (job.output.empty() || std::filesystem::equivalent(job.output, p.options.file, unknown))
-    return stopped(Refusal{RefusalCode::FileUnwritable, "le fichier exporté remplacerait la source"});
-
   // Le dossier de destination avant la préparation des moteurs, qui dure : un refus tardif la perdrait.
-  if (const auto parent = job.output.parent_path();
-      !parent.empty() && !std::filesystem::is_directory(parent, unknown)) {
-    return stopped(
-        Refusal{RefusalCode::FileUnwritable, std::format("dossier introuvable : {}", parent.string())});
-  }
   if (auto problem = destination_problem(job.output, p.options.file)) return stopped(*problem);
   std::vector<std::string> unavailable;
   const PlaySettings settings = within_engines(export_chain(job.chain), p.engines, unavailable);

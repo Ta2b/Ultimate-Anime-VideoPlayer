@@ -70,6 +70,47 @@ __device__ __forceinline__ __half* flow_slot(const FusedGlueParams& params, std:
   return static_cast<__half*>(params.x) + pixel * params.x_pitch + first;
 }
 
+// À moitié, chaque pixel garde les mêmes quatre prises pleine résolution et le même ordre de somme.
+template <int K, int Half, bool Reuse, bool Packed>
+__device__ __forceinline__ void glue_half_resolution(__half* slot, const FusedGlueParams& g,
+                                                     const warp::Staged (&src)[K], int x, int y,
+                                                     float (&v)[16]) {
+  float fl[4];
+  float top[16];
+  float a[16];
+  float top_flow[4], bottom_flow[4];
+  glue_point<K, Half, Reuse, Packed>(g, src, 2 * x, 2 * y, 0.5F, top, fl);
+  if constexpr (Reuse && Half == 0) {
+#pragma unroll
+    for (int k = 0; k < 4; ++k) top_flow[k] = warp::rounded(fl[k] * 0.5F);
+  }
+  glue_point<K, Half, Reuse, Packed>(g, src, 2 * x + 1, 2 * y, 0.5F, a, fl);
+  if constexpr (Reuse && Half == 0) {
+#pragma unroll
+    for (int k = 0; k < 4; ++k) top_flow[k] += warp::rounded(fl[k] * 0.5F);
+  }
+#pragma unroll
+  for (int c = 0; c < 16; ++c) top[c] += a[c];
+  glue_point<K, Half, Reuse, Packed>(g, src, 2 * x, 2 * y + 1, 0.5F, v, fl);
+  if constexpr (Reuse && Half == 0) {
+#pragma unroll
+    for (int k = 0; k < 4; ++k) bottom_flow[k] = warp::rounded(fl[k] * 0.5F);
+  }
+  glue_point<K, Half, Reuse, Packed>(g, src, 2 * x + 1, 2 * y + 1, 0.5F, a, fl);
+#pragma unroll
+  for (int c = 0; c < 16; ++c) v[c] = (top[c] + (v[c] + a[c])) * 0.25F;
+  if constexpr (Reuse && Half == 0) {
+    // Comme Half=1 sans cache : FP16 par point, somme ((00 + 01) + (10 + 11)), puis stockage FP16.
+#pragma unroll
+    for (int k = 0; k < 4; ++k)
+      fl[k] = (top_flow[k] + (bottom_flow[k] + warp::rounded(fl[k] * 0.5F))) * 0.25F;
+    *reinterpret_cast<uint2*>(slot + 16) = make_uint2(half_bits(fl[0], fl[1]), half_bits(fl[2], fl[3]));
+  } else if constexpr (Reuse) {
+#pragma unroll
+    for (int k = 0; k < 4; ++k) v[8 + k] = __half2float(slot[16 + k]);
+  }
+}
+
 // La tranche Half de X sur la tuile d'entrée d'origine (y0, x0), au pas kLds, colonnes paires puis impaires
 // (smem_col) ; zéros hors de X. D = 1 : le point pleine résolution lui-même ; la tranche 1 écrit aussi le
 // flot des pixels propres de la tuile dans g.x : tous sauf ceux de la première ligne
@@ -87,8 +128,8 @@ __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, c
     __half* const slot = s + (r * Geo::kIC + smem_col<2, Geo::kIC>(col)) * kLds;
     float v[16] = {};
     if (y >= 0 && y < xh && x >= 0 && x < xw) {
-      float fl[4];
       if constexpr (D == 1) {
+        float fl[4];
         glue_point<K, Half, Reuse, Packed, Fixed>(g, src, x, y, 1.F, v, fl, slot + 16);
         if constexpr (Reuse && Half == 0) {
           // flow_at arrondit son dernier Add en FP16. Le padding est hors de la tranche lue par accumulate.
@@ -101,39 +142,7 @@ __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, c
               make_uint2(half_bits(v[8], v[9]), half_bits(v[10], v[11]));
         }
       } else {
-        float top[16];
-        float a[16];
-        float top_flow[4], bottom_flow[4];
-        glue_point<K, Half, Reuse, Packed>(g, src, 2 * x, 2 * y, 0.5F, top, fl);
-        if constexpr (Reuse && Half == 0) {
-#pragma unroll
-          for (int k = 0; k < 4; ++k) top_flow[k] = warp::rounded(fl[k] * 0.5F);
-        }
-        glue_point<K, Half, Reuse, Packed>(g, src, 2 * x + 1, 2 * y, 0.5F, a, fl);
-        if constexpr (Reuse && Half == 0) {
-#pragma unroll
-          for (int k = 0; k < 4; ++k) top_flow[k] += warp::rounded(fl[k] * 0.5F);
-        }
-#pragma unroll
-        for (int c = 0; c < 16; ++c) top[c] += a[c];
-        glue_point<K, Half, Reuse, Packed>(g, src, 2 * x, 2 * y + 1, 0.5F, v, fl);
-        if constexpr (Reuse && Half == 0) {
-#pragma unroll
-          for (int k = 0; k < 4; ++k) bottom_flow[k] = warp::rounded(fl[k] * 0.5F);
-        }
-        glue_point<K, Half, Reuse, Packed>(g, src, 2 * x + 1, 2 * y + 1, 0.5F, a, fl);
-#pragma unroll
-        for (int c = 0; c < 16; ++c) v[c] = (top[c] + (v[c] + a[c])) * 0.25F;
-        if constexpr (Reuse && Half == 0) {
-          // Comme Half=1 sans cache : FP16 par point, somme ((00 + 01) + (10 + 11)), puis stockage FP16.
-#pragma unroll
-          for (int k = 0; k < 4; ++k)
-            fl[k] = (top_flow[k] + (bottom_flow[k] + warp::rounded(fl[k] * 0.5F))) * 0.25F;
-          *reinterpret_cast<uint2*>(slot + 16) = make_uint2(half_bits(fl[0], fl[1]), half_bits(fl[2], fl[3]));
-        } else if constexpr (Reuse) {
-#pragma unroll
-          for (int k = 0; k < 4; ++k) v[8 + k] = __half2float(slot[16 + k]);
-        }
+        glue_half_resolution<K, Half, Reuse, Packed>(slot, g, src, x, y, v);
       }
     }
     auto* to = reinterpret_cast<uint4*>(slot);

@@ -70,6 +70,39 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
   stats_pending_.push_back({.ticket = *ticket, .pts_us = frame.pts_us, .transfer = transfer});
 }
 
+std::expected<std::optional<core::CadenceStep>, Refusal> UpscaleStage::advance_cadence(
+    const DecodedFrame& frame, Factor factor, bool free_mode, bool steady) {
+  std::optional<core::CadenceStep> step;
+  if (steady) {
+    cadence_.reset();
+    free_grid_.reset();
+    step = steady_grid_.push(core::stamp_of(frame), setup_.live->steady_factor());
+  } else if (free_mode) {
+    cadence_.reset();
+    step = free_grid_.push(core::stamp_of(frame), free_inputs(frame));
+  } else if (factor.num > factor.den &&
+             (valid_factor(factor) || (setup_.live != nullptr && factor.den <= kLiveFactorMaxDen &&
+                                       factor.num <= core::kAutoMaxStep * factor.den))) {
+    if (!cadence_) {
+      auto made = core::CadenceAccumulator::create({.num = factor.num, .den = factor.den});
+      if (!made) return std::unexpected(std::move(made.error()));
+      cadence_.emplace(*made);
+      cadence_factor_ = factor;
+    } else if (cadence_factor_ != factor) {
+      // Le mode auto bouge le facteur par petits pas : la grille garde sa phase (aucun saut de rythme).
+      if (auto moved = cadence_->retarget({.num = factor.num, .den = factor.den}); !moved)
+        return std::unexpected(std::move(moved.error()));
+      cadence_factor_ = factor;
+    }
+    step = cadence_->push(core::stamp_of(frame));
+  } else {
+    cadence_.reset();
+  }
+  if (!free_mode) free_grid_.reset();
+  if (!steady) steady_grid_.reset();
+  return step;
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& frame) {
   KIRARI_TRACE("upscale.outputs");
@@ -106,7 +139,6 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   if (hidden) factor = Factor{};
   // La grille de sortie de la paire (core/cadence.h), refaite quand le facteur change : la paire
   // suivante repart alors de cette image.
-  std::optional<core::CadenceStep> step;
   // mode Rapide : pas de facteur, la grille de la paire vient de l'horloge prédite et du temps de service.
   const bool free_mode = interpolates() && setup_.live && setup_.live->free_active() && !hidden;
   const bool steady = free_mode && setup_.live->steady_active();
@@ -118,33 +150,9 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     if (auto ok = settle_motion(); !ok) return std::unexpected(std::move(ok.error()));
     heavy_pair_ = strong_motion_;
   }
-  if (steady) {
-    cadence_.reset();
-    free_grid_.reset();
-    step = steady_grid_.push(core::stamp_of(frame), setup_.live->steady_factor());
-  } else if (free_mode) {
-    cadence_.reset();
-    step = free_grid_.push(core::stamp_of(frame), free_inputs(frame));
-  } else if (factor.num > factor.den &&
-             (valid_factor(factor) || (setup_.live != nullptr && factor.den <= kLiveFactorMaxDen &&
-                                       factor.num <= core::kAutoMaxStep * factor.den))) {
-    if (!cadence_) {
-      auto made = core::CadenceAccumulator::create({.num = factor.num, .den = factor.den});
-      if (!made) return std::unexpected(std::move(made.error()));
-      cadence_.emplace(*made);
-      cadence_factor_ = factor;
-    } else if (cadence_factor_ != factor) {
-      // Le mode auto bouge le facteur par petits pas : la grille garde sa phase (aucun saut de rythme).
-      if (auto moved = cadence_->retarget({.num = factor.num, .den = factor.den}); !moved)
-        return std::unexpected(std::move(moved.error()));
-      cadence_factor_ = factor;
-    }
-    step = cadence_->push(core::stamp_of(frame));
-  } else {
-    cadence_.reset();
-  }
-  if (!free_mode) free_grid_.reset();
-  if (!steady) steady_grid_.reset();
+  auto advanced = advance_cadence(frame, factor, free_mode, steady);
+  if (!advanced) return std::unexpected(std::move(advanced.error()));
+  const auto& step = *advanced;
   const bool on_grid = step && step->event == core::GridEvent::Pair && !step->instants().empty() &&
                        !step->instants().front().is_source();
   // ×N demandé, arrondi au-dessus (×1,5 compte pour ×2) ; 1 : pas d'interpolation.
@@ -361,6 +369,37 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
   return true;
 }
 
+std::expected<RingStage::Output, Refusal> UpscaleStage::produce_source(const DecodedFrame& frame,
+                                                                       std::int64_t pts_us,
+                                                                       std::uint32_t slot,
+                                                                       const gpu::RingWrite& sync) {
+  use_lane(gpu::Lane::Upscale);
+  std::expected<void, Refusal> ok;
+  if (warps_spanned()) {
+    ok = span_current().and_then([&] { return write_slot(spanned(current_), slot, sync); });
+  } else if (reuse_span_ && output_has_source_) {
+    ok = write_slot(output_->tensor(), slot, sync);  // SPAN de la précédente, identique
+  } else {
+    ok = finish(rgb_[current_]->tensor(), slot, sync);
+  }
+  if (!ok) return std::unexpected(std::move(ok.error()));
+  output_has_source_ = setup_.engine != nullptr;
+  shown_source_ = true;
+  previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
+  return source_output(pts_us != kNoPts ? pts_us : frame.pts_us, frame.id);
+}
+
+std::expected<void, Refusal> UpscaleStage::interpolate_unspanned(std::uint32_t output, float t,
+                                                                 LayerRingOutput* layer_ring) {
+  if (!by_motion() && !drba()) return interpolate_image(t);
+  if (drba_motion()) return interpolate_drba_motion(output, false, Target{.tensor = &middle()});
+  if (drba()) return interpolate_drba(output);
+  const gpu::Tensor& now = rgb_[current_]->tensor();
+  return interpolate_by_motion(
+      output, rgb_[current_ ^ 1U]->tensor(), smooth_first_ ? smooth_b_rgb() : now,
+      Target{.tensor = &middle(), .layer_ring = setup_.engine == nullptr ? layer_ring : nullptr});
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFrame& frame,
                                                                 std::uint32_t output, std::uint32_t slot,
@@ -377,22 +416,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   const gpu::RingWrite sync{.wait_value = wait_value, .signal_value = signal_value};
   const bool last = output + 1 >= outputs_;
   const bool b_early = copy_pair_ && instant.t < 1.0F;  // b écrite à un instant intermédiaire
-  if (instant.t >= 1.0F || b_early) {                   // l'image elle-même
-    use_lane(gpu::Lane::Upscale);
-    std::expected<void, Refusal> ok;
-    if (warps_spanned()) {
-      ok = span_current().and_then([&] { return write_slot(spanned(current_), slot, sync); });
-    } else if (reuse_span_ && output_has_source_) {
-      ok = write_slot(output_->tensor(), slot, sync);  // SPAN de la précédente, identique
-    } else {
-      ok = finish(now, slot, sync);
-    }
-    if (!ok) return std::unexpected(std::move(ok.error()));
-    output_has_source_ = setup_.engine != nullptr;
-    shown_source_ = true;
-    previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
-    return source_output(instant.pts_us != kNoPts ? instant.pts_us : frame.pts_us, frame.id);
-  }
+  if (instant.t >= 1.0F || b_early) return produce_source(frame, instant.pts_us, slot, sync);
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
   middle_rank_ = middles_done_++;
@@ -444,16 +468,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     made.repeated = drba_held_;
     return held_b(made, frame, output);
   }
-  if (by_motion() || drba()) {
-    auto ok =
-        drba_motion() ? interpolate_drba_motion(output, false, Target{.tensor = &middle()})
-        : drba()
-            ? interpolate_drba(output)
-            : interpolate_by_motion(
-                  output, rgb_[current_ ^ 1U]->tensor(), smooth_first_ ? smooth_b_rgb() : now,
-                  Target{.tensor = &middle(), .layer_ring = setup_.engine == nullptr ? layer_ring : nullptr});
-    if (!ok) return std::unexpected(std::move(ok.error()));
-  } else if (auto ok = interpolate_image(instant.t); !ok) {
+  if (auto ok = interpolate_unspanned(output, instant.t, layer_ring); !ok) {
     return std::unexpected(std::move(ok.error()));
   }
   use_lane(gpu::Lane::Upscale);

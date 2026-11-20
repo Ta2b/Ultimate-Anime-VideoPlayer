@@ -49,13 +49,27 @@ std::vector<__half> test_input(const Shape& shape, int input, float shift) {
   return out;
 }
 
+std::size_t rgb_elements(const Tensor& out) {
+  return static_cast<std::size_t>(3 * out.shape.dims[2] * out.shape.dims[3]);
+}
+
+std::expected<std::vector<__half>, Refusal> read_trial_output(const Tensor& out) {
+  std::vector<__half> host(rgb_elements(out));
+  if (auto ok = cuda_check(
+          cudaMemcpy(host.data(), fused_address(out), host.size() * sizeof(__half), cudaMemcpyDeviceToHost),
+          "GMFSS natif : copie de l'essai");
+      !ok)
+    return std::unexpected(std::move(ok.error()));
+  return host;
+}
+
 template <class Switch>
 std::expected<void, Refusal> verify_tail_speed(GmfssNativeNet& native, const Switch& use,
                                                std::string_view name, std::string_view quality,
                                                cudaStream_t stream, void* out,
                                                std::vector<std::string>& lines) {
   FusedGraphs graphs(2, "GMFSS natif, essai du PixelShuffle");
-  const auto timed = gmfss_trial::times(
+  auto timed = gmfss_trial::times(
       stream, 4,
       [&](std::size_t variant) {
         use((variant & 1U) != 0);
@@ -71,7 +85,15 @@ std::expected<void, Refusal> verify_tail_speed(GmfssNativeNet& native, const Swi
                     captures.capture_failures == 0 && captures.launch_failures == 0 &&
                     gmfss_mix::beats((*timed)[0], (*timed)[1]) && gmfss_mix::beats((*timed)[2], (*timed)[3]);
   use(keep);
-  if (!timed && timed.error().code == RefusalCode::DeviceLost) return std::unexpected(timed.error());
+  if (!timed) {
+    if (timed.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(timed.error()));
+    // Une soumission partielle peut rester en vol quand la mesure renonce avant l'événement d'arrêt.
+    if (auto drained = cuda_check(cudaStreamSynchronize(stream), "GMFSS natif : fin de l'essai de la queue");
+        !drained) {
+      if (drained.error().code == RefusalCode::DeviceLost) return drained;
+      timed = std::unexpected(std::move(drained.error()));
+    }
+  }
   if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
     return std::unexpected(lost_refusal(lost, "GMFSS natif : essai du PixelShuffle"));
   if (timed) {
@@ -85,9 +107,52 @@ std::expected<void, Refusal> verify_tail_speed(GmfssNativeNet& native, const Swi
 }
 
 template <class Pass, class Full>
+std::expected<void, Refusal> verify_folded_tail(GmfssNativeNet& native, const Pass& pass, const Full& full,
+                                                const std::vector<__half>& reference, double min_db,
+                                                cudaStream_t stream, void* out,
+                                                std::vector<std::string>& lines) {
+  const auto trt = full();
+  if (!trt) {
+    if (trt.error().code == RefusalCode::DeviceLost) return std::unexpected(trt.error());
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(lost_refusal(lost, "GMFSS natif : référence de la queue composée"));
+    lines.push_back("GMFSS natif, queue composée écartée : " + trt.error().detail);
+    return {};
+  }
+  const auto use = [&](bool on) { native.use_folded_tail(on); };
+  use(true);
+  const auto candidate = pass(0x7e);
+  use(false);
+  if (!candidate && candidate.error().code == RefusalCode::DeviceLost)
+    return std::unexpected(candidate.error());
+  if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+    return std::unexpected(lost_refusal(lost, "GMFSS natif : essai de la queue composée"));
+  if (!candidate) {
+    lines.push_back("GMFSS natif, queue composée écartée : " + candidate.error().detail);
+    return {};
+  }
+  if (candidate->size() != reference.size()) {
+    lines.emplace_back("GMFSS natif, queue composée écartée : taille RGB différente");
+    return {};
+  }
+  const double db = gmfss_trial::output_db(reference, *candidate);
+  const double trt_db = gmfss_trial::output_db(*trt, *candidate);
+  // La comparaison avec le chemin natif borne également les écarts locaux, aux bords compris.
+  float peak = 0.F;
+  for (std::size_t i = 0; i < reference.size(); ++i)
+    peak = std::max(peak, std::fabs(__half2float((*candidate)[i]) - __half2float(reference[i])));
+  const auto quality =
+      std::format("écart {:.2f} dB au natif et {:.2f} dB à TensorRT, pic {:.6f}", db, trt_db, peak);
+  if (db >= 60. && trt_db >= min_db && peak <= 0.004F)
+    return verify_tail_speed(native, use, "queue composée", quality, stream, out, lines);
+  lines.push_back(std::format("GMFSS natif, queue composée écartée ({})", quality));
+  return {};
+}
+
+template <class Pass, class Full>
 std::expected<void, Refusal> verify_grid_variants(GmfssNativeNet& native, const Pass& pass, const Full& full,
-                                                  double min_db, std::size_t bytes, cudaStream_t stream,
-                                                  void* out, std::vector<std::string>& lines) {
+                                                  double min_db, cudaStream_t stream, void* out,
+                                                  std::vector<std::string>& lines) {
   const auto reference = pass(0xff);
   if (!reference) {
     if (reference.error().code == RefusalCode::DeviceLost) return std::unexpected(reference.error());
@@ -95,76 +160,51 @@ std::expected<void, Refusal> verify_grid_variants(GmfssNativeNet& native, const 
       return std::unexpected(lost_refusal(lost, "GMFSS natif : essai du GridNet"));
     lines.push_back("GMFSS natif, référence des variantes du GridNet indisponible : " +
                     reference.error().detail);
-  } else {
-    const auto verify = [&](auto switch_on, std::string_view kept,
-                            std::string_view refused) -> std::expected<bool, Refusal> {
-      switch_on(true);
-      const auto candidate = pass(0x7e);
-      if (candidate && std::memcmp(reference->data(), candidate->data(), bytes) == 0) {
-        if (!kept.empty()) lines.emplace_back(kept);
-        return true;
-      }
-      switch_on(false);
-      if (!candidate && candidate.error().code == RefusalCode::DeviceLost)
-        return std::unexpected(candidate.error());
-      if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-        return std::unexpected(lost_refusal(lost, "GMFSS natif : essai du GridNet"));
-      lines.push_back(std::string(refused) +
-                      (candidate ? "sortie FP16 différente" : candidate.error().detail));
-      return false;
-    };
-    if (native.join_ready()) {
-      auto checked = verify([&](bool on) { native.use_join(on); },
-                            "GMFSS natif, anneaux C64 avec addition retenus (FP16 identique)",
-                            "GMFSS natif, anneaux C64 avec addition écartés : ");
-      if (!checked) return std::unexpected(std::move(checked.error()));
+    return {};
+  }
+  const auto verify = [&](auto switch_on, std::string_view kept,
+                          std::string_view refused) -> std::expected<bool, Refusal> {
+    switch_on(true);
+    const auto candidate = pass(0x7e);
+    const auto bytes = reference->size() * sizeof(__half);
+    if (candidate && candidate->size() == reference->size() &&
+        std::memcmp(reference->data(), candidate->data(), bytes) == 0) {
+      if (!kept.empty()) lines.emplace_back(kept);
+      return true;
     }
-    if (native.planar_head_ready()) {
-      auto checked = verify([&](bool on) { native.use_planar_head(on); },
-                            "GMFSS natif, lecture de la tête en neuf plans retenue (FP16 identique)",
-                            "GMFSS natif, lecture de la tête en neuf plans écartée : ");
-      if (!checked) return std::unexpected(std::move(checked.error()));
-    }
-    if (native.tail_ready()) {
-      auto checked =
-          verify([&](bool on) { native.use_tail(on); }, {}, "GMFSS natif, anneau du PixelShuffle écarté : ");
-      if (!checked) return std::unexpected(std::move(checked.error()));
-      if (*checked) {
-        auto speed = verify_tail_speed(
-            native, [&](bool on) { native.use_tail(on); }, "anneau du PixelShuffle", "FP16 identique", stream,
-            out, lines);
-        if (!speed) return speed;
-      }
-    }
-    if (native.folded_tail_ready()) {
-      const auto trt = full();
-      if (!trt && trt.error().code == RefusalCode::DeviceLost) return std::unexpected(trt.error());
-      const auto use = [&](bool on) { native.use_folded_tail(on); };
-      use(true);
-      const auto candidate = pass(0x7e);
-      use(false);
-      if (!candidate && candidate.error().code == RefusalCode::DeviceLost)
-        return std::unexpected(candidate.error());
-      if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-        return std::unexpected(lost_refusal(lost, "GMFSS natif : essai de la queue composée"));
-      if (trt && candidate) {
-        const double db = gmfss_trial::output_db(*reference, *candidate);
-        const double trt_db = gmfss_trial::output_db(*trt, *candidate);
-        // La comparaison avec le chemin natif borne également les écarts locaux, aux bords compris.
-        float peak = 0.F;
-        for (std::size_t i = 0; i < candidate->size(); ++i)
-          peak = std::max(peak, std::fabs(__half2float((*candidate)[i]) - __half2float((*reference)[i])));
-        const auto quality =
-            std::format("écart {:.2f} dB au natif et {:.2f} dB à TensorRT, pic {:.6f}", db, trt_db, peak);
-        if (db >= 60. && trt_db >= min_db && peak <= 0.004F)
-          return verify_tail_speed(native, use, "queue composée", quality, stream, out, lines);
-        lines.push_back(std::format("GMFSS natif, queue composée écartée ({})", quality));
-      } else {
-        lines.push_back("GMFSS natif, queue composée écartée : " +
-                        (trt ? candidate.error().detail : trt.error().detail));
-      }
+    switch_on(false);
+    if (!candidate && candidate.error().code == RefusalCode::DeviceLost)
+      return std::unexpected(candidate.error());
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(lost_refusal(lost, "GMFSS natif : essai du GridNet"));
+    lines.push_back(std::string(refused) + (candidate ? "sortie FP16 différente" : candidate.error().detail));
+    return false;
+  };
+  if (native.join_ready()) {
+    auto checked = verify([&](bool on) { native.use_join(on); },
+                          "GMFSS natif, anneaux C64 avec addition retenus (FP16 identique)",
+                          "GMFSS natif, anneaux C64 avec addition écartés : ");
+    if (!checked) return std::unexpected(std::move(checked.error()));
+  }
+  if (native.planar_head_ready()) {
+    auto checked = verify([&](bool on) { native.use_planar_head(on); },
+                          "GMFSS natif, lecture de la tête en neuf plans retenue (FP16 identique)",
+                          "GMFSS natif, lecture de la tête en neuf plans écartée : ");
+    if (!checked) return std::unexpected(std::move(checked.error()));
+  }
+  if (native.tail_ready()) {
+    auto checked =
+        verify([&](bool on) { native.use_tail(on); }, {}, "GMFSS natif, anneau du PixelShuffle écarté : ");
+    if (!checked) return std::unexpected(std::move(checked.error()));
+    if (*checked) {
+      auto speed = verify_tail_speed(
+          native, [&](bool on) { native.use_tail(on); }, "anneau du PixelShuffle", "FP16 identique", stream,
+          out, lines);
+      if (!speed) return speed;
     }
   }
+  if (native.folded_tail_ready())
+    return verify_folded_tail(native, pass, full, *reference, min_db, stream, out, lines);
   return {};
 }
 
@@ -295,15 +335,7 @@ std::expected<std::vector<std::string>, Refusal> GmfssFusedEngine::try_native(
           },
       .piece =
           [&](int piece) { return cuda_check(native_->run_piece(scratch.stream, piece), "GMFSS natif"); },
-      .fetch = [&](std::size_t) -> std::expected<std::vector<__half>, Refusal> {
-        std::vector<__half> host(elements);
-        if (auto ok =
-                cuda_check(cudaMemcpy(host.data(), fused_address(*out), elements * 2, cudaMemcpyDeviceToHost),
-                           "GMFSS natif : copie de l'essai");
-            !ok)
-          return std::unexpected(std::move(ok.error()));
-        return host;
-      }};
+      .fetch = [&](std::size_t) { return read_trial_output(*out); }};
   auto outcome = gmfss_trial::try_mix(unit, min_db, tuning);
   if (!outcome || !outcome->keep) native_.reset();
   native_on_ = native_ != nullptr;
@@ -318,37 +350,43 @@ std::expected<std::vector<std::string>, Refusal> GmfssFusedEngine::try_native(
       outcome->lines.push_back("GMFSS natif, IFNet : " + tested.error().detail);
     }
   }
-  if (native_on_ && (native_->join_ready() || native_->planar_head_ready() || native_->tail_ready() ||
-                     native_->folded_tail_ready())) {
-    const auto bytes = elements * sizeof(__half);
-    const auto pass = [&](int marker) -> std::expected<std::vector<__half>, Refusal> {
-      if (auto ok = cuda_check(cudaMemsetAsync(fused_address(*out), marker, bytes, scratch.stream),
-                               "GMFSS natif : préparation de la sortie du GridNet");
-          !ok)
-        return std::unexpected(std::move(ok.error()));
-      auto launched = enqueue_native(scratch.stream, shared, inputs, *out);
-      if (auto ok = cuda_check(cudaStreamSynchronize(scratch.stream), "GMFSS natif : essai du GridNet"); !ok)
-        return std::unexpected(std::move(ok.error()));
-      if (!launched) return std::unexpected(std::move(launched.error()));
-      return unit.fetch(0);
-    };
-    const auto full = [&]() -> std::expected<std::vector<__half>, Refusal> {
-      const bool was_native = native_on_;
-      native_on_ = false;
-      auto launched = enqueue(scratch.stream, shared, inputs, outputs);
-      native_on_ = was_native;
-      if (auto ok = cuda_check(cudaStreamSynchronize(scratch.stream), "GMFSS natif : référence de la queue");
-          !ok)
-        return std::unexpected(std::move(ok.error()));
-      if (!launched) return std::unexpected(std::move(launched.error()));
-      return unit.fetch(0);
-    };
-    if (auto checked = verify_grid_variants(*native_, pass, full, min_db, bytes, scratch.stream,
-                                            fused_address(*out), outcome->lines);
+  if (native_on_) {
+    if (auto checked = try_grid_variants(scratch.stream, shared, inputs, *out, min_db, outcome->lines);
         !checked)
       return std::unexpected(std::move(checked.error()));
   }
   return std::move(outcome->lines);
+}
+
+std::expected<void, Refusal> GmfssFusedEngine::try_grid_variants(
+    cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, std::span<const Tensor> inputs,
+    const Tensor& out, double min_db, std::vector<std::string>& lines) {
+  if (!native_->join_ready() && !native_->planar_head_ready() && !native_->tail_ready() &&
+      !native_->folded_tail_ready())
+    return {};
+  const auto bytes = rgb_elements(out) * sizeof(__half);
+  const auto pass = [&](int marker) -> std::expected<std::vector<__half>, Refusal> {
+    if (auto ok = cuda_check(cudaMemsetAsync(fused_address(out), marker, bytes, stream),
+                             "GMFSS natif : préparation de la sortie du GridNet");
+        !ok)
+      return std::unexpected(std::move(ok.error()));
+    auto launched = enqueue_native(stream, shared, inputs, out);
+    if (auto ok = cuda_check(cudaStreamSynchronize(stream), "GMFSS natif : essai du GridNet"); !ok)
+      return std::unexpected(std::move(ok.error()));
+    if (!launched) return std::unexpected(std::move(launched.error()));
+    return read_trial_output(out);
+  };
+  const auto full = [&]() -> std::expected<std::vector<__half>, Refusal> {
+    const bool was_native = native_on_;
+    native_on_ = false;
+    auto launched = enqueue(stream, shared, inputs, std::span(&out, 1));
+    native_on_ = was_native;
+    if (auto ok = cuda_check(cudaStreamSynchronize(stream), "GMFSS natif : référence de la queue"); !ok)
+      return std::unexpected(std::move(ok.error()));
+    if (!launched) return std::unexpected(std::move(launched.error()));
+    return read_trial_output(out);
+  };
+  return verify_grid_variants(*native_, pass, full, min_db, stream, fused_address(out), lines);
 }
 
 }  // namespace kirari::gpu::cuda

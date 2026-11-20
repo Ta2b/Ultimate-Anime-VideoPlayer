@@ -117,6 +117,24 @@ void purge_stale_partials(const std::filesystem::path& dir) {
   }
 }
 
+std::expected<void, Refusal> copy_chapters(const AVFormatContext& in, AVFormatContext& out) {
+  if (in.nb_chapters == 0) return {};
+  out.chapters = static_cast<AVChapter**>(av_calloc(in.nb_chapters, sizeof(AVChapter*)));
+  if (out.chapters == nullptr) return refuse(RefusalCode::EncodeFailed, "mux : chapitres");
+  for (unsigned i = 0; i < in.nb_chapters; ++i) {
+    const AVChapter& from = *in.chapters[i];
+    auto* to = static_cast<AVChapter*>(av_mallocz(sizeof(AVChapter)));
+    if (to == nullptr) return refuse(RefusalCode::EncodeFailed, "mux : chapitre");
+    to->id = from.id;
+    to->time_base = from.time_base;
+    to->start = from.start;
+    to->end = from.end;
+    av_dict_copy(&to->metadata, from.metadata, 0);
+    out.chapters[out.nb_chapters++] = to;
+  }
+  return {};
+}
+
 }  // namespace
 
 std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
@@ -306,21 +324,7 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
   }
 
   // Les chapitres, comme ffmpeg -map_chapters les copie.
-  if (in.nb_chapters > 0) {
-    out.chapters = static_cast<AVChapter**>(av_calloc(in.nb_chapters, sizeof(AVChapter*)));
-    if (out.chapters == nullptr) return refuse(RefusalCode::EncodeFailed, "mux : chapitres");
-    for (unsigned i = 0; i < in.nb_chapters; ++i) {
-      const AVChapter& from = *in.chapters[i];
-      auto* to = static_cast<AVChapter*>(av_mallocz(sizeof(AVChapter)));
-      if (to == nullptr) return refuse(RefusalCode::EncodeFailed, "mux : chapitre");
-      to->id = from.id;
-      to->time_base = from.time_base;
-      to->start = from.start;
-      to->end = from.end;
-      av_dict_copy(&to->metadata, from.metadata, 0);
-      out.chapters[out.nb_chapters++] = to;
-    }
-  }
+  if (auto ok = copy_chapters(in, out); !ok) return ok;
 
   if ((out.oformat->flags & AVFMT_NOFILE) == 0) {
     purge_stale_partials(output_path_.parent_path());

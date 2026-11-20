@@ -68,6 +68,12 @@ class DrbaFusedEngine final : public Engine {
 
  private:
   DrbaFusedEngine() = default;
+  std::expected<std::int64_t, Refusal> load_blocks(nvinfer1::IRuntime& runtime,
+                                                   const std::filesystem::path& cache_dir,
+                                                   const DrbaFusedKey& key,
+                                                   const std::shared_ptr<SharedActivations>& shared);
+  std::expected<void, Refusal> check_loaded(const std::shared_ptr<SharedActivations>& shared,
+                                            std::span<const RifeNativeConv> native_tail);
   // La chaîne, lancée ou capturée selon l'appelant.
   // outputs : l'image (1 × 3), ou le flot (1 × 4) et le masque (1 × 1) de la variante mouvement.
   // times_only : pre n'écrit que les plans du temps, l'encodeur et post sont sautés (D6).

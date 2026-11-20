@@ -15,9 +15,7 @@ src/app/play/placebo_open.cpp	kirari::app::play::PlaceboScreen::open	48	216
 src/app/play/placebo_screen.cpp	kirari::app::play::PlaceboScreen::show	29	113
 src/app/play/player.cpp	kirari::app::play::play	119	446
 src/app/play/player_run.cpp	kirari::app::play::run_chain	157	616
-src/app/play/ring_stage.cpp	kirari::app::play::RingStage::emit	26	88
 src/app/play/session.cpp	kirari::app::play::Session::tick	35	81
-src/app/play/settings.cpp	kirari::app::play::change_between	26	39
 src/app/play/settings_export.cpp	kirari::app::play::export_tab	34	134
 src/app/play/settings_toml.cpp	kirari::app::play::settings_from_table	39	152
 src/app/play/upscale_stage.cpp	kirari::app::play::UpscaleStage::outputs	142	234
@@ -41,7 +39,6 @@ src/gpu/ir/onnx_unshuffle.cpp	kirari::gpu::ir::onnx::plan_of	30	68
 src/gpu/ir/op_sample.cpp	kirari::gpu::ir::detail::resize_plan	30	59
 src/gpu/ir/op_window.cpp	kirari::gpu::ir::detail::eval_conv	26	62
 src/gpu/ir/pass_transpose.cpp	kirari::gpu::ir::rewrite	49	120
-src/gpu/span_fp8/onnx_weights.cpp	kirari::gpu::span_fp8::package_from_onnx	60	153
 src/gpu/span_fp8/package.cpp	kirari::gpu::span_fp8::parse	29	54
 src/gpu/vulkan/backend/drba_fused_engine.cpp	kirari::gpu::vk::DrbaFusedEngine::enqueue	29	79
 src/gpu/vulkan/backend/kernel_frames.cpp	kirari::gpu::vk::VulkanKernelOps::staging_for	26	67

@@ -164,6 +164,9 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> allocate();
   void map_yuv_fences();  // l'export : les signaux de ses images YUV écrits par le GPU, s'il sait
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
+  std::expected<std::optional<core::CadenceStep>, Refusal> advance_cadence(const DecodedFrame& frame,
+                                                                           Factor factor, bool free_mode,
+                                                                           bool steady);
   std::expected<void, Refusal> health() override { return setup_.backend->kernels()->health(); }
   bool passed(const DecodedFrame& frame, const DecodedFrame& next) override;
   Fate fate(const DecodedFrame& frame, std::uint32_t output) override;
@@ -175,6 +178,10 @@ class UpscaleStage final : public RingStage {
   Output held_b(Output made, const DecodedFrame& frame, std::uint32_t output);
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
+  std::expected<Output, Refusal> produce_source(const DecodedFrame& frame, std::int64_t pts_us,
+                                                std::uint32_t slot, const gpu::RingWrite& sync);
+  std::expected<void, Refusal> interpolate_unspanned(std::uint32_t output, float t,
+                                                     LayerRingOutput* layer_ring);
   // Où va une image intermédiaire : un tenseur, ou directement le slot du ring (ring_direct_).
   struct Target {
     const gpu::Tensor* tensor = nullptr;
@@ -466,6 +473,7 @@ class UpscaleStage final : public RingStage {
   TemporalBuffers temporal_;
   std::expected<void, Refusal> allocate_temporal();
   void log_temporal() const;
+  void log_interpolation() const;
   // L'Auto plan par plan (upscale_shot.cpp) : le moteur du plan de l'image qui arrive, changé à une coupe
   // seulement ; TemporalFix voulu pour cette image ; le bilan au journal de fin.
   ShotPlay shot_;
@@ -530,9 +538,10 @@ class UpscaleStage final : public RingStage {
   bool gmfss_moving() const;  // la paire du mélange qui bouge assez pour une clé
   std::expected<void, Refusal> run_gmfss(float t, const gpu::Tensor& into);
   std::expected<void, Refusal> fuse_gmfss(float t, const gpu::Tensor& padded);  // la fusion, sans recadrage
-  std::expected<void, Refusal> run_gmfss_pair();    // le graphe « paire », sur sa voie, dans l'autre jeu
-  std::expected<void, Refusal> run_gmfss_early();   // à l'arrivée : les fusions (seul) ou M (le mélange)
-  std::expected<void, Refusal> run_gmfss_ahead();   // la paire suivante en avance, dans l'autre jeu
+  std::expected<void, Refusal> run_gmfss_pair();   // le graphe « paire », sur sa voie, dans l'autre jeu
+  std::expected<void, Refusal> run_gmfss_early();  // à l'arrivée : les fusions (seul) ou M (le mélange)
+  std::expected<void, Refusal> run_gmfss_ahead();  // la paire suivante en avance, dans l'autre jeu
+  bool gmfss_ahead_expired() const;
   std::expected<void, Refusal> allocate_compose();  // les splats de la composition, si elle est demandée
   std::expected<void, Refusal> compose_key(const GmfssKey& key, float t);  // clé composée au travail
   void adopt_gmfss_ahead(const DecodedFrame& frame, bool taken);           // à l'arrivée de l'image d'après

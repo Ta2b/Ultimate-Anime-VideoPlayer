@@ -136,6 +136,17 @@ std::string through_identity(const Producers& nodes, std::string name) {
   return name;
 }
 
+bool matches_commutative(const Producers& nodes, const std::string& output, std::string_view operation,
+                         const std::string& a, const std::string& b) {
+  const auto* node = producer_of(nodes, output);
+  if (node == nullptr || !ir::onnx::is_default_domain(node->domain) || node->op_type != operation ||
+      node->inputs.size() != 2)
+    return false;
+  const std::string left = through_identity(nodes, node->inputs[0]);
+  const std::string right = through_identity(nodes, node->inputs[1]);
+  return (left == a && right == b) || (left == b && right == a);
+}
+
 // Les noms restent nécessaires pour identifier le SPAN. On vérifie aussi le calcul de chaque bloc :
 // une convolution dilatée peut garder exactement les mêmes poids, noms et formes.
 std::expected<void, Refusal> check_body(const Producers& nodes, int blocks) {
@@ -143,16 +154,6 @@ std::expected<void, Refusal> check_body(const Producers& nodes, int blocks) {
     const auto* node = producer_of(nodes, output);
     return node != nullptr && ir::onnx::is_default_domain(node->domain) && node->op_type == operation &&
            node->inputs.size() == 1 && through_identity(nodes, node->inputs[0]) == input;
-  };
-  const auto binary = [&](const std::string& output, std::string_view operation, const std::string& a,
-                          const std::string& b) {
-    const auto* node = producer_of(nodes, output);
-    if (node == nullptr || !ir::onnx::is_default_domain(node->domain) || node->op_type != operation ||
-        node->inputs.size() != 2)
-      return false;
-    const std::string left = through_identity(nodes, node->inputs[0]);
-    const std::string right = through_identity(nodes, node->inputs[1]);
-    return (left == a && right == b) || (left == b && right == a);
   };
   const auto conv = [&](const std::string& output, const std::string& base, const std::string& input,
                         int side) {
@@ -175,60 +176,69 @@ std::expected<void, Refusal> check_body(const Producers& nodes, int blocks) {
     if (!conv(c1, name + ".c1_r.eval_conv", x, 3) || !unary(r1, "Relu", c1) ||
         !conv(c2, name + ".c2_r.eval_conv", r1, 3) || !unary(r2, "Relu", c2) ||
         !conv(c3, name + ".c3_r.eval_conv", r2, 3) || !conv(att, name + ".att_conv", c3, 1) ||
-        !unary(gate, "Tanh", att) || !binary(sum, "Add", x, c3) || !binary(out, "Mul", sum, gate))
+        !unary(gate, "Tanh", att) || !matches_commutative(nodes, sum, "Add", x, c3) ||
+        !matches_commutative(nodes, out, "Mul", sum, gate))
       return refuse(std::format("{} : calcul différent du bloc SPAN natif", name));
     x = out;
   }
   return {};
 }
 
+const ir::onnx::Node* operation_at(const Producers& nodes, const std::string& name,
+                                   std::string_view operation, std::size_t count) {
+  const auto* node = producer_of(nodes, through_identity(nodes, name));
+  return node != nullptr && ir::onnx::is_default_domain(node->domain) && node->op_type == operation &&
+                 node->inputs.size() == count
+             ? node
+             : nullptr;
+}
+
+std::optional<std::int64_t> integer_value(const Producers& nodes, const Initializers& initializers,
+                                          const std::string& name, bool scalar) {
+  const auto canonical = through_identity(nodes, name);
+  const auto it = initializers.find(canonical);
+  const auto* constant = it == initializers.end() ? operation_at(nodes, canonical, "Constant", 0) : nullptr;
+  const auto* value = constant != nullptr ? attribute(*constant, "value") : nullptr;
+  const auto* t =
+      it != initializers.end() ? it->second
+      : value != nullptr && value->type == ir::onnx::AttributeType::Tensor && value->tensors.size() == 1
+          ? &value->tensors[0]
+          : nullptr;
+  if (t == nullptr || (t->data_type != ir::onnx::kInt32 && t->data_type != ir::onnx::kInt64) ||
+      t->ints.size() != 1 || (scalar ? !t->dims.empty() : t->dims != std::vector<std::int64_t>{1}))
+    return std::nullopt;
+  return t->ints[0];
+}
+
+bool integer_attr(const ir::onnx::Node& node, std::string_view name, std::int64_t expected) {
+  const auto* attr = attribute(node, name);
+  return attr == nullptr || (attr->type == ir::onnx::AttributeType::Int && attr->i == expected);
+}
+
 // Pour des entrées paires, la sortie native fait déjà 2H×2W. Les deux Slice de l'export pour les tailles
 // impaires ne retirent rien ici : [0:2*dim:1] sur les axes spatiaux, dans n'importe quel ordre.
 bool exact_output(const Producers& nodes, const Initializers& initializers, const std::string& input,
                   const std::string& output, const std::string& depth) {
-  const auto op = [&](const std::string& name, std::string_view operation, std::size_t count) {
-    const auto* node = producer_of(nodes, through_identity(nodes, name));
-    return node != nullptr && ir::onnx::is_default_domain(node->domain) && node->op_type == operation &&
-                   node->inputs.size() == count
-               ? node
-               : nullptr;
-  };
-  const auto integer = [&](const std::string& name, bool scalar) -> std::optional<std::int64_t> {
-    const auto canonical = through_identity(nodes, name);
-    const auto it = initializers.find(canonical);
-    const auto* constant = it == initializers.end() ? op(canonical, "Constant", 0) : nullptr;
-    const auto* value = constant != nullptr ? attribute(*constant, "value") : nullptr;
-    const auto* t =
-        it != initializers.end() ? it->second
-        : value != nullptr && value->type == ir::onnx::AttributeType::Tensor && value->tensors.size() == 1
-            ? &value->tensors[0]
-            : nullptr;
-    if (t == nullptr || (t->data_type != ir::onnx::kInt32 && t->data_type != ir::onnx::kInt64) ||
-        t->ints.size() != 1 || (scalar ? !t->dims.empty() : t->dims != std::vector<std::int64_t>{1}))
-      return std::nullopt;
-    return t->ints[0];
-  };
-  const auto integer_attr = [](const ir::onnx::Node& node, std::string_view name, std::int64_t expected) {
-    const auto* attr = attribute(node, name);
-    return attr == nullptr || (attr->type == ir::onnx::AttributeType::Int && attr->i == expected);
+  const auto integer = [&](const std::string& name, bool scalar) {
+    return integer_value(nodes, initializers, name, scalar);
   };
   const auto matches_bound = [&](const std::string& end, std::int64_t axis) {
-    const auto* unsqueeze = op(end, "Unsqueeze", 2);
+    const auto* unsqueeze = operation_at(nodes, end, "Unsqueeze", 2);
     if (unsqueeze == nullptr || integer(unsqueeze->inputs[1], false) != 0) return false;
-    const auto* multiply = op(unsqueeze->inputs[0], "Mul", 2);
+    const auto* multiply = operation_at(nodes, unsqueeze->inputs[0], "Mul", 2);
     if (multiply == nullptr) return false;
     const bool scale_first = integer(multiply->inputs[0], true) == 2;
     if (!scale_first && integer(multiply->inputs[1], true) != 2) return false;
-    const auto* gather = op(multiply->inputs[scale_first ? 1 : 0], "Gather", 2);
+    const auto* gather = operation_at(nodes, multiply->inputs[scale_first ? 1 : 0], "Gather", 2);
     if (gather == nullptr || !integer_attr(*gather, "axis", 0) || integer(gather->inputs[1], true) != axis)
       return false;
-    const auto* shape = op(gather->inputs[0], "Shape", 1);
+    const auto* shape = operation_at(nodes, gather->inputs[0], "Shape", 1);
     return shape != nullptr && through_identity(nodes, shape->inputs[0]) == input &&
            integer_attr(*shape, "start", 0) && integer_attr(*shape, "end", 4);
   };
   std::string current = through_identity(nodes, output);
   for (int count = 0; current != depth && count < 2; ++count) {
-    const auto* slice = op(current, "Slice", 5);
+    const auto* slice = operation_at(nodes, current, "Slice", 5);
     if (slice == nullptr || integer(slice->inputs[1], false) != 0 || integer(slice->inputs[4], false) != 1)
       return false;
     const auto axis = integer(slice->inputs[3], false);
@@ -238,9 +248,110 @@ bool exact_output(const Producers& nodes, const Initializers& initializers, cons
   return current == depth;
 }
 
+std::expected<void, Refusal> check_graph_body(const Producers& producer, int block_count) {
+  std::vector<std::string> needed{"/conv_1/conv_1.1/eval_conv/Conv_output_0"};
+  for (int k = 1; k <= block_count; ++k) {
+    needed.push_back(std::format("/block_{}/act1/Relu_output_0", k));
+    needed.push_back(std::format("/block_{}/act1_1/Relu_output_0", k));
+    needed.push_back(std::format("/block_{}/Mul_output_0", k));
+  }
+  needed.emplace_back("/conv_1/conv_1.0/Reshape_1_output_0");
+  for (const std::string& name : needed)
+    if (!producer.contains(name))
+      return refuse(std::format(
+          "tenseur {} absent du graphe : ce SPAN n'a pas la forme que les noyaux supposent", name));
+  const auto* reshape = producer.at("/conv_1/conv_1.0/Reshape_1_output_0");
+  const ir::onnx::Node* transpose = nullptr;
+  if (reshape->op_type == "Reshape" && !reshape->inputs.empty())
+    transpose = producer_of(producer, reshape->inputs[0]);
+  const ir::onnx::Attribute* perm =
+      transpose != nullptr && transpose->op_type == "Transpose" ? attribute(*transpose, "perm") : nullptr;
+  if (perm == nullptr || perm->ints != std::vector<std::int64_t>{0, 1, 3, 5, 2, 4})
+    return refuse("dégroupage : ce SPAN n'a pas l'ordre des canaux supposé par les noyaux");
+  return check_body(producer, block_count);
+}
+
+std::expected<const ir::onnx::Node*, Refusal> check_concat(const ir::onnx::Graph& graph,
+                                                           const Producers& producer, int block_count) {
+  // L'ordre des quatre entrées du Concat de conv_cat (étape 3.2a) : les noyaux écrivent la tranche 0 depuis
+  // conv_1, la 1 depuis la sortie du dernier bloc, la 2 depuis celle du bloc 1 et la 3 depuis le premier Relu
+  // du dernier bloc. Une entrée lue à travers des Identity.
+  const auto cat_conv = std::ranges::find_if(graph.nodes, [](const ir::onnx::Node& node) {
+    return node.op_type == "Conv" && std::ranges::find(node.inputs, "conv_cat.weight") != node.inputs.end();
+  });
+  if (cat_conv == graph.nodes.end() || !compatible_conv(*cat_conv, 1) ||
+      cat_conv->inputs[1] != "conv_cat.weight" || cat_conv->inputs[2] != "conv_cat.bias" ||
+      cat_conv->outputs.size() != 1)
+    return refuse("conv_cat : la convolution 1x1 et son biais sont attendus");
+  const std::string cat_input = through_identity(producer, cat_conv->inputs[0]);
+  const auto* concat = producer_of(producer, cat_input);
+  const auto* axis = concat != nullptr ? attribute(*concat, "axis") : nullptr;
+  if (concat == nullptr || !ir::onnx::is_default_domain(concat->domain) || concat->op_type != "Concat" ||
+      concat->inputs.size() != 4 || axis == nullptr || axis->type != ir::onnx::AttributeType::Int ||
+      (axis->i != 1 && axis->i != -3))
+    return refuse("conv_cat : un Concat de quatre tenseurs sur l'axe des canaux est attendu");
+  const std::array<std::string, 4> expected_order{
+      "/conv_1/conv_1.1/eval_conv/Conv_output_0", std::format("/block_{}/Mul_output_0", block_count),
+      "/block_1/Mul_output_0", std::format("/block_{}/act1/Relu_output_0", block_count)};
+  for (std::size_t i = 0; i < expected_order.size(); ++i) {
+    const std::string got = through_identity(producer, concat->inputs[i]);
+    if (got != expected_order[i])
+      return refuse(
+          std::format("Concat de conv_cat : entrée {} « {} », « {} » attendue (ordre des tranches des "
+                      "noyaux)",
+                      i, got, expected_order[i]));
+  }
+  return &*cat_conv;
+}
+
+std::expected<void, Refusal> check_graph(const ir::onnx::Graph& graph, const Initializers& init,
+                                         int block_count) {
+  // Le graphe : les tenseurs que les noyaux quantifient existent, et le dégroupage et DepthToSpace sont ceux
+  // que les noyaux supposent (canal = c·4 + a·2 + b ; DepthToSpace(4) en mode CRD).
+  Producers producer;
+  for (const ir::onnx::Node& node : graph.nodes)
+    for (const std::string& out : node.outputs) producer[out] = &node;
+  if (auto ok = check_graph_body(producer, block_count); !ok) return ok;
+  auto cat_conv = check_concat(graph, producer, block_count);
+  if (!cat_conv) return std::unexpected(std::move(cat_conv.error()));
+  const auto depth_to_space = std::ranges::find(graph.nodes, "DepthToSpace", &ir::onnx::Node::op_type);
+  if (depth_to_space == graph.nodes.end() || depth_to_space->inputs.size() != 1 ||
+      depth_to_space->outputs.size() != 1 || !ir::onnx::is_default_domain(depth_to_space->domain))
+    return refuse("DepthToSpace absent du graphe");
+  const auto* pixel = producer_of(producer, through_identity(producer, depth_to_space->inputs[0]));
+  if (pixel == nullptr || !compatible_conv(*pixel, 3) || pixel->inputs[1] != "to_pixel.eval_conv.weight" ||
+      pixel->inputs[2] != "to_pixel.eval_conv.bias" ||
+      through_identity(producer, pixel->inputs[0]) != (*cat_conv)->outputs[0])
+    return refuse("to_pixel : convolution de conv_cat vers DepthToSpace attendue");
+  const ir::onnx::Attribute* block_size = attribute(*depth_to_space, "blocksize");
+  const ir::onnx::Attribute* mode = attribute(*depth_to_space, "mode");
+  if (block_size == nullptr || block_size->i != 4 || mode == nullptr || mode->s != "CRD")
+    return refuse("DepthToSpace : blocksize 4 en mode CRD attendu");
+  if (!exact_output(producer, init, graph.inputs.front().name, graph.outputs.front().name,
+                    depth_to_space->outputs.front()))
+    return refuse("sortie SPAN : une découpe spatiale à deux fois la taille d'entrée est attendue");
+  return {};
+}
+
+std::expected<int, Refusal> count_blocks(const ir::onnx::Graph& graph) {
+  std::set<int> blocks;
+  for (const Tensor& tensor : graph.initializers) {
+    if (!tensor.name.starts_with("block_")) continue;
+    int number = 0;
+    const char* begin = tensor.name.c_str() + 6;
+    const char* last = tensor.name.c_str() + tensor.name.size();
+    const auto [end, error] = std::from_chars(begin, last, number);
+    if (error == std::errc{} && end != last && *end == '.') blocks.insert(number);
+  }
+  const int block_count = static_cast<int>(blocks.size());
+  if (std::clamp(block_count, kMinBlocks, kBlocks) != block_count || *blocks.begin() != 1 ||
+      *blocks.rbegin() != block_count)
+    return refuse(std::format("{} blocs, {} à {} attendus (depuis 1)", block_count, kMinBlocks, kBlocks));
+  return block_count;
+}
+
 }  // namespace
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) {
   const ir::onnx::Graph& graph = model.graph;
   if (graph.inputs.size() != 1 || graph.outputs.size() != 1)
@@ -261,19 +372,9 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
       first->dims != std::vector<std::int64_t>{channels, kUnshuffled, 3, 3})
     return refuse(std::format("conv_1 de forme {} : seuls les SPAN à 48 ou {} canaux sont pris",
                               shape_text(first->dims), kChannels));
-  std::set<int> blocks;
-  for (const Tensor& tensor : graph.initializers) {
-    if (!tensor.name.starts_with("block_")) continue;
-    int number = 0;
-    const char* begin = tensor.name.c_str() + 6;
-    const char* last = tensor.name.c_str() + tensor.name.size();
-    const auto [end, error] = std::from_chars(begin, last, number);
-    if (error == std::errc{} && end != last && *end == '.') blocks.insert(number);
-  }
-  const int block_count = static_cast<int>(blocks.size());
-  if (std::clamp(block_count, kMinBlocks, kBlocks) != block_count || *blocks.begin() != 1 ||
-      *blocks.rbegin() != block_count)
-    return refuse(std::format("{} blocs, {} à {} attendus (depuis 1)", block_count, kMinBlocks, kBlocks));
+  auto count = count_blocks(graph);
+  if (!count) return std::unexpected(std::move(count.error()));
+  const int block_count = *count;
 
   // shape : la forme du modèle ; out_to, in_to : celle du paquet (64 canaux) ; groups : voir flat_padded.
   const auto conv = [&](const std::string& weight, const std::string& bias,
@@ -327,75 +428,7 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
       !ok)
     return std::unexpected(std::move(ok.error()));
 
-  // Le graphe : les tenseurs que les noyaux quantifient existent, et le dégroupage et DepthToSpace sont ceux
-  // que les noyaux supposent (canal = c·4 + a·2 + b ; DepthToSpace(4) en mode CRD).
-  Producers producer;
-  for (const ir::onnx::Node& node : graph.nodes)
-    for (const std::string& out : node.outputs) producer[out] = &node;
-  std::vector<std::string> needed{"/conv_1/conv_1.1/eval_conv/Conv_output_0"};
-  for (int k = 1; k <= block_count; ++k) {
-    needed.push_back(std::format("/block_{}/act1/Relu_output_0", k));
-    needed.push_back(std::format("/block_{}/act1_1/Relu_output_0", k));
-    needed.push_back(std::format("/block_{}/Mul_output_0", k));
-  }
-  needed.emplace_back("/conv_1/conv_1.0/Reshape_1_output_0");
-  for (const std::string& name : needed)
-    if (!producer.contains(name))
-      return refuse(std::format(
-          "tenseur {} absent du graphe : ce SPAN n'a pas la forme que les noyaux supposent", name));
-  const ir::onnx::Node* reshape = producer["/conv_1/conv_1.0/Reshape_1_output_0"];
-  const ir::onnx::Node* transpose = nullptr;
-  if (reshape->op_type == "Reshape" && !reshape->inputs.empty() && producer.contains(reshape->inputs[0]))
-    transpose = producer[reshape->inputs[0]];
-  const ir::onnx::Attribute* perm =
-      transpose != nullptr && transpose->op_type == "Transpose" ? attribute(*transpose, "perm") : nullptr;
-  if (perm == nullptr || perm->ints != std::vector<std::int64_t>{0, 1, 3, 5, 2, 4})
-    return refuse("dégroupage : ce SPAN n'a pas l'ordre des canaux supposé par les noyaux");
-  if (auto ok = check_body(producer, block_count); !ok) return std::unexpected(std::move(ok.error()));
-  // L'ordre des quatre entrées du Concat de conv_cat (étape 3.2a) : les noyaux écrivent la tranche 0 depuis
-  // conv_1, la 1 depuis la sortie du dernier bloc, la 2 depuis celle du bloc 1 et la 3 depuis le premier Relu
-  // du dernier bloc. Une entrée lue à travers des Identity.
-  const auto cat_conv = std::ranges::find_if(graph.nodes, [](const ir::onnx::Node& node) {
-    return node.op_type == "Conv" && std::ranges::find(node.inputs, "conv_cat.weight") != node.inputs.end();
-  });
-  if (cat_conv == graph.nodes.end() || !compatible_conv(*cat_conv, 1) ||
-      cat_conv->inputs[1] != "conv_cat.weight" || cat_conv->inputs[2] != "conv_cat.bias" ||
-      cat_conv->outputs.size() != 1)
-    return refuse("conv_cat : la convolution 1x1 et son biais sont attendus");
-  const std::string cat_input = through_identity(producer, cat_conv->inputs[0]);
-  const ir::onnx::Node* concat = producer.contains(cat_input) ? producer[cat_input] : nullptr;
-  const auto* axis = concat != nullptr ? attribute(*concat, "axis") : nullptr;
-  if (concat == nullptr || !ir::onnx::is_default_domain(concat->domain) || concat->op_type != "Concat" ||
-      concat->inputs.size() != 4 || axis == nullptr || axis->type != ir::onnx::AttributeType::Int ||
-      (axis->i != 1 && axis->i != -3))
-    return refuse("conv_cat : un Concat de quatre tenseurs sur l'axe des canaux est attendu");
-  const std::array<std::string, 4> expected_order{
-      "/conv_1/conv_1.1/eval_conv/Conv_output_0", std::format("/block_{}/Mul_output_0", block_count),
-      "/block_1/Mul_output_0", std::format("/block_{}/act1/Relu_output_0", block_count)};
-  for (std::size_t i = 0; i < expected_order.size(); ++i) {
-    const std::string got = through_identity(producer, concat->inputs[i]);
-    if (got != expected_order[i])
-      return refuse(
-          std::format("Concat de conv_cat : entrée {} « {} », « {} » attendue (ordre des tranches des "
-                      "noyaux)",
-                      i, got, expected_order[i]));
-  }
-  const auto depth_to_space = std::ranges::find(graph.nodes, "DepthToSpace", &ir::onnx::Node::op_type);
-  if (depth_to_space == graph.nodes.end() || depth_to_space->inputs.size() != 1 ||
-      depth_to_space->outputs.size() != 1 || !ir::onnx::is_default_domain(depth_to_space->domain))
-    return refuse("DepthToSpace absent du graphe");
-  const auto* pixel = producer_of(producer, through_identity(producer, depth_to_space->inputs[0]));
-  if (pixel == nullptr || !compatible_conv(*pixel, 3) || pixel->inputs[1] != "to_pixel.eval_conv.weight" ||
-      pixel->inputs[2] != "to_pixel.eval_conv.bias" ||
-      through_identity(producer, pixel->inputs[0]) != cat_conv->outputs[0])
-    return refuse("to_pixel : convolution de conv_cat vers DepthToSpace attendue");
-  const ir::onnx::Attribute* block_size = attribute(*depth_to_space, "blocksize");
-  const ir::onnx::Attribute* mode = attribute(*depth_to_space, "mode");
-  if (block_size == nullptr || block_size->i != 4 || mode == nullptr || mode->s != "CRD")
-    return refuse("DepthToSpace : blocksize 4 en mode CRD attendu");
-  if (!exact_output(producer, init, graph.inputs.front().name, graph.outputs.front().name,
-                    depth_to_space->outputs.front()))
-    return refuse("sortie SPAN : une découpe spatiale à deux fois la taille d'entrée est attendue");
+  if (auto ok = check_graph(graph, init, block_count); !ok) return std::unexpected(std::move(ok.error()));
   return package;
 }
 

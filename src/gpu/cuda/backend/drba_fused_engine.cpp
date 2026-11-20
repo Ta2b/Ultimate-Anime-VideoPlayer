@@ -56,29 +56,9 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
     return refuse(RefusalCode::ShapeInvalid, "DistilDRBA fusionné : moteur d'encodage de forme inattendue");
   activation = std::max(activation, (*encode)->activation_bytes());
   engine->encode_ = std::move(*encode);
-  for (int b = 0; b < kernels::kDrbaFusedBlocks; ++b) {
-    auto block = TrtEngine::load(
-        runtime, cache_dir / core::path_from_utf8(key.engines[static_cast<std::size_t>(b) + 1]), shared);
-    if (!block) return std::unexpected(std::move(block.error()));
-    const kernels::DrbaFusedDims x = kernels::drba_fused_x(key.plan, b, h, w);
-    const kernels::DrbaFusedDims y = kernels::drba_fused_y(key.plan, b, h, w);
-    const bool ok = (*block)->input_shape(0) == Shape{.dims = {1, x.channels, x.height, x.width}} &&
-                    (*block)->output_shape(0) == Shape{.dims = {1, y.channels, y.height, y.width}};
-    if (!ok)
-      return refuse(RefusalCode::ShapeInvalid,
-                    std::format("DistilDRBA fusionné : moteur du bloc {} de forme inattendue", b));
-    const int x_pitch = (*block)->input_pitch(0);
-    const int y_pitch = (*block)->output_pitch(0);
-    const bool packed =
-        b == kLastBlock && t == 4 && engine->shared_finish_ && x_pitch == kPackedX2 && y_pitch == kPackedY2;
-    if (!packed && (x_pitch != 0 || y_pitch != 0)) {
-      return refuse(RefusalCode::FormatUnsupported,
-                    std::format("DistilDRBA fusionné : rangement inattendu du bloc {}", b));
-    }
-    engine->packed_tail_ |= packed;
-    activation = std::max(activation, (*block)->activation_bytes());
-    engine->blocks_[static_cast<std::size_t>(b)] = std::move(*block);
-  }
+  auto blocks = engine->load_blocks(runtime, cache_dir, key, shared);
+  if (!blocks) return std::unexpected(std::move(blocks.error()));
+  activation = std::max(activation, *blocks);
   engine->layout_ = kernels::drba_fused_layout(key.plan, h, w);
   if (engine->packed_tail_) {
     const auto reduced_plane = static_cast<std::size_t>(h / t) * static_cast<std::size_t>(w / t);
@@ -93,6 +73,47 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   engine->scratch_offset_ = engine->scratch_offset_for(*shared);
   if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
 
+  if (auto ok = engine->check_loaded(shared, native_tail); !ok) return std::unexpected(std::move(ok.error()));
+  return engine;
+}
+
+std::expected<std::int64_t, Refusal> DrbaFusedEngine::load_blocks(
+    nvinfer1::IRuntime& runtime, const std::filesystem::path& cache_dir, const DrbaFusedKey& key,
+    const std::shared_ptr<SharedActivations>& shared) {
+  const int h = key.height;
+  const int w = key.width;
+  const int t = key.plan.tail;
+  std::int64_t activation = 0;
+  for (int b = 0; b < kernels::kDrbaFusedBlocks; ++b) {
+    auto block = TrtEngine::load(
+        runtime, cache_dir / core::path_from_utf8(key.engines[static_cast<std::size_t>(b) + 1]), shared);
+    if (!block) return std::unexpected(std::move(block.error()));
+    const kernels::DrbaFusedDims x = kernels::drba_fused_x(key.plan, b, h, w);
+    const kernels::DrbaFusedDims y = kernels::drba_fused_y(key.plan, b, h, w);
+    const bool ok = (*block)->input_shape(0) == Shape{.dims = {1, x.channels, x.height, x.width}} &&
+                    (*block)->output_shape(0) == Shape{.dims = {1, y.channels, y.height, y.width}};
+    if (!ok)
+      return refuse(RefusalCode::ShapeInvalid,
+                    std::format("DistilDRBA fusionné : moteur du bloc {} de forme inattendue", b));
+    const int x_pitch = (*block)->input_pitch(0);
+    const int y_pitch = (*block)->output_pitch(0);
+    const bool packed =
+        b == kLastBlock && t == 4 && shared_finish_ && x_pitch == kPackedX2 && y_pitch == kPackedY2;
+    if (!packed && (x_pitch != 0 || y_pitch != 0)) {
+      return refuse(RefusalCode::FormatUnsupported,
+                    std::format("DistilDRBA fusionné : rangement inattendu du bloc {}", b));
+    }
+    packed_tail_ |= packed;
+    activation = std::max(activation, (*block)->activation_bytes());
+    blocks_[static_cast<std::size_t>(b)] = std::move(*block);
+  }
+  return activation;
+}
+
+std::expected<void, Refusal> DrbaFusedEngine::check_loaded(const std::shared_ptr<SharedActivations>& shared,
+                                                           std::span<const RifeNativeConv> native_tail) {
+  const int h = height_;
+  const int w = width_;
   // Une paire de zéros trois fois par toute la chaîne, sur un flux à part : exécution à froid, capture,
   // rejeu.
   const std::size_t in_bytes = std::size_t{kernels::kDrbaFusedInputPlanes} * static_cast<std::size_t>(h) *
@@ -125,11 +146,11 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   // en vol sur les voies (SPAN, un autre moteur) finit avant (A03-05). enqueue déclare ce qu'il y écrit :
   // un autre moteur qui y gardait ses tampons les refait.
   if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) return failed(e, "cudaDeviceSynchronize");
-  if (engine->packed_tail_ && !native_tail.empty()) {
-    auto trial = engine->try_native_tail(scratch.stream, shared, native_tail);
+  if (packed_tail_ && !native_tail.empty()) {
+    auto trial = try_native_tail(scratch.stream, shared, native_tail);
     if (!trial && trial.error().code == RefusalCode::DeviceLost)
       return std::unexpected(std::move(trial.error()));
-    engine->tail_notice_ = trial ? std::move(*trial) : std::move(trial.error().detail);
+    tail_notice_ = trial ? std::move(*trial) : std::move(trial.error().detail);
   }
   const auto out = reinterpret_cast<std::uintptr_t>(scratch_output);
   const Tensor inputs[]{fused_tensor(reinterpret_cast<std::uintptr_t>(scratch_input01), 0,
@@ -143,7 +164,7 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   for (const std::span<const Tensor> outputs :
        {std::span<const Tensor>(image), std::span<const Tensor>(motion)}) {
     for (int pass = 0; pass < 3; ++pass) {
-      if (auto ok = engine->enqueue(scratch.stream, shared, inputs, outputs); !ok)
+      if (auto ok = enqueue(scratch.stream, shared, inputs, outputs); !ok)
         return std::unexpected(std::move(ok.error()));
       if (cudaError_t e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess)
         return failed(e, "exécution");
@@ -153,11 +174,11 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   // graphes de l'essai, sur des adresses qui disparaissent, ne servent plus ; les séries d'échecs repartent
   // de zéro, et sa notice part avec eux. Ce que l'essai a gardé dans la zone (D6) désignait ses tampons,
   // libérés au retour : une paire de la chaîne allouée à la même adresse ne doit pas le reprendre.
-  engine->graphs_.clear();
-  static_cast<void>(engine->graphs_.take_notice());
-  engine->kept_.reset();
-  engine->times_only_next_ = false;
-  return engine;
+  graphs_.clear();
+  static_cast<void>(graphs_.take_notice());
+  kept_.reset();
+  times_only_next_ = false;
+  return {};
 }
 
 std::size_t DrbaFusedEngine::scratch_offset_for(SharedActivations& zone) {

@@ -424,6 +424,33 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_pair() {
   return {};
 }
 
+bool UpscaleStage::gmfss_ahead_expired() const {
+  if (!gmfss_only() || setup_.clock == nullptr || (setup_.live && setup_.live->free_active())) return false;
+  const DecodedFrame* after = next();
+  if (after == nullptr || ahead_.id != after->id || after->pts_us == kNoPts) return false;
+  const ClockSnapshot clock = setup_.clock->snapshot();
+  if (!clock.valid || clock.epoch != after->epoch || !(clock.rate > 0.0)) return false;
+  const auto host = host_now_us();
+  static const bool predict_deadline = [] {
+    const char* value = std::getenv("KIRARI_AB_GMFSS_AHEAD_DEADLINE");  // env: banc
+    return value != nullptr && std::string_view(value) == "1";
+  }();
+  // Les intermédiaires de la grille fixe précèdent la source droite.
+  if (after->pts_us < clock.media_at(host)) return true;
+  if (!predict_deadline || !cadence_ || (setup_.live && setup_.live->auto_active())) return false;
+  // Rejouer la grille sur une copie laisse la voie à la demande disponible si l’horloge se recale.
+  auto projected = *cadence_;
+  const auto future = projected.push(core::stamp_of(*after));
+  if (future.event != core::GridEvent::Pair) return false;
+  const auto factor = projected.factor();
+  const auto period =
+      std::max<std::int64_t>(pts_gap_us(head_.pts_us, after->pts_us), 0) * factor.den / factor.num;
+  const auto ready = ready_media_us(clock, host, period, latency_us());
+  return std::ranges::none_of(future.instants(), [ready](const core::OutputInstant& at) {
+    return !at.is_source() && (!at.pts_us || *at.pts_us >= ready);
+  });
+}
+
 std::expected<void, Refusal> UpscaleStage::run_gmfss_ahead() {
   // La paire en cours a eu son graphe « paire » (sinon le jeu de l'autre côté pourrait encore lui servir) ;
   // le mélange ne le lance que si celle-ci bougeait fort : la suivante bougera sans doute de même. Rien
@@ -441,40 +468,9 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_ahead() {
   if (gmfss_only() && late_fate_now_) return {};
   if (!gmfss_.pair_ready || gmfss_.ahead_queued || gmfss_.ahead_cool) return {};
   if ((!gmfss_only() && !gmfss_strong()) || smooth_first_ || smooth_second_ || !ahead_.id) return {};
-  if (gmfss_only() && setup_.clock != nullptr && !(setup_.live && setup_.live->free_active())) {
-    const DecodedFrame* after = next();
-    if (after != nullptr && ahead_.id == after->id && after->pts_us != kNoPts) {
-      const ClockSnapshot clock = setup_.clock->snapshot();
-      // Les intermédiaires de la grille fixe précèdent tous la source droite. Si elle est déjà passée,
-      // ne pas spéculer. À l'arrivée le calcul normal reste possible si l'horloge s'est recalée.
-      if (clock.valid && clock.epoch == after->epoch && clock.rate > 0.0) {
-        const auto host = host_now_us();
-        bool expired = after->pts_us < clock.media_at(host);
-        static const bool predict_deadline = [] {
-          const char* value = std::getenv("KIRARI_AB_GMFSS_AHEAD_DEADLINE");  // env: banc
-          return value != nullptr && std::string_view(value) == "1";
-        }();
-        if (!expired && predict_deadline && cadence_ && !(setup_.live && setup_.live->auto_active())) {
-          // Rejouer la grille à facteur fixe sans la modifier. La voie à la demande reste disponible
-          // si la lecture reprend de l'avance ou que la latence mesurée change.
-          auto projected = *cadence_;
-          const auto future = projected.push(core::stamp_of(*after));
-          if (future.event == core::GridEvent::Pair) {
-            const auto factor = projected.factor();
-            const auto period =
-                std::max<std::int64_t>(pts_gap_us(head_.pts_us, after->pts_us), 0) * factor.den / factor.num;
-            const auto ready = ready_media_us(clock, host, period, latency_us());
-            expired = std::ranges::none_of(future.instants(), [ready](const core::OutputInstant& at) {
-              return !at.is_source() && (!at.pts_us || *at.pts_us >= ready);
-            });
-          }
-        }
-        if (expired) {
-          ++gmfss_.ahead_declined_expired;
-          return {};
-        }
-      }
-    }
+  if (gmfss_ahead_expired()) {
+    ++gmfss_.ahead_declined_expired;
+    return {};
   }
   // Le mélange sans le crédit d'une M à l'image d'après : la paire suivante ira à RIFE, rien à préparer.
   if (!gmfss_only() && gmfss_.credit_us + gmfss_.credit_step_us < setup_.gmfss.cost_us) return {};

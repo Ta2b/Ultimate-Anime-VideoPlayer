@@ -88,6 +88,43 @@ UpscaleStage::~UpscaleStage() {
   scene_.log_summary();
   layers_.log_summary(setup_.layers);
   if (fences_mapped_) setup_.backend->kernels()->unmap_fences(setup_.yuv_slots->fence_block());
+  log_interpolation();
+  const char* motion = gmfss_only()                                            ? "GMFSS union"
+                       : setup_.distil_drba != nullptr && !setup_.drba_by_shot ? "DistilDRBA"
+                                                                               : "RIFE";
+  if (setup_.late_fate) {
+    log_channel("gpu")->info(
+        "Interpolation : {} instants laissés en retard sans calcul, {} calculés après leur instant",
+        late_dropped_, late_computed_);
+  }
+  if (late_pairs_ > 0) {
+    log_channel("gpu")->info("{} : {} paires en retard sur l'horloge, {} instants sautés pour la rattraper",
+                             motion, late_pairs_, late_instants_);
+  }
+  if (skipped_ > 0) {
+    log_channel("gpu")->info(
+        "{} images source sautées avant calcul, déjà passées : la chaîne est plus lente "
+        "que la vidéo",
+        skipped_);
+  }
+  if (interpolates()) {
+    const std::string cadence =
+        setup_.live && setup_.live->free_active()
+            ? "Auto"
+            : factor_text(setup_.live ? setup_.live->factor_now() : setup_.rife_factor);
+    log_channel("gpu")->info("{} {} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
+                             motion, cadence, pairs_, interpolated_, cuts_, held_);
+  }
+  if (setup_.live && setup_.live->cuts().active())
+    log_channel("gpu")->info(
+        "coupes : {} désaccords entre RIFE et les plans de la pré-analyse, {} coupes de RIFE en rafale "
+        "écartées",
+        cut_disagreements_, burst_cuts_);
+  scores_waits_.log("des mesures de la paire");
+  motion_waits_.log("du mouvement");
+}
+
+void UpscaleStage::log_interpolation() const {
   if (setup_.rife_motion != nullptr) {
     log_channel("gpu")->info(
         "RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs (dont {} sans passe au milieu)",
@@ -122,10 +159,7 @@ UpscaleStage::~UpscaleStage() {
         "RIFE à chaud (qualité et gain non mesurés) : {} passes sur {} sans les blocs "
         "grossiers{}",
         warm_runs_, rife_runs_,
-        warm_runs_ == 0 && rife_runs_ > 0
-            ? " (ce moteur ne reprend pas à chaud : l'essai est sans effet hors du RIFE "
-              "fusionné de Vulkan)"
-            : "");
+        warm_runs_ == 0 && rife_runs_ > 0 ? " (aucune passe n’a repris les blocs grossiers)" : "");
   if (moving_.pairs > 0) {
     const auto pairs = static_cast<double>(moving_.pairs);
     log_channel("gpu")->info(
@@ -167,39 +201,6 @@ UpscaleStage::~UpscaleStage() {
         "Smooth : {} tenues fondues en un mouvement (sur 2 sources : {}, 3 : {}, 4 : {}, 5 : {}, 6 : {})",
         h[2] + h[3] + h[4] + h[5] + h[6], h[2], h[3], h[4], h[5], h[6]);
   }
-  const char* motion = gmfss_only()                                            ? "GMFSS union"
-                       : setup_.distil_drba != nullptr && !setup_.drba_by_shot ? "DistilDRBA"
-                                                                               : "RIFE";
-  if (setup_.late_fate) {
-    log_channel("gpu")->info(
-        "Interpolation : {} instants laissés en retard sans calcul, {} calculés après leur instant",
-        late_dropped_, late_computed_);
-  }
-  if (late_pairs_ > 0) {
-    log_channel("gpu")->info("{} : {} paires en retard sur l'horloge, {} instants sautés pour la rattraper",
-                             motion, late_pairs_, late_instants_);
-  }
-  if (skipped_ > 0) {
-    log_channel("gpu")->info(
-        "{} images source sautées avant calcul, déjà passées : la chaîne est plus lente "
-        "que la vidéo",
-        skipped_);
-  }
-  if (interpolates()) {
-    const std::string cadence =
-        setup_.live && setup_.live->free_active()
-            ? "Auto"
-            : factor_text(setup_.live ? setup_.live->factor_now() : setup_.rife_factor);
-    log_channel("gpu")->info("{} {} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
-                             motion, cadence, pairs_, interpolated_, cuts_, held_);
-  }
-  if (setup_.live && setup_.live->cuts().active())
-    log_channel("gpu")->info(
-        "coupes : {} désaccords entre RIFE et les plans de la pré-analyse, {} coupes de RIFE en rafale "
-        "écartées",
-        cut_disagreements_, burst_cuts_);
-  scores_waits_.log("des mesures de la paire");
-  motion_waits_.log("du mouvement");
 }
 
 std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoStageInit init,

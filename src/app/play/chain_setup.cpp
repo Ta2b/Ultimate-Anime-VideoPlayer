@@ -383,6 +383,13 @@ void take_trials(ChainEngines& c, const PlayOptions& o, const PlaySettings& sett
   c.pair_triage = o.pair_triage;
 }
 
+bool scene_map_needed(const ChainEngines& c, const PlayOptions& options, const PlaySettings& settings) {
+  return c.scene_map &&
+         (c.plate || (c.layers && c.rife_motion) ||
+          (c.pair_triage && (c.rife_motion || c.gmfss_use != GmfssUse::Off)) ||
+          settings.experimental.map_highlights() || c.nvof_roundtrip || options.was_given("--scene-map"));
+}
+
 // Un refus de l'étage qui le rend : la chaîne peut se préparer sans lui (stage_fallback.h).
 std::unexpected<StageFailure> stage_refused(Refusal refusal, std::optional<ChainStage> stage) {
   return std::unexpected(StageFailure{.refusal = std::move(refusal), .stage = stage});
@@ -766,11 +773,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     return stage_refused(
         Refusal{RefusalCode::FieldMissing, "GMFSS seul : aucun moteur GMFSS ni RIFE de repli chargé"},
         ChainStage::Motion);
-  const auto& options = p.options;
-  c.scene_map = c.scene_map && (c.plate || (c.layers && c.rife_motion) ||
-                                (c.pair_triage && (c.rife_motion || c.gmfss_use != GmfssUse::Off)) ||
-                                settings.experimental.map_highlights() || c.nvof_roundtrip ||
-                                options.was_given("--scene-map"));
+  c.scene_map = scene_map_needed(c, p.options, settings);
   settle_shot_plan(c);
   return std::optional<ChainEngines>(std::move(c));
 }

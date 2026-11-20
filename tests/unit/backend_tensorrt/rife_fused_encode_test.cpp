@@ -200,7 +200,10 @@ void kept_encoding_is_exact(const std::string& file, bool motion) {
   CHECK(call(1, 1, 0.25F, false, Say::TimesOnly) == want[3]);
   // Un refus consomme l'annonce. Le nouvel instant sur le même tampon refait le début du réseau.
   REQUIRE(fused->next_warm());
-  REQUIRE_FALSE(engine->enqueue(nullptr, {}, {}, {}));
+  const std::array refused_in{inputs[1]->tensor()};
+  const auto refused = backend.enqueue(*fused, refused_in, {});
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == gpu::RefusalCode::ShapeInvalid);
   CHECK(call(1, 1, 0.5F, false, Say::TimesOnly) == want[2]);
 }
 

@@ -173,17 +173,7 @@ class Net final : public GmflowMlpNet {
         paired_ ? prepare_kernel<4, true>() : (warps_ == 8 ? prepare_kernel<8>() : prepare_kernel<4>());
     if (!sent(prepared, error)) return false;
     if (fast_ && !sent(prepare_kernel<4, true, gm::Acc::kF16>(), error)) return false;
-    layers_ = std::vector<Layer>(mlp.layers.size());
-    for (std::size_t i = 0; i < mlp.layers.size(); ++i) {
-      const GmflowMlpLayer& from = mlp.layers[i];
-      const std::vector<uint4> packed = stages(from, hidden_, paired_);
-      Layer& l = layers_[i];
-      l.eps = from.epsilon;
-      if (!sent(l.w.upload(packed.data(), packed.size() * sizeof(uint4)), error) ||
-          !sent(l.gamma.upload(from.gamma.data(), from.gamma.size() * sizeof(float)), error) ||
-          !sent(l.beta.upload(from.beta.data(), from.beta.size() * sizeof(float)), error))
-        return false;
-    }
+    if (!upload_layers(mlp, error)) return false;
     partial_floats_ = partial_floats();
     return sent(partial_.allocate(static_cast<std::size_t>(partial_floats_) * sizeof(float)), error);
   }
@@ -226,6 +216,21 @@ class Net final : public GmflowMlpNet {
   }
 
  private:
+  bool upload_layers(const GmflowMlp& mlp, std::string& error) {
+    layers_ = std::vector<Layer>(mlp.layers.size());
+    for (std::size_t i = 0; i < mlp.layers.size(); ++i) {
+      const GmflowMlpLayer& from = mlp.layers[i];
+      const std::vector<uint4> packed = stages(from, hidden_, paired_);
+      Layer& l = layers_[i];
+      l.eps = from.epsilon;
+      if (!sent(l.w.upload(packed.data(), packed.size() * sizeof(uint4)), error) ||
+          !sent(l.gamma.upload(from.gamma.data(), from.gamma.size() * sizeof(float)), error) ||
+          !sent(l.beta.upload(from.beta.data(), from.beta.size() * sizeof(float)), error))
+        return false;
+    }
+    return true;
+  }
+
   static bool fits(const GmflowMlp& mlp) {
     const auto c = static_cast<std::size_t>(mlp.channels), h = static_cast<std::size_t>(mlp.hidden);
     if (mlp.channels != gm::kChannels || mlp.hidden < gm::kHiddenTile || mlp.hidden % gm::kHiddenTile != 0 ||

@@ -153,14 +153,17 @@ struct Residual {
   rn::Buffer weights, bias, scale;
 };
 
+bool compatible_recipe(std::span<const RifeNativeConv> layers) {
+  return layers.size() == 11 && layers.front().cin == 109 && layers.front().cout == kMidChannels &&
+         layers[1].cin == kMidChannels && layers[1].cout == kChannels && layers.back().cin == kChannels &&
+         layers.back().cout == 52 && layers.back().transposed && !layers.front().transposed &&
+         !layers[1].transposed && layers.front().stride == 2 && layers[1].stride == 2;
+}
+
 class Native final : public DrbaTailNative {
  public:
   cudaError_t setup(std::span<const RifeNativeConv> layers, cudaStream_t stream) {
-    if (layers.size() != 11 || layers.front().cin != 109 || layers.front().cout != kMidChannels ||
-        layers[1].cin != kMidChannels || layers[1].cout != kChannels || layers.back().cin != kChannels ||
-        layers.back().cout != 52 || !layers.back().transposed || layers.front().transposed ||
-        layers[1].transposed || layers.front().stride != 2 || layers[1].stride != 2)
-      return cudaErrorInvalidValue;
+    if (!compatible_recipe(layers)) return cudaErrorInvalidValue;
     const std::vector<float> slopes(static_cast<std::size_t>(kChannels), 0.2F);
     if (auto status = upload_sync(slopes_, slopes, stream); status != cudaSuccess) return status;
     if (auto status =

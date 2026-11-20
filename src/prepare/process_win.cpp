@@ -66,6 +66,28 @@ std::wstring widen(std::string_view utf8) {
   return wide;
 }
 
+// Bloc Unicode hérité, avec les valeurs spécifiques au constructeur.
+std::wstring child_environment(const std::vector<std::string>& assignments) {
+  if (assignments.empty()) return {};
+  std::vector<std::wstring> extra;
+  extra.reserve(assignments.size());
+  for (const std::string& entry : assignments) extra.push_back(widen(entry));
+  std::wstring block;
+  LPWCH parent = GetEnvironmentStringsW();  // env: hérité
+  for (const wchar_t* e = parent; e != nullptr && *e != L'\0'; e += std::wcslen(e) + 1) {
+    const std::wstring_view entry(e);
+    const std::wstring_view name = entry.substr(0, entry.find(L'=', 1));
+    const bool replaced = std::ranges::any_of(extra, [&](const std::wstring& x) {
+      return x.size() > name.size() && x.starts_with(name) && x[name.size()] == L'=';
+    });
+    if (!replaced) block.append(entry).push_back(L'\0');
+  }
+  if (parent != nullptr) FreeEnvironmentStringsW(parent);
+  for (const std::wstring& entry : extra) block.append(entry).push_back(L'\0');
+  block.push_back(L'\0');
+  return block;
+}
+
 enum class PipeState { Idle, Drained, Closed };
 
 // Lit les octets déjà en attente. Laisser les écritures suivantes au prochain tour fait repasser par
@@ -138,24 +160,7 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
   std::wstring command = widen(windows_command_line(argv));  // CreateProcessW peut la modifier
   const std::wstring application = spec.program.wstring();
   const std::wstring working_dir = spec.working_dir.wstring();
-  // Bloc d'environnement Unicode : l'hérité, chaque nom de extra_env remplacé par sa valeur.
-  std::wstring env_block;
-  if (!spec.extra_env.empty()) {
-    std::vector<std::wstring> extra;
-    for (const std::string& e : spec.extra_env) extra.push_back(widen(e));
-    LPWCH parent_env = GetEnvironmentStringsW();  // env: hérité
-    for (const wchar_t* e = parent_env; e != nullptr && *e != L'\0'; e += std::wcslen(e) + 1) {
-      const std::wstring_view entry(e);
-      const std::wstring_view name = entry.substr(0, entry.find(L'=', 1));
-      const bool replaced = std::ranges::any_of(extra, [&](const std::wstring& x) {
-        return x.size() > name.size() && x.starts_with(name) && x[name.size()] == L'=';
-      });
-      if (!replaced) env_block.append(entry).push_back(L'\0');
-    }
-    if (parent_env != nullptr) FreeEnvironmentStringsW(parent_env);
-    for (const std::wstring& x : extra) env_block.append(x).push_back(L'\0');
-    env_block.push_back(L'\0');
-  }
+  std::wstring env_block = child_environment(spec.extra_env);
   PROCESS_INFORMATION started{};
   const auto start = Clock::now();
   const BOOL ok = CreateProcessW(

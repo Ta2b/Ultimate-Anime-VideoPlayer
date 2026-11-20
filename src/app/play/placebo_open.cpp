@@ -368,6 +368,42 @@ void watch_presentation(ScreenImpl& impl, const ScreenOptions& options, const st
     impl.present_watch = std::make_unique<PresentWatch>(file, key, !options.hidden);
 }
 
+void override_swapchain_depth(pl_vulkan_swapchain_params& sw_params, spdlog::logger& log) {
+  // Banc A/B : fixe le minimum d'images pour comparer uniquement les deux profondeurs.
+  if (const char* setting = std::getenv("KIRARI_AB_SWAP_DEPTH"); setting != nullptr) {  // env: banc
+    if (const std::string_view depth(setting); depth == "2" || depth == "3") {
+      sw_params.swapchain_depth = depth == "3" ? 3 : 2;
+      sw_params.min_images = std::max(sw_params.min_images, 4);
+      log.info("banc swapchain : profondeur {}, {} images minimum", sw_params.swapchain_depth,
+               sw_params.min_images);
+    }
+  }
+}
+
+GpuDevice describe_device(pl_vulkan vk) {
+  GpuDevice device{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};
+  for (std::size_t i = 0; i < device.uuid.size(); ++i) device.uuid[i] = vk->gpu->uuid[i];
+  device.vulkan = vulkan_description(vk);
+  device.luid = device_luid(vk);
+  // Le fabricant se déduit du vendorID, jamais du nom : sans lui la télémétrie NVML, l'avertissement de
+  // pilote et le choix de décodeur voient un fabricant inconnu.
+  if (const auto properties_of = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+          vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceProperties"));
+      properties_of != nullptr) {
+    VkPhysicalDeviceProperties properties{};
+    properties_of(vk->phys_device, &properties);
+    device.pci_vendor = properties.vendorID;
+    device.pci_device = properties.deviceID;
+    device.name = properties.deviceName;
+    if (device.vendor() == GpuVendor::Nvidia) {
+      // NVIDIA code sa version en 10.8.8.6 : « 615.78.08 ».
+      const std::uint32_t v = properties.driverVersion;
+      device.driver_version = std::format("{}.{}.{:02}", v >> 22, (v >> 14) & 0xFF, (v >> 6) & 0xFF);
+    }
+  }
+  return device;
+}
+
 }  // namespace
 
 namespace {
@@ -612,15 +648,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   sw_params.present_mode = vk_present_mode(options.swap_mode, *impl->channel);
   sw_params.swapchain_depth = shape.depth > 0 ? shape.depth : kSwapchainDepth;
   sw_params.min_images = shape.min_images;
-  // Banc A/B : fixe le minimum d'images pour comparer uniquement les deux profondeurs.
-  if (const char* setting = std::getenv("KIRARI_AB_SWAP_DEPTH"); setting != nullptr) {  // env: banc
-    if (const std::string_view depth(setting); depth == "2" || depth == "3") {
-      sw_params.swapchain_depth = depth == "3" ? 3 : 2;
-      sw_params.min_images = std::max(sw_params.min_images, 4);
-      impl->channel->info("banc swapchain : profondeur {}, {} images minimum", sw_params.swapchain_depth,
-                          sw_params.min_images);
-    }
-  }
+  override_swapchain_depth(sw_params, *impl->channel);
   sw_params.present_flags = present_flags(impl->present_level, impl->present_caps);
   impl->swapchain = pl_vulkan_create_swapchain(impl->vk, &sw_params);
   if (impl->swapchain == nullptr)
@@ -634,26 +662,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->open_shader_cache(options.shader_cache);
   impl->renderer = pl_renderer_create(impl->log, gpu);
 
-  impl->device = GpuDevice{.api = GpuApi::Vulkan, .name = "Vulkan (libplacebo)"};
-  for (std::size_t i = 0; i < impl->device.uuid.size(); ++i) impl->device.uuid[i] = gpu->uuid[i];
-  impl->device.vulkan = vulkan_description(impl->vk);
-  impl->device.luid = device_luid(impl->vk);
-  // Le fabricant se déduit du vendorID, jamais du nom : sans lui la télémétrie NVML, l'avertissement de
-  // pilote et le choix de décodeur voient un fabricant inconnu.
-  if (const auto properties_of = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
-          impl->vk->get_proc_addr(impl->vk->instance, "vkGetPhysicalDeviceProperties"));
-      properties_of != nullptr) {
-    VkPhysicalDeviceProperties properties{};
-    properties_of(impl->vk->phys_device, &properties);
-    impl->device.pci_vendor = properties.vendorID;
-    impl->device.pci_device = properties.deviceID;
-    impl->device.name = properties.deviceName;
-    if (impl->device.vendor() == GpuVendor::Nvidia) {
-      // NVIDIA code sa version en 10.8.8.6 : « 615.78.08 ».
-      const std::uint32_t v = properties.driverVersion;
-      impl->device.driver_version = std::format("{}.{}.{:02}", v >> 22, (v >> 14) & 0xFF, (v >> 6) & 0xFF);
-    }
-  }
+  impl->device = describe_device(impl->vk);
   watch_presentation(*impl, options, stalled);
   const QueueRef engines = impl->device.vulkan->compute;
   if (impl->device.vulkan->lock_queue == nullptr) {

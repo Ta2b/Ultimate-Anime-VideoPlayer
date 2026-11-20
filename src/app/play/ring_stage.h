@@ -135,6 +135,7 @@ class RingStage : public VideoStage, public FrameSink {
   using StageInbox = Inbox<DecodedFrame, SlotFree, Command, Flush, StreamEnd>;
   void run(const std::stop_token& stop, const ThreadReport& report);
   void emit(const ThreadReport& report);
+  std::uint32_t next_free_slot() const;
   RingFrame ring_frame(const Output& produced, std::uint32_t epoch, std::uint32_t slot, std::uint64_t ready,
                        std::int64_t submitted_us) const;
   void fail(const ThreadReport& report, const Refusal& refusal);

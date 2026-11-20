@@ -160,6 +160,16 @@ void RingStage::slot_found() {
   slot_wait_since_us_ = 0;
 }
 
+std::uint32_t RingStage::next_free_slot() const {
+  // Un slot rendu tôt ne passe pas devant les autres. Le tour repart après le dernier slot écrit.
+  const auto count = static_cast<std::uint32_t>(free_.size());
+  for (std::uint32_t k = 0; k < count; ++k) {
+    const std::uint32_t slot = (next_slot_ + k) % count;
+    if (free_[slot]) return slot;
+  }
+  return count;
+}
+
 void RingStage::emit(const ThreadReport& report) {
   while (!pending_.empty()) {
     if (pending_.front().epoch < epoch_ || failed_) {  // d'avant le Flush, ou étage en échec : jetée
@@ -208,13 +218,8 @@ void RingStage::emit(const ThreadReport& report) {
         ++front_done_;
         continue;
       }
-      // Tour à tour depuis le slot qui suit le dernier écrit : un slot rendu tôt n'est pas repris avant les
-      // autres, et l'ordre ne dépend plus de l'instant où main rend les siens.
       const auto count = static_cast<std::uint32_t>(free_.size());
-      std::uint32_t slot = count;
-      for (std::uint32_t k = 0; k < count && slot == count; ++k) {
-        if (free_[(next_slot_ + k) % count]) slot = (next_slot_ + k) % count;
-      }
+      const std::uint32_t slot = next_free_slot();
       if (slot == count) {  // attend un SlotFree
         if (slot_wait_since_us_ == 0) {
           slot_wait_since_us_ = host_now_us();

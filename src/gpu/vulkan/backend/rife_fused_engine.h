@@ -94,7 +94,10 @@ class RifeFusedEngine final : public Engine {
   // seule la nouvelle B passe dans l'encodeur.
   void next_pair_follows() override { hint_ = Hint::Follows; }
   // L'annonce oubliée : le backend a refusé l'appel avant d'enfiler la chaîne.
-  void drop_hint() { hint_ = Hint::None; }
+  void drop_hint() {
+    hint_ = Hint::None;
+    warm_next_ = false;
+  }
   int height() const { return height_; }
   int width() const { return width_; }
   // Les passes de l'encodeur depuis la création, une image chacune (tests : deux par paire à froid, une quand

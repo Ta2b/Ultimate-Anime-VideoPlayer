@@ -239,6 +239,12 @@ __global__ void __launch_bounds__(256) post_kernel(DrbaPostParams p) {
 constexpr int kGlueWidth = 32, kGlueHeight = 4, kGlueThreads = kGlueWidth * kGlueHeight;
 constexpr int kPackedX2 = 112, kFirstDynamicX2 = 56, kPackedGroup = 8;
 constexpr int kSharedStride = kGlueThreads + 1;
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
+// Le code machine Blackwell a besoin de plus de 96 registres pour cette variante.
+constexpr int kPackedGlueBlocks = 4;
+#else
+constexpr int kPackedGlueBlocks = 5;
+#endif
 
 // La lecture NCHW est contiguë par warp, la réécriture HWC8 groupée par 16 octets.
 __device__ __forceinline__ void store_packed(__half* packed, const __half* values, int pixel, int width,
@@ -272,7 +278,8 @@ __global__ void __launch_bounds__(kGlueThreads)
 }
 
 template <bool Packed>
-__global__ void __launch_bounds__(kGlueThreads, Packed ? 5 : 0) glue_kernel(DrbaGlueParams p) {
+__global__ void __launch_bounds__(kGlueThreads, Packed ? kPackedGlueBlocks : 0)
+    glue_kernel(DrbaGlueParams p) {
   const int ox = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int oy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if constexpr (!Packed) {

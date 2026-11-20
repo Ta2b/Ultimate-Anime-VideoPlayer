@@ -170,11 +170,22 @@ class ConvNet {
   void lifetimes(const prepare::GmfssGrid& grid, const Io& io);
   void place(const prepare::GmfssGrid& grid, const Io& io);
   void pack();
+  bool residual_pair(std::size_t index) const;
+  void plan_residual_rings(const Tuner& tuner);
+  bool join_candidate(std::size_t index, std::int64_t bytes, const Tuner& tuner) const;
+  bool join_lifetimes(std::size_t index, std::int64_t bytes) const;
+  void plan_join_rings(std::int64_t bytes, const Tuner& tuner);
+  bool folded_tail_fits(const prepare::GmfssGridConv& first, std::size_t index) const;
+  bool plan_folded_tail(const prepare::GmfssGrid& grid, bool eligible, const Tuner& tuner,
+                        std::string& error);
   bool layout(const prepare::GmfssGridStep& step, const Io& io, Layer& layer, std::string& error) const;
+  bool validate_layout(Layer& layer, std::string& error) const;
   bool build(const prepare::GmfssGridStep& step, const Tuner& tuner, Layer& layer, std::string& error);
   bool tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string& error);
   const Layer* twin(const Layer& layer) const;
   bool joins_at(std::size_t index) const;
+  bool separate_tail_output(std::size_t index, int piece, const __half* rgb, void* zone,
+                            std::span<const void* const> bound) const;
   __half* address(int id, void* zone, std::span<const void* const> bound) const;
 
   int height_;

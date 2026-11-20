@@ -139,6 +139,7 @@ class RifeFusedEngine final : public Engine {
 
  private:
   RifeFusedEngine() = default;
+  std::expected<void, Refusal> check_loaded(const std::shared_ptr<SharedActivations>& shared);
   // Ce que l'encodeur fait à cet appel : les deux images, B seule (l'encodage de B d'avant devient celui de A
   // en changeant d'emplacement), rien (l'encodage de l'appel précédent sert tel quel).
   enum class Encode : std::uint8_t { Both, Second, None };

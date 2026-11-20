@@ -87,6 +87,21 @@ std::expected<void, Refusal> bind_picture(AVFrame& frame, Picture& picture, cons
   return {};
 }
 
+// Les pistes copiées et la vidéo restent sur la même ligne du temps du conteneur.
+std::expected<std::int64_t, Refusal> picture_pts(ExportWriter::State& s, std::int64_t source_pts,
+                                                 spdlog::logger& log) {
+  const std::int64_t pts = av_sat_add64(source_pts, s.muxer.start_us());
+  if (source_pts == kNoPts || pts == kNoPts)
+    return refuse(RefusalCode::EncodeFailed, "image : horodatage de présentation invalide");
+  if (!s.any || pts > s.last_pts) return pts;
+  if (s.last_pts == std::numeric_limits<std::int64_t>::max())
+    return refuse(RefusalCode::EncodeFailed, "image : plus de pas après le dernier horodatage");
+  if (s.shifted++ == 0)
+    log.warn("image à {} µs, pas après la précédente ({} µs) : décalée à {} µs", pts, s.last_pts,
+             s.last_pts + 1);
+  return s.last_pts + 1;
+}
+
 }  // namespace
 
 std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const WriterConfig& config) {
@@ -276,23 +291,13 @@ void ExportWriter::run(const std::stop_token& stop) {
     frame->colorspace = s.color.matrix;
     frame->color_range = s.color.range;
     frame->chroma_location = s.color.siting;
-    // Sur la ligne du conteneur, comme les pistes copiées ; strictement croissant pour l'encodeur.
-    std::int64_t pts = av_sat_add64(picture.pts_us, s.muxer.start_us());
-    if (picture.pts_us == kNoPts || pts == kNoPts)
-      return fail(Refusal{RefusalCode::EncodeFailed, "image : horodatage de présentation invalide"});
-    if (s.any && pts <= s.last_pts) {
-      if (s.last_pts == std::numeric_limits<std::int64_t>::max())
-        return fail(Refusal{RefusalCode::EncodeFailed, "image : plus de pas après le dernier horodatage"});
-      if (s.shifted++ == 0)
-        log->warn("image à {} µs, pas après la précédente ({} µs) : décalée à {} µs", pts, s.last_pts,
-                  s.last_pts + 1);
-      pts = s.last_pts + 1;
-    }
-    if (auto repeated = repeat_last(pts); !repeated) return fail(std::move(repeated.error()));
+    auto pts = picture_pts(s, picture.pts_us, *log);
+    if (!pts) return fail(std::move(pts.error()));
+    if (auto repeated = repeat_last(*pts); !repeated) return fail(std::move(repeated.error()));
     if (stop.stop_requested()) return;
-    s.last_pts = pts;
+    s.last_pts = *pts;
     s.any = true;
-    frame->pts = pts;
+    frame->pts = *pts;
     // La durée d'une image, pour que la dernière en ait une (sans elle, un maintien final est perdu) :
     // la période nominale de la sortie.
     if (s.fps_num > 0) frame->duration = av_rescale(1'000'000, s.fps_den, s.fps_num);

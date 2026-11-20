@@ -410,6 +410,29 @@ bool full_layer_grid(const LayerGridArgs& grid) {
   return (grid.bits[words] & mask) == mask;
 }
 
+bool layer_buffers_mismatch(const WarpBlendParams& p, const LayerArgs& layers, bool ring) {
+  return (ring ? p.out != nullptr : p.out == nullptr) || p.a == nullptr || p.b == nullptr ||
+         p.flow == nullptr || p.mask == nullptr || p.out == p.a || p.out == p.b || p.out == p.flow ||
+         p.out == p.mask || p.textures.a != 0 || p.textures.b != 0 || p.textures.flow != 0 ||
+         p.textures.mask != 0 || layers.a != p.a || layers.b != p.b || layers.out != p.out ||
+         layers.count != 2 || layers.source_grid.cols != 0;
+}
+
+bool layer_geometry_invalid(const WarpBlendParams& p, const LayerArgs& layers, bool ring) {
+  return layers.width != p.width || layers.height != p.height || p.width < 1 || p.width > 16384 ||
+         p.height < 1 || p.height > 16384 || p.plane_width < 1 || p.plane_height < 1 || p.window_width < 1 ||
+         p.window_height < 1 || p.window_x < 0 || p.window_y < 0 ||
+         p.window_width > p.plane_width - p.window_x || p.window_height > p.plane_height - p.window_y ||
+         (!ring && p.out == p.previous_flow);
+}
+
+bool layer_grid_invalid(const LayerArgs& layers, float time) {
+  const auto& g = layers.grid;
+  return g.cols < 1 || g.cols > kernels::kLayerMaxCols || g.rows < 1 || g.rows > kernels::kLayerMaxRows ||
+         !(g.tile_w > 0.0F && g.tile_h > 0.0F && layers.guard_high > layers.guard_low && time > 0.0F &&
+           time < 1.0F);
+}
+
 template <bool Ring>
 void launch_layers(dim3 grid, dim3 block, const WarpBlendParams& p, const LayerArgs& layers,
                    LayerWarpBounds bounds, unsigned* count, cudaStream_t stream) {
@@ -660,20 +683,9 @@ cudaError_t launch_certify_layer_warp(const void* data, std::size_t elements, bo
 cudaError_t launch_warp_blend_layers(const WarpBlendParams& p, const LayerArgs& layers,
                                      LayerWarpBounds bounds, unsigned* shortcut_count, cudaStream_t stream,
                                      bool compact_poses) {
-  const auto& g = layers.grid;
   const bool ring = p.surface.object != 0;
-  if ((ring ? p.out != nullptr : p.out == nullptr) || p.a == nullptr || p.b == nullptr || p.flow == nullptr ||
-      p.mask == nullptr || p.out == p.a || p.out == p.b || p.out == p.flow || p.out == p.mask ||
-      p.textures.a != 0 || p.textures.b != 0 || p.textures.flow != 0 || p.textures.mask != 0 ||
-      layers.a != p.a || layers.b != p.b || layers.out != p.out || layers.count != 2 ||
-      layers.source_grid.cols != 0 || layers.width != p.width || layers.height != p.height || p.width < 1 ||
-      p.width > 16384 || p.height < 1 || p.height > 16384 || p.plane_width < 1 || p.plane_height < 1 ||
-      p.window_width < 1 || p.window_height < 1 || p.window_x < 0 || p.window_y < 0 ||
-      p.window_width > p.plane_width - p.window_x || p.window_height > p.plane_height - p.window_y ||
-      (!ring && p.out == p.previous_flow) || g.cols < 1 || g.cols > kernels::kLayerMaxCols || g.rows < 1 ||
-      g.rows > kernels::kLayerMaxRows ||
-      !(g.tile_w > 0.0F && g.tile_h > 0.0F && layers.guard_high > layers.guard_low && p.time > 0.0F &&
-        p.time < 1.0F))
+  if (layer_buffers_mismatch(p, layers, ring) || layer_geometry_invalid(p, layers, ring) ||
+      layer_grid_invalid(layers, p.time))
     return cudaErrorInvalidValue;
   // Aux instants extrêmes, le rapport (1−t)/t de la sigmoïde peut déborder.
   if (p.time < 0x1p-16F || p.time > 1.0F - 0x1p-16F) bounds = {};
@@ -684,7 +696,7 @@ cudaError_t launch_warp_blend_layers(const WarpBlendParams& p, const LayerArgs& 
   }
   if (compact_poses && ring && p.cubic && p.keep_poses && p.from_middle && p.pan == nullptr &&
       shortcut_count == nullptr && bounds.a_outside != nullptr && bounds.b_outside != nullptr &&
-      full_layer_grid(g)) {
+      full_layer_grid(layers.grid)) {
     warp_layer_deferred<<<grid, block, 0, stream>>>(p, layers, bounds);
   } else if (ring) {
     launch_layers<true>(grid, block, p, layers, bounds, shortcut_count, stream);

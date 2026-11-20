@@ -66,6 +66,18 @@ bool read_all(const char* path, std::vector<std::byte>& out) {
   return static_cast<bool>(file);
 }
 
+bool read_input(const char* path, std::size_t pixels, std::vector<__half>& input) {
+  std::vector<std::byte> raw;
+  if (!read_all(path, raw) || raw.size() != pixels * sizeof(float)) return false;
+  input.resize(pixels);
+  for (std::size_t i = 0; i < pixels; ++i) {
+    float value = 0.F;
+    std::memcpy(&value, raw.data() + i * sizeof(float), sizeof(float));
+    input[i] = __float2half(value);
+  }
+  return true;
+}
+
 bool number(const char* text, int& value) {
   const std::string_view view(text);
   const auto [end, error] = std::from_chars(view.data(), view.data() + view.size(), value);
@@ -279,15 +291,8 @@ int main(int argc, char* const* argv) {
 
   const std::size_t pixels =
       std::size_t{3} * static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
-  std::vector<std::byte> raw;
-  if (!read_all(argv[4], raw) || raw.size() != pixels * sizeof(float))
-    return fail("entrée illisible ou de mauvaise taille");
-  std::vector<__half> in_half(pixels);
-  for (std::size_t i = 0; i < pixels; ++i) {
-    float f = 0.F;
-    std::memcpy(&f, raw.data() + i * sizeof(float), sizeof(float));
-    in_half[i] = __float2half(f);
-  }
+  std::vector<__half> in_half;
+  if (!read_input(argv[4], pixels, in_half)) return fail("entrée illisible ou de mauvaise taille");
 
   void *workspace = nullptr, *input = nullptr, *output = nullptr;
   CU(cudaMalloc(&workspace, net ? static_cast<std::size_t>(net->workspace_bytes()) : 1U));

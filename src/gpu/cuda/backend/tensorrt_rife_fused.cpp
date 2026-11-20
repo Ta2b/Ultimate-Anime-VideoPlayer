@@ -95,6 +95,36 @@ std::expected<ModelSpec, Refusal> lite_encoder_body(const std::filesystem::path&
                    .tuned = false};
 }
 
+bool supports_lite_encoder_body(const cudaDeviceProp& device, const RifeFusedKey& key,
+                                const std::filesystem::path& manifest) {
+  // L'empreinte du Lite livré fait partie du nom dérivé (prepare/rife_split.cpp).
+  return device.major == 8 && device.minor == 9 && key.motion && key.height == 1088 && key.width == 1920 &&
+         core::to_utf8(manifest.stem()).ends_with("-8b30b93ef8ab0b3c-motion");
+}
+
+std::expected<std::string, Refusal> build_lite_encoder_body(const std::filesystem::path& source,
+                                                            const RifeFusedKey& key,
+                                                            prepare::TrtexecConfig config,
+                                                            const prepare::EngineCheck& check,
+                                                            Progress& progress) {
+  auto body = lite_encoder_body(source, key.height, key.width);
+  if (!body) return std::unexpected(std::move(body.error()));
+  config.hwc8_output = true;
+  const prepare::TrtexecBuilder builder(std::move(config), check);
+  const Shape in{.dims = {1, 3, key.height, key.width}};
+  const auto count = static_cast<float>(key.engines.size());
+  Progress part{.report =
+                    [&progress, count](float fraction, const std::string& stage) {
+                      if (progress.report)
+                        progress.report((count + fraction) / (count + 1.0F),
+                                        "RIFE Lite : encodeur hybride : " + stage);
+                    },
+                .stop = progress.stop};
+  auto built = builder.build(*body, ShapeSet{.min = in, .opt = in, .max = in}, part);
+  if (!built) return std::unexpected(std::move(built.error()));
+  return core::to_utf8(built->path.filename());
+}
+
 // L'identité d'un verdict gardé (rife_native_verdict.h) : la carte (nom, architecture, UUID), le pilote, les
 // moteurs de la chaîne (clé d'artefact : taille, variante, warp, plan, noms des moteurs), les sources des
 // noyaux natifs et le seuil. Un changement de l'un refait l'essai.
@@ -149,10 +179,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
                                ? kernels::RifeWarp::CatmullRom
                                : kernels::RifeWarp::Bilinear,
                    .plan = manifest->plan};
-  // Empreinte du Lite livré, incluse dans le nom dérivé (prepare/rife_split.cpp).
-  const bool try_body = rife_native_ && properties_.major == 8 && properties_.minor == 9 && key.motion &&
-                        h == 1088 && w == 1920 &&
-                        core::to_utf8(model.onnx_path.stem()).ends_with("-8b30b93ef8ab0b3c-motion");
+  const bool try_body = rife_native_ && supports_lite_encoder_body(properties_, key, model.onnx_path);
   const auto total = count + (try_body ? 1U : 0U);
   for (std::size_t i = 0; i < count; ++i) {
     const std::filesystem::path onnx =
@@ -180,30 +207,14 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
     key.engines.push_back(core::to_utf8(built->path.filename()));
   }
   if (try_body) {
-    auto body = lite_encoder_body(folder / core::path_from_utf8(manifest->pieces.front()), h, w);
-    if (body) {
-      auto config = trtexec_config();
-      config.hwc8_output = true;
-      const prepare::TrtexecBuilder body_builder(config, check);
-      const Shape in{.dims = {1, 3, h, w}};
-      Progress part{.report =
-                        [&progress, count, total](float fraction, const std::string& stage) {
-                          if (progress.report)
-                            progress.report(
-                                (static_cast<float>(count) + fraction) / static_cast<float>(total),
-                                "RIFE Lite : encodeur hybride : " + stage);
-                        },
-                    .stop = progress.stop};
-      auto built = body_builder.build(*body, ShapeSet{.min = in, .opt = in, .max = in}, part);
-      if (built)
-        key.encode_body = core::to_utf8(built->path.filename());
-      else if (built.error().code == RefusalCode::Cancelled)
-        return std::unexpected(std::move(built.error()));
-      else
-        log(BackendLogLevel::Warn, "RIFE Lite : préfixe hybride écarté : " + built.error().detail);
-    } else {
+    auto body = build_lite_encoder_body(folder / core::path_from_utf8(manifest->pieces.front()), key,
+                                        trtexec_config(), check, progress);
+    if (body)
+      key.encode_body = std::move(*body);
+    else if (body.error().code == RefusalCode::Cancelled)
+      return std::unexpected(std::move(body.error()));
+    else
       log(BackendLogLevel::Warn, "RIFE Lite : préfixe hybride écarté : " + body.error().detail);
-    }
   }
   return Artifact{.cache_key = rife_fused_artifact_key(key), .path = model.onnx_path};
 }

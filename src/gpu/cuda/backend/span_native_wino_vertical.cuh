@@ -169,6 +169,61 @@ __device__ __forceinline__ void store_output(const __half* s, const Params& p, i
   }
 }
 
+// Transformée inverse des sommes et préparation des poids de la porte dans le halo libéré.
+template <int C, bool Gate, bool Packed, int ChannelTiles>
+__device__ __forceinline__ void store_transform(__half* s, const Params& p,
+                                                const Frag<Acc::kF16> (&acc)[2][kPoints][ChannelTiles],
+                                                int tid, int lane, int local_y, int channel) {
+  if constexpr (Gate) {
+    const auto base_w = smem_u32(s + kWidth * kHeight * kStride<C>);
+    for (int k = tid; k < C * C / 8; k += kWorkers<C>)
+      cp_async16(base_w + static_cast<unsigned>(16 * k), p.w1 + k, true);
+    cp_async_wait_all();
+  }
+  const int g = lane >> 2, t = lane & 3;
+#pragma unroll
+  for (int n = 0; n < ChannelTiles; ++n) {
+    const int c = channel + n * 8 + 2 * t;
+    const float2 bias = __ldg(reinterpret_cast<const float2*>(p.bias + c));
+#pragma unroll
+    for (int f = 0; f < 2; ++f)
+#pragma unroll
+      for (int h = 0; h < 2; ++h) {
+        const int x = g + 8 * h + 16 * f, at = (local_y * kWidth + x) * kStride<C> + c;
+        const auto a = fixed_pair<Packed>(acc[f][0][n], h), b = fixed_pair<Packed>(acc[f][1][n], h);
+        const auto d = fixed_pair<Packed>(acc[f][2][n], h), e = fixed_pair<Packed>(acc[f][3][n], h);
+        const auto put = [&](int index, float lo, float hi) {
+          const auto narrowed = to_half2(lo, hi);
+          if constexpr (Gate)
+            *reinterpret_cast<__half2*>(s + index) = narrowed;
+          else {
+            const auto v = __half22float2(narrowed);
+            *reinterpret_cast<__half2*>(s + index) =
+                to_half2(fmaxf(0.F, v.x + bias.x), fmaxf(0.F, v.y + bias.y));
+          }
+        };
+        put(at, a.x + b.x + d.x, a.y + b.y + d.y);
+        put(at + kWidth * kStride<C>, b.x - d.x - e.x, b.y - d.y - e.y);
+      }
+  }
+}
+
+template <int C, bool Gate, bool Packed, bool Cat>
+__device__ __forceinline__ void finish_tile(__half* s, const Params& p, const Params& cat, int x0, int y0,
+                                            int tid, int warp, int lane) {
+  if constexpr (Gate) {
+    vertical_gate<C, Packed>(s, p, x0, y0, warp, lane);
+    __syncthreads();
+  }
+  if constexpr (Cat) {
+    fused_cat<C>(s, cat, x0, y0, warp, lane);
+    __syncthreads();
+    store_output<C>(s, cat, x0, y0, tid);
+  } else {
+    store_output<C>(s, p, x0, y0, tid);
+  }
+}
+
 // Une transformée F(2,3) par paire de lignes. L'axe horizontal garde les trois prises directes.
 // Deux warps en C64 et trois en C48 partagent les canaux de sortie d'une paire. V reste dans les registres
 // à 64 canaux. À 48 canaux, le calcul partagé de V évite de le refaire à chaque prise horizontale.
@@ -261,50 +316,9 @@ __device__ __forceinline__ void convolution_tile(Params p, Params cat) {
     }
   }
   __syncthreads();
-  if constexpr (Gate) {
-    const auto base_w = smem_u32(s + kWidth * kHeight * kStride<C>);
-    for (int k = tid; k < C * C / 8; k += kWorkers<C>)
-      cp_async16(base_w + static_cast<unsigned>(16 * k), p.w1 + k, true);
-    cp_async_wait_all();
-  }
-  const int g = lane >> 2, t = lane & 3;
-#pragma unroll
-  for (int n = 0; n < kGroup / 8; ++n) {
-    const int c = channel + n * 8 + 2 * t;
-    const float2 bias = __ldg(reinterpret_cast<const float2*>(p.bias + c));
-#pragma unroll
-    for (int f = 0; f < 2; ++f)
-#pragma unroll
-      for (int h = 0; h < 2; ++h) {
-        const int x = g + 8 * h + 16 * f, at = (local_y * kWidth + x) * kStride<C> + c;
-        const auto a = fixed_pair<Packed>(acc[f][0][n], h), b = fixed_pair<Packed>(acc[f][1][n], h);
-        const auto d = fixed_pair<Packed>(acc[f][2][n], h), e = fixed_pair<Packed>(acc[f][3][n], h);
-        const auto put = [&](int index, float lo, float hi) {
-          const auto narrowed = to_half2(lo, hi);
-          if constexpr (Gate)
-            *reinterpret_cast<__half2*>(s + index) = narrowed;
-          else {
-            const auto v = __half22float2(narrowed);
-            *reinterpret_cast<__half2*>(s + index) =
-                to_half2(fmaxf(0.F, v.x + bias.x), fmaxf(0.F, v.y + bias.y));
-          }
-        };
-        put(at, a.x + b.x + d.x, a.y + b.y + d.y);
-        put(at + kWidth * kStride<C>, b.x - d.x - e.x, b.y - d.y - e.y);
-      }
-  }
+  store_transform<C, Gate, Packed>(s, p, acc, tid, lane, local_y, channel);
   __syncthreads();
-  if constexpr (Gate) {
-    vertical_gate<C, Packed>(s, p, x0, y0, warp, lane);
-    __syncthreads();
-  }
-  if constexpr (Cat) {
-    fused_cat<C>(s, cat, x0, y0, warp, lane);
-    __syncthreads();
-    store_output<C>(s, cat, x0, y0, tid);
-  } else {
-    store_output<C>(s, p, x0, y0, tid);
-  }
+  finish_tile<C, Gate, Packed, Cat>(s, p, cat, x0, y0, tid, warp, lane);
 }
 
 template <int C, bool Gate, bool Flat = false>

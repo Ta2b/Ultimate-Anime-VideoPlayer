@@ -4,6 +4,7 @@
 // tolérances de native_sums.h et chronométrée en graphe ; la plus rapide de celles qui rendent la sortie de
 // la référence est gardée. Une grande couche ne passe au banc que sur une bande de ses lignes. Aux formes du
 // RIFE natif s'ajoutent celles en flux (rn::stream_configs, conv_stream_kernels.cuh), mesurées de même.
+// Les formes retenues servent ensuite à choisir et placer les anneaux du GridNet.
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -22,6 +23,55 @@ namespace kirari::gpu::cuda::gmfss_plan {
 namespace {
 
 using rn::Kind;
+
+bool direct_ring_shape(const Shape& shape) {
+  const rn::Config& c = shape.cfg;
+  return c.kc == 64 && c.ct == 64 && (c.rows == 1 || c.rows == 2) && c.ksplit == 1 && c.bands == 0 &&
+         shape.launch != nullptr &&
+         shape.launch == rn::pick_for(RifeNativeSums::kF16, Kind::kSame, c.kc, c.ct, c.rows, c.ahead);
+}
+
+bool same_c64(const Layer& layer, int height, int width) {
+  return layer.kind == Kind::kSame && layer.phases == 1 && !layer.blocked8 && layer.cin == 64 &&
+         layer.cout == 64 && layer.in_ld == 64 && layer.out_ld == 64 && layer.ih == height &&
+         layer.oh == height && layer.iw == width && layer.ow == width;
+}
+
+bool join_shape(const Layer& layer, int kc, int rows, bool ahead) {
+  constexpr auto f16 = RifeNativeSums::kF16;
+  const Shape& shape = layer.shapes[sums_index(f16)];
+  const rn::Config& c = shape.cfg;
+  return c.kc == kc && c.ct == 64 && c.rows == rows && c.ahead == ahead && c.ksplit == 1 && c.bands == 0 &&
+         shape.launch != nullptr &&
+         shape.launch == rn::pick_for(f16, layer.kind, c.kc, c.ct, c.rows, c.ahead);
+}
+
+bool up_c64(const Layer& up, int height, int width) {
+  return up.kind == Kind::kPhase && up.phases == 4 && !up.blocked8 && up.cin == 128 && up.in_ld == 128 &&
+         up.cout == 64 && up.out_ld == 64 && 2 * up.ih == height && 2 * up.iw == width && up.oh == up.ih &&
+         up.ow == up.iw && up.skip < 0 && !up.activation;
+}
+
+bool separate(const Placed& zone, std::int64_t bytes, const Placed& t) {
+  return t.external < 0 && (zone.offset + bytes <= t.offset || t.offset + t.bytes <= zone.offset);
+}
+
+std::string ring_shape_name(const Shape& shape) {
+  const rn::Config& c = shape.cfg;
+  return "Kc" + std::to_string(c.kc) + "/CT" + std::to_string(c.ct) + "/R" + std::to_string(c.rows) +
+         (c.ahead ? "/avance" : "") + (c.ksplit > 1 ? "/K découpé" : "") + (c.bands > 0 ? "/flux" : "");
+}
+
+bool join_shapes(const Layer& a, const Layer& b, const Layer& up, const Layer& add) {
+  constexpr auto f16 = sums_index(RifeNativeSums::kF16);
+  const auto& ac = a.shapes[f16].cfg;
+  const auto& bc = b.shapes[f16].cfg;
+  const auto& uc = up.shapes[f16].cfg;
+  const auto& dc = add.shapes[f16].cfg;
+  return join_shape(a, 64, 2, ac.ahead) && (bc.kc == 32 || bc.kc == 64) && join_shape(b, bc.kc, 1, false) &&
+         (uc.kc == 32 || uc.kc == 64) && (uc.rows == 1 || uc.rows == 2) &&
+         join_shape(up, uc.kc, uc.rows, false) && join_shape(add, 64, 2, dc.ahead);
+}
 
 // Les octets que lit (l'entrée, qui sert aussi de résiduel au banc) et qu'écrit une convolution sur rows.
 std::pair<std::int64_t, std::int64_t> bytes_of(const Layer& layer, Rows rows) {
@@ -245,6 +295,103 @@ bool ConvNet::tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string&
     return false;
   }
   return sums != RifeNativeSums::kF16 || tune_shuffle(tuner, layer, band, best, error);
+}
+
+// Le premier filtre applique le PReLU. Le deuxième ajoute le résiduel et il est le seul
+// à relire l'intermédiaire, dont la zone peut alors servir d'anneau.
+bool ConvNet::residual_pair(std::size_t i) const {
+  const Layer& a = layers_[i];
+  const Layer& b = layers_[i + 1];
+  const Placed& temp = tensor(a.to);
+  const auto now = static_cast<int>(i);
+  return a.piece == 0 && b.piece == 0 && same_c64(a, height_, width_) && same_c64(b, height_, width_) &&
+         a.skip < 0 && a.activation && !b.activation && b.skip == a.from && b.skip_ld == 64 &&
+         b.from == a.to && b.in_slope == 1.F && a.to != b.to && temp.external < 0 && temp.first == now &&
+         temp.last == now + 1;
+}
+
+void ConvNet::plan_residual_rings(const Tuner& tuner) {
+  constexpr auto f16 = sums_index(RifeNativeSums::kF16);
+  for (std::size_t i = 0; i + 1 < layers_.size(); ++i) {
+    Layer& a = layers_[i];
+    const Layer& b = layers_[i + 1];
+    if (!residual_pair(i)) continue;
+    a.ring_next = direct_ring_shape(a.shapes[f16]) && direct_ring_shape(b.shapes[f16]);
+    tuner.tuning.notes.push_back(
+        "anneau C64, convolutions " + std::to_string(i) + "–" + std::to_string(i + 1) + " : " +
+        ring_shape_name(a.shapes[f16]) + ", " + ring_shape_name(b.shapes[f16]) +
+        (a.ring_next ? " : forme compatible en sommes f16" : " : forme directe gardée"));
+  }
+}
+
+bool ConvNet::join_lifetimes(std::size_t i, std::int64_t bytes) const {
+  // Le résiduel J n'est lu que par l'addition. Son allocation existante peut garder les trois anneaux.
+  const int now = static_cast<int>(i);
+  const Placed& j = tensor(layers_[i + 1].to);
+  const Layer& up = layers_[i + 2];
+  const Placed& t = tensor(up.to);
+  const Placed& residual_in = tensor(layers_[i].from);
+  const Placed& up_in = tensor(up.from);
+  const Placed& out = tensor(layers_[i + 3].to);
+  return j.external < 0 && j.first == now + 1 && j.last == now + 3 && j.bytes >= bytes && t.external < 0 &&
+         t.first == now + 2 && t.last == now + 3 && residual_in.first < now && up_in.first < now &&
+         out.first == now + 3;
+}
+
+bool ConvNet::join_candidate(std::size_t i, std::int64_t bytes, const Tuner& tuner) const {
+  const Layer& a = layers_[i];
+  const Layer& b = layers_[i + 1];
+  const Layer& up = layers_[i + 2];
+  const Layer& add = layers_[i + 3];
+  if (!residual_pair(i) || up.piece != 0 || add.piece != 0 || !up_c64(up, height_, width_) ||
+      !same_c64(add, height_, width_) || up.to != add.from || b.to != add.skip || add.skip_ld != 64 ||
+      add.activation)
+    return false;
+  const bool fits = join_lifetimes(i, bytes);
+  const bool shape = join_shapes(a, b, up, add);
+  constexpr auto f16 = sums_index(RifeNativeSums::kF16);
+  tuner.tuning.notes.push_back(
+      "anneaux C64 avec addition, convolutions " + std::to_string(i) + "–" + std::to_string(i + 3) + " : " +
+      ring_shape_name(b.shapes[f16]) + ", " + ring_shape_name(up.shapes[f16]) + ", " +
+      ring_shape_name(add.shapes[f16]) +
+      (fits && shape ? " : forme compatible en sommes f16" : " : forme réglée gardée"));
+  return fits && shape;
+}
+
+void ConvNet::plan_join_rings(std::int64_t bytes, const Tuner& tuner) {
+  std::vector<std::size_t> candidates;
+  for (std::size_t i = 0; i + 3 < layers_.size(); ++i)
+    if (join_candidate(i, bytes, tuner)) candidates.push_back(i);
+  if (candidates.empty()) return;
+  auto original_tensors = tensors_;
+  const auto original_bytes = zone_bytes_;
+  for (const auto i : candidates) {
+    // B et I doivent rester intacts jusqu'à la dernière bande. Sans cela le plan initial peut partager
+    // la même adresse entre B et la sortie J2 dans laquelle l'addition écrit maintenant dès le début.
+    for (const int from : {layers_[i].from, layers_[i + 2].from}) {
+      Placed& t = tensors_[static_cast<std::size_t>(from)];
+      t.last = std::max(t.last, static_cast<int>(i + 3));
+    }
+  }
+  pack();
+  bool safe = zone_bytes_ <= original_bytes;
+  for (const auto i : candidates) {
+    const Placed& j = tensor(layers_[i + 1].to);
+    const Placed& b = tensor(layers_[i].from);
+    const Placed& up_in = tensor(layers_[i + 2].from);
+    const Placed& out = tensor(layers_[i + 3].to);
+    safe = safe && separate(j, bytes, b) && separate(j, bytes, up_in) && separate(j, bytes, out) &&
+           separate(out, out.bytes, b) && separate(out, out.bytes, up_in);
+  }
+  if (safe) {
+    join_tensors_ = std::move(tensors_);
+    for (const auto i : candidates) layers_[i].join_next = true;
+  } else {
+    tuner.tuning.notes.emplace_back("anneaux C64 avec addition : zone incompatible, anneau résiduel gardé");
+  }
+  // Le mélange de précisions et l'IFNet sont choisis avec les adresses ordinaires et sans joints.
+  tensors_ = std::move(original_tensors);
+  zone_bytes_ = original_bytes;
 }
 
 }  // namespace kirari::gpu::cuda::gmfss_plan

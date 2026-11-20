@@ -303,19 +303,21 @@ class NativeBody final : public SpanFp8Body {
                 (weights.winograd == SpanWinograd::Vertical ||
                  weights.winograd == SpanWinograd::VerticalUnrolled || second_direct_);
     unrolled_ = weights.winograd == SpanWinograd::VerticalUnrolled;
-    if constexpr (A == sn::Acc::kF16 && C == 64) {
+    if constexpr (A == sn::Acc::kF16) configure_gates();
+    configure_bands(weights);
+  }
+
+  void configure_gates() {
+    if constexpr (C == 64) {
       // La porte à 64 canaux réemploie l'épilogue sur le chemin mesuré en 1080p sur Ada.
       const bool tuned = used_ == 8 && fw_ == 960 && fh_ == 540 && ada_device();
       gate_cache_ = tuned && !shared_ && !wino_ && !vertical_;
       vertical_gate_cat_ = tuned && vertical_ && unrolled_;
     }
-    if constexpr (A == sn::Acc::kF16) {
-      const char* fuse = std::getenv("KIRARI_AB_SPAN_GATE_CAT");  // env: banc
-      if (fuse != nullptr && std::string_view(fuse) == "0") vertical_gate_cat_ = false;
-      const bool compatible = C == 48 ? used_ == 5 : used_ == 8 && !shared_;
-      gate_cat_ = compatible && !wino_ && !vertical_ && fuse != nullptr && std::string_view(fuse) == "1";
-    }
-    configure_bands(weights);
+    const char* fuse = std::getenv("KIRARI_AB_SPAN_GATE_CAT");  // env: banc
+    if (fuse != nullptr && std::string_view(fuse) == "0") vertical_gate_cat_ = false;
+    const bool compatible = C == 48 ? used_ == 5 : used_ == 8 && !shared_;
+    gate_cat_ = compatible && !wino_ && !vertical_ && fuse != nullptr && std::string_view(fuse) == "1";
   }
 
   void configure_bands(const SpanFp8Weights& weights) {
