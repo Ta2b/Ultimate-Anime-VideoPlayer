@@ -4,6 +4,7 @@
 #pragma once
 
 #include "gpu/cuda/backend/span_native_conv.cuh"
+#include "gpu/cuda/backend/span_native_vertical_cat.cuh"
 
 namespace kirari::gpu::cuda::span_native::vertical {
 
@@ -104,8 +105,7 @@ __device__ __forceinline__ void vertical_gate(__half* s, Params p, int x0, int y
                                : make_float2(0.F, 0.F);
           const auto sums = fixed_pair<Packed>(d[j], h), v = cached[2 * np + j][h];
           *reinterpret_cast<__half2*>(s + (q0 + 8 * h) * kStride<C> + channel) =
-              to_half2((v.x + x.x) * tanh_approx(sums.x + b1.x),
-                       (v.y + x.y) * tanh_approx(sums.y + b1.y));
+              to_half2((v.x + x.x) * tanh_approx(sums.x + b1.x), (v.y + x.y) * tanh_approx(sums.y + b1.y));
         }
       }
     }
@@ -173,8 +173,8 @@ __device__ __forceinline__ void store_output(const __half* s, const Params& p, i
 // Deux warps en C64 et trois en C48 partagent les canaux de sortie d'une paire. V reste dans les registres
 // à 64 canaux. À 48 canaux, le calcul partagé de V évite de le refaire à chaque prise horizontale.
 // Le masque reste celui des tuiles 32 × 8 de SPAN, deux rangées de blocs ici.
-template <int C, bool Gate, bool Flat = false>
-__global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
+template <int C, bool Gate, bool Flat, bool Cat>
+__device__ __forceinline__ void convolution_tile(Params p, Params cat) {
   static_assert(C == 48 || C == 64);
   constexpr bool Prepared = C == 48;
   static_assert((kWidth * kHeight * kStride<C> + C * C) * sizeof(__half) <= kShared<C>);
@@ -290,8 +290,7 @@ __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
           }
         };
         put(at, a.x + b.x + d.x, a.y + b.y + d.y);
-        put(at + kWidth * kStride<C>, b.x - d.x - e.x,
-            b.y - d.y - e.y);
+        put(at + kWidth * kStride<C>, b.x - d.x - e.x, b.y - d.y - e.y);
       }
   }
   __syncthreads();
@@ -299,7 +298,24 @@ __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
     vertical_gate<C, C == 64 && Flat>(s, p, x0, y0, warp, lane);
     __syncthreads();
   }
-  store_output<C>(s, p, x0, y0, tid);
+  if constexpr (Cat) {
+    fused_cat<C>(s, cat, x0, y0, warp, lane);
+    __syncthreads();
+    store_output<C>(s, cat, x0, y0, tid);
+  } else {
+    store_output<C>(s, p, x0, y0, tid);
+  }
+}
+
+template <int C, bool Gate, bool Flat = false>
+__global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
+  convolution_tile<C, Gate, Flat, false>(p, {});
+}
+
+template <int C>
+__global__ void __launch_bounds__(kWorkers<C>, 3) gate_cat(Params gate, Params cat) {
+  static_assert(C == 64);
+  convolution_tile<C, true, true, true>(gate, cat);
 }
 
 template <int C>

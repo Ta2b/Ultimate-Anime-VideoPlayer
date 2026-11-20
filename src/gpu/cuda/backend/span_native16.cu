@@ -301,11 +301,13 @@ class NativeBody final : public SpanFp8Body {
     unrolled_ = weights.winograd == SpanWinograd::VerticalUnrolled;
     if constexpr (A == sn::Acc::kF16 && C == 64) {
       // La porte à 64 canaux réemploie l'épilogue sur le chemin mesuré en 1080p sur Ada.
-      gate_cache_ =
-          !shared_ && !wino_ && !vertical_ && used_ == 8 && fw_ == 960 && fh_ == 540 && ada_device();
+      const bool tuned = used_ == 8 && fw_ == 960 && fh_ == 540 && ada_device();
+      gate_cache_ = tuned && !shared_ && !wino_ && !vertical_;
+      vertical_gate_cat_ = tuned && vertical_ && unrolled_;
     }
     if constexpr (A == sn::Acc::kF16) {
       const char* fuse = std::getenv("KIRARI_AB_SPAN_GATE_CAT");  // env: banc
+      if (fuse != nullptr && std::string_view(fuse) == "0") vertical_gate_cat_ = false;
       const bool compatible = C == 48 ? used_ == 5 : used_ == 8 && !shared_;
       gate_cat_ = compatible && !wino_ && !vertical_ && fuse != nullptr && std::string_view(fuse) == "1";
     }
@@ -363,7 +365,7 @@ class NativeBody final : public SpanFp8Body {
     cat.in[2] = t_[kK1];
     cat.in[3] = t_[kT1];
     cat.input_row_mask[1] = cat.input_row_mask[2] = cat.input_row_mask[3] = rolling;
-    const bool fused = gate_cat_ && region_ == nullptr;
+    const bool fused = (gate_cat_ || vertical_gate_cat_) && region_ == nullptr;
     const int quantum =
         vertical_ ? 2 : 1;  // la paire Winograd doit avoir toutes ses entrées avant le lancement
     for (int b = 0; b < used_; ++b) {
@@ -389,6 +391,21 @@ class NativeBody final : public SpanFp8Body {
       if constexpr (A == sn::Acc::kF16) {
         if (fused && b == last) {
           const Rows cat_rows = front.next(0);  // exactement le même front que celui de la porte
+          if constexpr (C == 64) {
+            if (vertical_gate_cat_) {
+              if (cat_rows.from < cat_rows.to) {
+                c3.y0 = cat.y0 = cat_rows.from;
+                c3.y1 = cat.y1 = cat_rows.to;
+                const int first = cat_rows.from & ~(sn::vertical::kHeight - 1);
+                const auto blocks =
+                    static_cast<unsigned>((cat_rows.to - 1 - first) / sn::vertical::kHeight + 1);
+                sn::vertical::gate_cat<C>
+                    <<<dim3(grid_.x, blocks), sn::vertical::kWorkers<C>, sn::vertical::kShared<C>, stream>>>(
+                        c3, cat);
+              }
+              continue;
+            }
+          }
           if (cat_rows.from < cat_rows.to) {
             cat.y0 = cat_rows.from;
             cat.y1 = cat_rows.to;
@@ -504,10 +521,11 @@ class NativeBody final : public SpanFp8Body {
   bool shared_ = false;   // poids partagés (SpanFp8Weights::shared_weights)
   bool layered_masks_ = false;
   bool unrolled_ = false;
-  bool vertical_ = false;    // Winograd le long des paires de lignes
-  bool wino_ = false;        // les 3×3 des blocs par Winograd (SpanFp8Weights::winograd)
-  bool gate_cache_ = false;  // conserver v float2 entre 1×1 et produit de la porte
-  bool gate_cat_ = false;    // banc de la porte finale suivie de conv_cat
+  bool vertical_ = false;           // Winograd le long des paires de lignes
+  bool wino_ = false;               // les 3×3 des blocs par Winograd (SpanFp8Weights::winograd)
+  bool gate_cache_ = false;         // conserver v float2 entre 1×1 et produit de la porte
+  bool vertical_gate_cat_ = false;  // dernière porte et concaténation dans la même tuile
+  bool gate_cat_ = false;           // banc de la porte finale suivie de conv_cat
   bool bound_ = false;
   const std::uint32_t* region_ = nullptr;  // tuiles qui bougent : masques d'appareil, nuls hors d'un appel
   const std::uint32_t* core_ = nullptr;
