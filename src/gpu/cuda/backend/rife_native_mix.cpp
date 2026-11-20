@@ -208,10 +208,14 @@ std::expected<std::string, Refusal> RifeFusedEngine::try_hybrid_encoder(
   encode_hybrid_ = accepted.has_value();
   forget_passes();
   if (!accepted) {
+    // Un refus d'enfilage peut laisser le préfixe ou la transposée en vol.
+    const cudaError_t drained = cudaStreamSynchronize(pair.scratch.stream);
     encode_tail_.reset();
     encode_body_.reset();
+    constexpr std::string_view operation = "RIFE Lite : essai de l'encodeur hybride";
     if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-      return std::unexpected(lost_refusal(lost, "RIFE Lite : essai de l'encodeur hybride"));
+      return std::unexpected(lost_refusal(lost, operation));
+    if (drained != cudaSuccess) return std::unexpected(cuda_refusal(drained, operation));
   }
   return accepted;
 }
