@@ -21,7 +21,17 @@ arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
   lecture : un second SPAN en FP16 sous le FP8 ou l'INT8 retardait une image à chaque clé (essai du
   19 novembre) et a été retiré. Une nouvelle clé
   quand la plaque couvre moins des trois quarts de l'image, que le zoom a bougé de plus de 3 % ou après
-  240 paires ; plus de plaque dès qu'une paire perd la caméra, jusqu'à la paire sûre suivante.
+  240 paires ; plus de plaque dès qu'une paire perd la caméra, jusqu'à la paire sûre suivante. Elle s'applique
+  avec tous les moteurs d'interpolation (DistilDRBA et GMFSS compris) et même sans interpolation : seuls les
+  calques demandent RIFE mouvement (`chain_layers.cpp`).
+- **Défaut connu de la plaque (v0.13.0-rc.2, 20 novembre 2026)** : des traits fantômes d'une image précédente
+  restent dans le décor. Re:Zero saison 4 épisode 18 à 1:59 : des contours violets et une forme rose dans le
+  ciel bleu, à gauche d'Emilia, avec RIFE 4.25, 4.22 lite et DistilDRBA. Au PC de Tatoub, `background_plate =
+  false` (section `[interpolation]` de `play.toml`, dans le dossier des données) le fait disparaître, la carte
+  restant allumée ; `--no-scene-map` aussi, puisqu'il éteint la plaque ; `--no-span-tiles` et
+  `--no-span-reuse` ne changent rien. Lecture probable : la clé du plan contenait un dessin à cet endroit, et la
+  plaque recolle son décor décalé là où la source n'a plus ce dessin ; la garde par pixel (6 à 18 codes contre
+  SPAN de b) et le retrait des tuiles de dessin ne l'ont pas écarté. Correctif en cours.
 
 Sans carte (AMD, Intel, Turing, NVOF refusé, pas encore relue), ou dès qu'elle doute de la paire (coupe, fondu,
 caméra non ajustée ou non affinée par Lucas-Kanade, résidu au-delà de 0,5 pixel de travail, moins de 5 % de
