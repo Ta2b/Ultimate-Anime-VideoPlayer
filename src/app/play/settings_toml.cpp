@@ -305,6 +305,22 @@ void read_grade(const toml::table& grade, PlaySettings& s, std::vector<std::expe
   for (double* x : {&v.shadows, &v.highlights_rtx, &v.area_rtx, &s.oled_black_steps}) hundredth(*x);
 }
 
+void read_experimental(const toml::table& root, ExperimentalSettings& t,
+                       std::vector<std::expected<void, Refusal>>& reads) {
+  const auto* section_table = section(root, "experimental");
+  if (section_table == nullptr) return;
+  const auto& table = *section_table;
+  reads.push_back(read(table, "experimental", "sharp1_winograd", t.sharp1_winograd));
+  reads.push_back(read(table, "experimental", "drba_native_tail", t.drba_native_tail));
+  reads.push_back(read(table, "experimental", "gmfss_folded_tail", t.gmfss_folded_tail));
+  reads.push_back(read(table, "experimental", "gmflow_fast", t.gmflow_fast));
+  reads.push_back(read(table, "experimental", "fused_layers", t.fused_layers));
+  reads.push_back(read(table, "experimental", "nvof_layer_guard", t.nvof_layer_guard));
+  reads.push_back(read(table, "experimental", "span_fp8_native_blocks", t.span_fp8_native_blocks));
+  reads.push_back(read(table, "experimental", "effect_glow", t.effect_glow));
+  reads.push_back(read(table, "experimental", "map_effects", t.map_effects));
+}
+
 // La table [image] : l'agrandissement et la stabilisation temporelle.
 void read_image(const toml::table& image, PlaySettings& s, std::vector<std::expected<void, Refusal>>& reads) {
   reads.push_back(read(image, "image", "upscale", s.upscale));
@@ -344,6 +360,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     }
   }
   if (const toml::table* image = section(root, "image")) read_image(*image, s, reads);
+  read_experimental(root, s.experimental, reads);
   if (const toml::table* interpolation = section(root, "interpolation")) {
     reads.push_back(read_factor(*interpolation, s));
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));

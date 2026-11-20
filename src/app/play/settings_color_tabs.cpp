@@ -186,6 +186,22 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
           "Warm lamps in scenes with faces light up again, instead of being toned down like skin. A trial: "
           "some faces can be missed. Quality impact: minor gain, not yet judged. Recommended: off."),
       panel::Apply::Reload);
+  if (grid) panel::cell();
+  ImGui::Checkbox(i18n::tr("Enhance local glows"), &d.experimental.effect_glow);
+  panel::tip(i18n::tr("Enhance local glows"),
+             i18n::tr("Gives more room to glows that stand out from their surroundings. Applies to playback "
+                      "and export."),
+             panel::Apply::Reload);
+  if (choices.tensor_cores) {
+    if (grid) panel::cell();
+    ImGui::BeginDisabled(!d.experimental.effect_glow);
+    ImGui::Checkbox(i18n::tr("Highlight effects using the scene map (test)"), &d.experimental.map_effects);
+    panel::tip(i18n::tr("Highlight effects using the scene map (test)"),
+               i18n::tr("Uses the NVIDIA optical-flow scene map to reserve more highlight range for effects "
+                        "during playback. Applies when a scene map is available."),
+               panel::Apply::Reload);
+    ImGui::EndDisabled();
+  }
   if (grid) panel::end_grid();
   ImGui::EndDisabled();
   if (ImGui::Button(i18n::tr("Defaults##hdr"))) {
@@ -194,6 +210,8 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
     d.surface_white = defaults.surface_white;
     d.flash_guard = defaults.flash_guard;
     d.face_skin = defaults.face_skin;
+    d.experimental.effect_glow = defaults.experimental.effect_glow;
+    d.experimental.map_effects = defaults.experimental.map_effects;
   }
 }
 

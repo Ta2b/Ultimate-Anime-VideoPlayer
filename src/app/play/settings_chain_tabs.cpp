@@ -207,6 +207,18 @@ void upscale_advanced(PlaySettings& d, const SettingsChoices& choices) {
                       "also steadies the finest grain and lines, for about four times the cost (about twice "
                       "upscaling). Recommended: off, except on a high-end RTX card with interpolation low."),
              panel::Apply::Reload);
+  if (choices.tensor_cores) {
+    ImGui::Checkbox(i18n::tr("Sharp1 Performance Winograd (test)"), &d.experimental.sharp1_winograd);
+    panel::tip(i18n::tr("Sharp1 Performance Winograd (test)"),
+               i18n::tr("Tries selective Winograd for the verified Sharp1 Performance FP16 model at 1080p. "
+                        "Turning it off restores direct convolution."),
+               panel::Apply::Reload);
+    ImGui::Checkbox(i18n::tr("Native FP8 SPAN blocks (test)"), &d.experimental.span_fp8_native_blocks);
+    panel::tip(
+        i18n::tr("Native FP8 SPAN blocks (test)"),
+        i18n::tr("Tries native FP8 convolutions. The backend keeps them after a quality and speed check."),
+        panel::Apply::Reload);
+  }
   if (choices.span_tiers.quality && !anime4k_size(d.model)) {
     TierSupport tiers = choices.span_tiers;
     // Le FP8 se choisit dans la liste des modèles ; une fois choisi il se lit ici aussi, au lieu d'un faux

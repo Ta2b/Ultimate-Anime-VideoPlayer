@@ -28,7 +28,8 @@ std::expected<prepare::GmfssFusedManifest, Refusal> read_manifest(const std::fil
 }
 
 // Le GridNet lu dans la fusion entière que nomme le manifeste, vérifiée par son empreinte.
-std::expected<prepare::GmfssGrid, Refusal> native_grid(const std::filesystem::path& manifest_path) {
+std::expected<prepare::GmfssGrid, Refusal> native_grid(const std::filesystem::path& manifest_path,
+                                                       bool folded_tail) {
   auto manifest = read_manifest(manifest_path);
   if (!manifest) return std::unexpected(std::move(manifest.error()));
   auto bytes =
@@ -39,7 +40,7 @@ std::expected<prepare::GmfssGrid, Refusal> native_grid(const std::filesystem::pa
   // a été vérifiée sur cette version, y compris le PixelShuffle et les deux convolutions.
   constexpr std::string_view kVerifiedFusion =
       "76b14e6b8fc49cc12b914f82bc8accfbc5ff0abc684b902ec056e762c1320f9e";
-  if (grid && manifest->digests[0] == kVerifiedFusion) {
+  if (folded_tail && grid && manifest->digests[0] == kVerifiedFusion) {
     prepare::Sha256 sha;
     sha.update(*bytes);
     grid->folded_tail_verified = sha.hex() == kVerifiedFusion;
@@ -144,7 +145,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_fuse
   auto engine = GmfssFusedEngine::load(*runtime_, cache_dir_, *key, arena());
   if (!engine) return std::unexpected(std::move(engine.error()));
   if (gmfss_native_) {
-    auto grid = native_grid(artifact.path);
+    auto grid = native_grid(artifact.path, gmfss_folded_tail_);
     auto ifnet = native_ifnet(artifact.path);
     if (!ifnet) log(BackendLogLevel::Info, "GMFSS natif, IFNet : " + ifnet.error().detail);
     auto kept =

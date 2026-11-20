@@ -13,6 +13,40 @@
 
 namespace kirari::app::play {
 
+TEST_CASE("Les essais se relisent et se rechargent sans rendre les drapeaux de banc permanents",
+          "[app][settings]") {
+  const PlaySettings saved;
+  CHECK(saved.experimental.sharp1_winograd);
+  CHECK(saved.experimental.drba_native_tail);
+  CHECK(saved.experimental.gmfss_folded_tail);
+  CHECK_FALSE(saved.experimental.gmflow_fast);
+  CHECK_FALSE(saved.experimental.map_effects);
+  PlayOptions flags;
+  flags.gmflow_fast = true;
+  flags.nvof_layer_guard = true;
+  flags.effect_highlights = false;
+  const auto started = settings_for(saved, flags);
+  CHECK(started.experimental.gmflow_fast);
+  CHECK(started.experimental.nvof_layer_guard);
+  CHECK_FALSE(started.experimental.effect_glow);
+  CHECK(settings_to_save(started, saved, started, flags) == saved);
+
+  PlaySettings wanted = started;
+  wanted.experimental.sharp1_winograd = false;
+  wanted.experimental.drba_native_tail = false;
+  wanted.experimental.gmfss_folded_tail = false;
+  wanted.experimental.map_effects = true;
+  CHECK(change_between(started, wanted, true).cost == ChangeCost::Reopen);
+  CHECK(live_part(started, wanted, true).experimental == started.experimental);
+  CHECK(follow_running(wanted, started, started, true).experimental == wanted.experimental);
+  const auto reparsed = parse_settings(format_settings(wanted));
+  REQUIRE(reparsed);
+  CHECK(reparsed->experimental == wanted.experimental);
+  CHECK_FALSE(options_for(flags, *reparsed).map_highlights());
+  wanted.experimental.effect_glow = true;
+  CHECK(options_for(flags, wanted).map_highlights());
+}
+
 // A22-01, A22-15 : chaque réglage que le menu change est appliqué en direct, ou annoncé par « Appliquer »
 // (la réouverture) : jamais ni l'un ni l'autre, sinon il se perd à la fermeture du panneau.
 TEST_CASE("Réglages du menu : « Restaurer les traits », la carte et les moteurs fusionnés ne se perdent pas",

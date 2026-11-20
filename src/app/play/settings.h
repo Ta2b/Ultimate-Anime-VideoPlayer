@@ -207,7 +207,22 @@ inline constexpr std::int64_t kSettingsSaveEveryUs = 1'000'000;
 // (B36-01).
 inline constexpr std::int64_t kSettingsRetryUs = 10'000'000;
 
+struct ExperimentalSettings {
+  bool sharp1_winograd = true;
+  bool drba_native_tail = true;
+  bool gmfss_folded_tail = true;
+  bool gmflow_fast = false;
+  bool fused_layers = false;
+  bool nvof_layer_guard = false;
+  bool span_fp8_native_blocks = false;
+  bool effect_glow = true;
+  bool map_effects = false;
+
+  bool operator==(const ExperimentalSettings&) const = default;
+};
+
 struct PlaySettings {
+  ExperimentalSettings experimental;
   // Auto-configuration : Auto par défaut, y compris au premier double-clic sur une vidéo (l'assistant ne
   // s'ouvre pas) et après « Tout réinitialiser ». Un play.toml d'avant la section [auto] se lit en
   // Personnalisé : ses réglages ne bougent pas. Hors Personnalisé, la chaîne est refaite à chaque vidéo.

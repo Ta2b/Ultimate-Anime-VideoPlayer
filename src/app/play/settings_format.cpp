@@ -30,6 +30,18 @@ toml::table image_table(const PlaySettings& s) {
                      {"temporal_fix_full", s.temporal_fix_full}};
 }
 
+toml::table experimental_table(const ExperimentalSettings& s) {
+  return toml::table{{"sharp1_winograd", s.sharp1_winograd},
+                     {"drba_native_tail", s.drba_native_tail},
+                     {"gmfss_folded_tail", s.gmfss_folded_tail},
+                     {"gmflow_fast", s.gmflow_fast},
+                     {"fused_layers", s.fused_layers},
+                     {"nvof_layer_guard", s.nvof_layer_guard},
+                     {"span_fp8_native_blocks", s.span_fp8_native_blocks},
+                     {"effect_glow", s.effect_glow},
+                     {"map_effects", s.map_effects}};
+}
+
 }  // namespace
 
 std::string format_settings(const PlaySettings& s) {
@@ -38,6 +50,7 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("auto", toml::table{{"preset", std::string(key(s.preset))},
                                   {"priority", std::string(key(s.priority))}});
   root.insert("image", image_table(s));
+  root.insert("experimental", experimental_table(s.experimental));
   toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},

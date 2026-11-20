@@ -600,6 +600,16 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
     panel::next_box();
     ImGui::BeginDisabled(!on);
     gmfss_options(d, choices);
+    ImGui::Checkbox(i18n::tr("Combined GridNet output (test)"), &d.experimental.gmfss_folded_tail);
+    panel::tip(i18n::tr("Combined GridNet output (test)"),
+               i18n::tr("Combines the last two GridNet convolutions on a verified model. Turning it off "
+                        "restores the PixelShuffle output path."),
+               panel::Apply::Reload);
+    ImGui::Checkbox(i18n::tr("Fast GMFlow (test)"), &d.experimental.gmflow_fast);
+    panel::tip(i18n::tr("Fast GMFlow (test)"),
+               i18n::tr("Tries the faster motion estimator for GMFSS. Motion can differ slightly. "
+                        "Turning it off restores the stricter quality check."),
+               panel::Apply::Reload);
     panel::end_group();
     ImGui::EndDisabled();
   }
@@ -617,6 +627,26 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
                "RIFE only; Smooth held drawings replaces it."));
   pair_scale_checkbox(d);
   strong_middle_checkbox(d);
+  if (choices.tensor_cores && d.motion_engine == MotionEngine::DistilDrba) {
+    ImGui::Checkbox(i18n::tr("Native DistilDRBA final block (test)"), &d.experimental.drba_native_tail);
+    panel::tip(i18n::tr("Native DistilDRBA final block (test)"),
+               i18n::tr("Tries the CUDA Winograd final block after a quality and speed check. Turning it off "
+                        "uses TensorRT for that block."),
+               panel::Apply::Reload);
+  }
+  if (choices.tensor_cores && d.motion_engine == MotionEngine::Rife) {
+    ImGui::BeginDisabled(!d.layers);
+    ImGui::Checkbox(i18n::tr("Fused warp and layers (test)"), &d.experimental.fused_layers);
+    panel::tip(i18n::tr("Fused warp and layers (test)"),
+               i18n::tr("Combines motion warping and layer composition on supported NVIDIA GPUs."),
+               panel::Apply::Reload);
+    ImGui::Checkbox(i18n::tr("Protect motion edges with NVIDIA optical flow (test)"),
+                    &d.experimental.nvof_layer_guard);
+    panel::tip(i18n::tr("Protect motion edges with NVIDIA optical flow (test)"),
+               i18n::tr("Checks motion in both directions to protect confirmed edges from camera warping."),
+               panel::Apply::Reload);
+    ImGui::EndDisabled();
+  }
   panel::end_group();
   ImGui::EndDisabled();
   if (!exporting && choices.nvidia) {

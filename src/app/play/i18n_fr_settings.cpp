@@ -162,6 +162,49 @@ constexpr std::array kSettingsPages{
     Entry{"Highlights", "Éclats"},
     Entry{"Limit rapid flashes", "Limiter les flashs rapides"},
     Entry{"Skin from faces (test)", "Peau des visages (essai)"},
+    Entry{"Enhance local glows", "Renforcer les lueurs locales"},
+    Entry{"Gives more room to glows that stand out from their surroundings. Applies to playback "
+          "and export.",
+          "Donne plus de marge aux lueurs qui ressortent de leur voisinage. S’applique en lecture et à "
+          "l’export."},
+    Entry{"Highlight effects using the scene map (test)", "Éclats guidés par la carte de la scène (essai)"},
+    Entry{
+        "Uses the NVIDIA optical-flow scene map to reserve more highlight range for effects "
+        "during playback. Applies when a scene map is available.",
+        "La carte de la scène du flux optique NVIDIA réserve plus de marge aux éclats des effets en lecture, "
+        "quand cette carte est disponible."},
+    Entry{"Combined GridNet output (test)", "Sortie GridNet combinée (essai)"},
+    Entry{"Combines the last two GridNet convolutions on a verified model. Turning it off "
+          "restores the PixelShuffle output path.",
+          "Combine les deux dernières convolutions de GridNet sur un modèle vérifié. Décocher rétablit la "
+          "sortie PixelShuffle."},
+    Entry{"Fast GMFlow (test)", "GMFlow rapide (essai)"},
+    Entry{"Tries the faster motion estimator for GMFSS. Motion can differ slightly. "
+          "Turning it off restores the stricter quality check.",
+          "Essaie l’estimateur de mouvement rapide de GMFSS. Le mouvement peut différer légèrement. "
+          "Décocher rétablit le contrôle de qualité strict."},
+    Entry{"Native DistilDRBA final block (test)", "Dernier bloc DistilDRBA natif (essai)"},
+    Entry{"Tries the CUDA Winograd final block after a quality and speed check. Turning it off "
+          "uses TensorRT for that block.",
+          "Essaie le dernier bloc Winograd CUDA après contrôle de la qualité et de la vitesse. "
+          "Décocher utilise TensorRT pour ce bloc."},
+    Entry{"Fused warp and layers (test)", "Warp et calques fusionnés (essai)"},
+    Entry{"Combines motion warping and layer composition on supported NVIDIA GPUs.",
+          "Fusionne le warp de mouvement et la composition des calques sur les GPU NVIDIA compatibles."},
+    Entry{"Protect motion edges with NVIDIA optical flow (test)",
+          "Protéger les contours avec le flux optique NVIDIA (essai)"},
+    Entry{
+        "Checks motion in both directions to protect confirmed edges from camera warping.",
+        "Vérifie le mouvement dans les deux sens pour protéger les contours confirmés du warp de la caméra."},
+    Entry{"Sharp1 Performance Winograd (test)", "Sharp1 Performance Winograd (essai)"},
+    Entry{"Tries selective Winograd for the verified Sharp1 Performance FP16 model at 1080p. "
+          "Turning it off restores direct convolution.",
+          "Essaie Winograd sur certaines couches du modèle Sharp1 Performance FP16 vérifié en 1080p. "
+          "Décocher rétablit la convolution directe."},
+    Entry{"Native FP8 SPAN blocks (test)", "Blocs SPAN FP8 natifs (essai)"},
+    Entry{"Tries native FP8 convolutions. The backend keeps them after a quality and speed check.",
+          "Essaie les convolutions FP8 natives. Le moteur les garde après contrôle de la qualité et de la "
+          "vitesse."},
     Entry{"Surface white", "Blanc des surfaces"},
     Entry{"Saturation", "Saturation"},
     Entry{"Scaler", "Filtre"},

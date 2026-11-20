@@ -34,6 +34,7 @@
 #include "app/play/user_keys.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
+#include "gpu/gmfss_trials.h"
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/rife.h"
 #include "prepare/cache.h"
@@ -528,6 +529,31 @@ PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const st
           .audio_track = p.audio_track,
           .subtitle_track = p.subtitle_track,
           .manual = p.manual_tracks != nullptr ? *p.manual_tracks : ManualTracks{}};
+}
+
+// Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches…).
+gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
+  const ExperimentalSettings& trials = settings.experimental;
+  return {.render = &p.screen.device(),
+          .cache_dir = p.paths.engines,
+          .log = backend_log(),
+          .profile_dispatches = p.options.profile_dispatches,
+          .filtered_warp = p.options.filtered_warp,
+          .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) |
+                    (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
+                    (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
+                    (p.options.span_native_edges ? gpu::kTrialSpanNative : 0U) |
+                    (trials.span_fp8_native_blocks ? gpu::kTrialSpanFp8NativeBlocks : 0U) |
+                    (p.options.rife_native ? gpu::kTrialRifeNative : 0U) |
+                    (p.options.gmfss_native ? gpu::kTrialGmfssNative : 0U) |
+                    (p.options.gmfss_feature_reuse ? gpu::kTrialGmfssFeatureReuse : 0U) |
+                    (trials.gmflow_fast ? gpu::kTrialGmflowFast : 0U) |
+                    (p.options.tfix_native ? gpu::kTrialTfixNative : 0U) |
+                    ((p.options.nvof_roundtrip || trials.nvof_layer_guard) ? gpu::kTrialNvofRoundtrip : 0U) |
+                    (trials.sharp1_winograd ? 0U : gpu::kDisableSharp1Winograd) |
+                    (trials.drba_native_tail ? 0U : gpu::kDisableDrbaNativeTail) |
+                    (trials.gmfss_folded_tail ? 0U : gpu::kDisableGmfssFoldedTail) |
+                    (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
 }
 
 }  // namespace kirari::app::play

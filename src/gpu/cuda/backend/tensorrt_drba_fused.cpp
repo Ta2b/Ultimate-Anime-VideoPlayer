@@ -128,7 +128,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_drba_fused(const ModelSp
 std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_drba_fused(const Artifact& artifact) {
   const std::optional<DrbaFusedKey> key = drba_fused_artifact_key_parse(artifact.cache_key);
   if (!key) return refuse(RefusalCode::GraphInvalid, "DistilDRBA fusionné : clé d'artefact illisible");
-  const auto native_tail = properties_.major == 8 && properties_.minor == 9
+  const auto native_tail = drba_native_tail_ && properties_.major == 8 && properties_.minor == 9
                                ? native_tail_recipe(artifact.path, *key)
                                : RifeNativePiece{};
   auto engine = DrbaFusedEngine::load(*runtime_, cache_dir_, *key, arena(), native_tail);

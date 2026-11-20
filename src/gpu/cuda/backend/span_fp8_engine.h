@@ -55,7 +55,7 @@ class SpanFp8Engine final : public Engine {
   static std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> load(
       const std::filesystem::path& package, std::uint32_t crc, int height, int width,
       const std::shared_ptr<SharedActivations>& shared, bool native_edges = false, bool native_blocks = false,
-      bool vertical_winograd = false);
+      bool vertical_winograd = false, bool sharp1_winograd = true);
   ~SpanFp8Engine() override;
   SpanFp8Engine(const SpanFp8Engine&) = delete;
   SpanFp8Engine& operator=(const SpanFp8Engine&) = delete;

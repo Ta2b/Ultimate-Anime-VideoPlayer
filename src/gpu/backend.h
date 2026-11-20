@@ -127,7 +127,8 @@ namespace kirari::gpu {
 // 60 : KernelOps::scene_roundtrip_take, la grille de désaccord de la paire, sans attente.
 // 61 : warp et calques fusionnés, reprise du côté gauche de GMFSS et splats pour le GridNet.
 // 62 : SpanTileGrid porte le pas vertical du Winograd par paires de lignes.
-inline constexpr int kBackendAbi = 62;
+// 63 : le module TensorRT applique les trois replis des réglages expérimentaux.
+inline constexpr int kBackendAbi = 63;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -182,6 +183,10 @@ inline constexpr std::uint32_t kTrialNvofRoundtrip = 1U << 9U;
 inline constexpr std::uint32_t kTrialSpanFp8NativeBlocks = 1U << 10U;
 // --gmfss-feature-reuse : reprend les trois sorties de FeatureNet de B lorsqu'elle devient A.
 inline constexpr std::uint32_t kTrialGmfssFeatureReuse = 1U << 11U;
+// Le bit 12 est kTrialGmflowFast (gpu/gmfss_trials.h).
+inline constexpr std::uint32_t kDisableSharp1Winograd = 1U << 13U;
+inline constexpr std::uint32_t kDisableDrbaNativeTail = 1U << 14U;
+inline constexpr std::uint32_t kDisableGmfssFoldedTail = 1U << 15U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le

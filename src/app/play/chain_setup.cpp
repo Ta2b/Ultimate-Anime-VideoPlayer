@@ -22,7 +22,6 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
-#include "gpu/gmfss_trials.h"
 #include "prepare/utf8.h"
 
 namespace kirari::app::play {
@@ -362,7 +361,7 @@ void note_drba_fused(ChainEngines& c, const DrbaFusedUse& fused, bool tried) {
 }
 
 // Les options d'essai que la chaîne porte telles quelles.
-void take_trials(ChainEngines& c, const PlayOptions& o) {
+void take_trials(ChainEngines& c, const PlayOptions& o, const ExperimentalSettings& trials) {
   // Une seule voie par défaut : sur une 4070 Ti (SPAN ×2 vers la 4K, RIFE ×8, look en table), Vulkan fait
   // 40,6 images neuves par seconde au lieu de 37, TensorRT 142,8 i/s au lieu de 140,4 ; les trois voies se
   // disputent la carte sans rien recouvrir de plus. --lanes garde les trois voies.
@@ -372,9 +371,9 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.rife_encode_all = o.rife_encode_all;
   c.rife_at_slot = o.rife_at_slot;
   c.span_b_ahead = o.span_b_ahead;
-  c.fused_layers = o.fused_layers;
-  c.nvof_layer_guard = o.nvof_layer_guard;
-  c.nvof_roundtrip = o.nvof_roundtrip || o.nvof_layer_guard;
+  c.fused_layers = trials.fused_layers;
+  c.nvof_layer_guard = trials.nvof_layer_guard;
+  c.nvof_roundtrip = o.nvof_roundtrip || trials.nvof_layer_guard;
   c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
   c.span_reuse = o.span_reuse;
@@ -382,27 +381,6 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.span_tiles_check = o.span_tiles_check;
   c.shot_plan = o.shot_plan;
   c.pair_triage = o.pair_triage;
-}
-
-// Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches…).
-gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
-  return {
-      .render = &p.screen.device(),
-      .cache_dir = p.paths.engines,
-      .log = backend_log(),
-      .profile_dispatches = p.options.profile_dispatches,
-      .filtered_warp = p.options.filtered_warp,
-      .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) | (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
-                (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
-                (p.options.span_native_edges ? gpu::kTrialSpanNative : 0U) |
-                (p.options.span_fp8_native_blocks ? gpu::kTrialSpanFp8NativeBlocks : 0U) |
-                (p.options.rife_native ? gpu::kTrialRifeNative : 0U) |
-                (p.options.gmfss_native ? gpu::kTrialGmfssNative : 0U) |
-                (p.options.gmfss_feature_reuse ? gpu::kTrialGmfssFeatureReuse : 0U) |
-                (p.options.gmflow_fast ? gpu::kTrialGmflowFast : 0U) |
-                (p.options.tfix_native ? gpu::kTrialTfixNative : 0U) |
-                ((p.options.nvof_roundtrip || p.options.nvof_layer_guard) ? gpu::kTrialNvofRoundtrip : 0U) |
-                (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
 }
 
 // Un refus de l'étage qui le rend : la chaîne peut se préparer sans lui (stage_fallback.h).
@@ -678,7 +656,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;
   ChainEngines c;
-  take_trials(c, p.options);
+  take_trials(c, p.options, settings.experimental);
   c.smooth_drawings =
       settings.rife_factor >= 2 && smooth_drawings_requested(settings) && !p.options.rife_image;
   c.layers = settings.layers;  // play.toml [interpolation] layers

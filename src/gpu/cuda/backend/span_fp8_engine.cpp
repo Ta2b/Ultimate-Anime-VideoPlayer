@@ -368,7 +368,7 @@ void SpanFp8Engine::drop_graphs() {
 std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
     const std::filesystem::path& package, std::uint32_t crc, int height, int width,
     const std::shared_ptr<SharedActivations>& shared, bool native_edges, bool native_blocks,
-    bool vertical_winograd) {
+    bool vertical_winograd, bool sharp1_winograd) {
   auto bytes = read_span_fp8_package(package);
   if (!bytes) return std::unexpected(std::move(bytes.error()));
   // Une préparation de fond a pu réécrire le paquet depuis la construction : des poids qu'aucun reçu ne
@@ -394,7 +394,8 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   engine->fp16_ = parsed->fp16;
   if (weights.fp16 && weights.channels == 48 && weights.blocks == 5) {
     if (crc == kPerformanceFp16Crc) engine->performance_fp16_ = PerformanceFp16::Standard;
-    if (crc == kPerformanceSharp1Fp16Crc) engine->performance_fp16_ = PerformanceFp16::Sharp1;
+    if (sharp1_winograd && crc == kPerformanceSharp1Fp16Crc)
+      engine->performance_fp16_ = PerformanceFp16::Sharp1;
   }
   engine->sums_ = weights.sums;
   engine->native_edges_ = weights.native_edges;

@@ -276,8 +276,9 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   halo dans la source, puis reconnaître une lueur à sa forme (petit cœur blanc entouré d'un dégradé
   coloré) plutôt qu'à son seul écart à la zone. La vue `--effect-mask-view` ne peint que le masque de la
   carte, pas la lueur.
-- **Les effets de la carte, éteints par défaut** pour la première release : seules les lueurs vues dans l'image
-  portent les éclats. `--effect-highlights` (essai, avec `--debug`) rallume le masque des effets de la carte.
+- **Les effets de la carte, éteints par défaut.** Dans **HDR → Avancé**, « Éclats guidés par la carte de la scène
+  (essai) » active le masque pendant la lecture, comme `--effect-highlights` (avec `--debug`).
+  « Renforcer les lueurs locales » agit sur les lueurs détectées dans l'image, en lecture et à l'export.
 - **Sans carte** (AMD, Intel, NVOF refusé, sans `--effect-highlights` ou avec `--no-effect-highlights`), le masque revient lentement au neutre
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format

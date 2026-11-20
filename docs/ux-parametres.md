@@ -50,6 +50,14 @@ prochain lancement ».
 (bouton « Paramètres » ou p) : un réglage qui recharge arrête la préparation et la vidéo se rouvre avec lui
 (`loading_settings.h`).
 
+**Essais.** Dans Avancé, Winograd Sharp1 Performance, le dernier bloc natif DistilDRBA et la sortie
+GridNet combinée sont cochés par défaut. Chaque case permet de reprendre la voie précédente. GMFlow
+rapide, le warp et les calques fusionnés, la protection des contours par le flux NVIDIA, les blocs
+SPAN FP8 natifs et les éclats guidés par la carte de la scène demandent une activation. Le renfort des
+lueurs locales est réglable en HDR et suit le choix à l'export. La carte des effets s'applique en lecture.
+« Appliquer » recharge au même endroit. Les valeurs sont conservées sous `[experimental]` dans
+`play.toml`.
+
 **Panneau.** Redimensionnable par ses bords (la taille reste d'une ouverture à l'autre) ; il s'efface pendant
 qu'on tient un curseur en direct, pour voir l'image changer (`panel::live_preview`).
 

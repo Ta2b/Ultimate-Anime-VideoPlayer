@@ -24,6 +24,7 @@ constexpr std::array kMenuTexts{
     Entry{"NVIDIA Smooth Motion turns on", "NVIDIA Smooth Motion s'active"},
     Entry{"NVIDIA Smooth Motion turns off", "NVIDIA Smooth Motion se coupe"},
     Entry{"the video is analysed again for faces", "la vidéo est de nouveau analysée pour les visages"},
+    Entry{"experimental settings change", "les réglages expérimentaux changent"},
     Entry{" ; the player restarts on this video, at the same spot",
           " ; le lecteur se relance sur cette vidéo, au même endroit"},
     Entry{"Calibration", "Calibration"},

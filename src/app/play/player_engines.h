@@ -161,6 +161,7 @@ struct Player {
 
 // Les messages des backends, sur le canal « backend » du journal.
 gpu::BackendLog backend_log();
+gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings);
 // Vrai une fois après une ouverture de TensorRT réduite à une seule voie de calcul (C37-04).
 bool take_single_lane_notice();
 

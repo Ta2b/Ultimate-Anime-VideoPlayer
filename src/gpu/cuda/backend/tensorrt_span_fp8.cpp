@@ -63,7 +63,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   const bool vertical_winograd = properties_.major == 8 && properties_.minor == 9;
   auto engine = SpanFp8Engine::load(artifact.path, *crc, static_cast<int>(shape->dims[2]),
                                     static_cast<int>(shape->dims[3]), arena(), span_native_, native_blocks,
-                                    vertical_winograd);
+                                    vertical_winograd, sharp1_winograd_);
   if (!engine) return std::unexpected(std::move(engine.error()));
   if ((*engine)->fp16())
     log(BackendLogLevel::Info,
