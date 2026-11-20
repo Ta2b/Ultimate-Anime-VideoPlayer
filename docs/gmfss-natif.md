@@ -216,6 +216,13 @@ contre TensorRT, qui n'est lui-même qu'à 65,3 dB du natif f32 : les deux écar
 environ 62,8 dB). La fusion d'`ifnet_rife.py` (l'IFNet de RIFE 4.26, images de 512 × 256) donne les mêmes chiffres à
 moins de 1 dB : f16 partout 66,5, f16 et tête f32 72,6, mixtes 76,1.
 
+**Queue composée.** Pour le fragment officiel de `models-interp-1` vérifié à 1920 × 1152 sur Ada, les
+deux dernières convolutions sont combinées sur la grille à 960 × 576. Les quatre phases produisent les
+pixels RGB directement. Le mélange des poids se fait en FP64, les produits de la zone intérieure sont
+accumulés en FP32 et les bords gardent leurs filtres et biais propres. L'essai compare l'image au natif
+et à TensorRT, borne le pic d'écart et mesure le temps en direct puis sous graphe. L'anneau PixelShuffle
+sert de repli.
+
 **Ce que le réglage peut gagner.** Le plafond du GridNet pour des plans de la paire à 1920 × 1152 (la fusion
 à 960 × 576), couche par couche le plus lent du calcul (tensor cores f16 de la RTX 4070 Ti, 160 Tflop/s) et des
 octets (chaque tenseur lu et écrit une fois, 504 Go/s) : 1 690 Gflop, 11,7 ms (calcul 10,8 ms, octets 8,6 ms ;
