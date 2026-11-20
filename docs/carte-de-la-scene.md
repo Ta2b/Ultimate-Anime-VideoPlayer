@@ -22,12 +22,9 @@ entraînement.
   dans l'image. Exemple : Re:Zero saison 4 épisode 18 à 1:59, des contours violets et une forme rose dans le ciel
   bleu à gauche d'Emilia. Le défaut touche tous les moteurs d'interpolation (RIFE 4.25, 4.22 lite et DistilDRBA)
   avec SPAN ×2 et le grade HDR. Au PC de Tatoub, `--no-scene-map` le fait disparaître ; `--no-span-tiles` et
-  `--no-span-reuse` ne changent rien. La carte ne devrait rien écrire dans l'image sous DistilDRBA (elle n'y
-  sert que les éclats sur effets, éteints) : piste à vérifier d'abord, un tampon partagé entre le travail de la
-  carte (lumas, tuiles, affinage de la caméra, lancés par `scene_.start` sur les images RGB du lecteur) et la
-  chaîne de l'image, ou une image RGB réécrite pendant que NVOF la lit. En attendant le correctif,
-  `kirari --debug --no-scene-map` le contourne (les calques et la plaque de décor, qui en dépendent, s'éteignent
-  avec elle).
+  `--no-span-reuse` ne changent rien. Cause trouvée le même jour : la **plaque de décor**, qui dépend de la carte
+  et s'applique avec tous les moteurs ; `background_plate = false` seul le fait partir, la carte restant
+  allumée (détail et contournement : [`calques.md`](calques.md)).
 - Journal de fin : `carte de la scène : N paires lancées, N relues, N posées sur leur paire ; N sautées (NVOF
   occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, dont N
   relus ensuite, N pas lancés ; N lancés derrière le flux depuis la caméra du plan, N écartés), N coupes
