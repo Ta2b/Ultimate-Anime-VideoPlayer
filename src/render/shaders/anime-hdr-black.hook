@@ -261,8 +261,8 @@ float ajk_emit_over(vec3 e, float m, float gain) {
 
 vec4 ajk_pass(vec4 px) {
     vec3 n = ajk_compress(px.rgb, kwin_curve) * kwin_gain;
-    // L'alpha de la passe anime : 0,75 moins un huitième par diaphragme de montée ; 1 : rien à appliquer.
-    if (px.a < 0.99) {
+    // 0,75 encode exactement un gain de 1. Les surfaces neutres gardent n sans exponentielle ni division.
+    if (px.a < 0.99 && px.a != 0.75) {
         float m = max(n.r, max(n.g, n.b));
         if (m > 1e-4) n *= ajk_emit_over(px.rgb, m, exp2((0.75 - px.a) * 8.0)) / m;
     }
