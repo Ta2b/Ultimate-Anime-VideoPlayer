@@ -92,7 +92,8 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
   Handle read;
   Handle write;
   if (!CreatePipe(read.out(), write.out(), &inherit, 0)) return failure(spec.program, "CreatePipe");
-  SetHandleInformation(read.get(), HANDLE_FLAG_INHERIT, 0);
+  if (!SetHandleInformation(read.get(), HANDLE_FLAG_INHERIT, 0))
+    return failure(spec.program, "SetHandleInformation");
   const Handle nul(CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherit,
                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
   if (!nul.valid()) return failure(spec.program, "NUL");
@@ -112,8 +113,12 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
   auto* list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(list_storage.data());
   if (!InitializeProcThreadAttributeList(list, 1, 0, &list_size)) return failure(spec.program, "attributs");
   std::array<HANDLE, 2> inherited{write.get(), nul.get()};
-  UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited.data(),
-                            sizeof(HANDLE) * inherited.size(), nullptr, nullptr);
+  if (!UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited.data(),
+                                 sizeof(HANDLE) * inherited.size(), nullptr, nullptr)) {
+    auto error = failure(spec.program, "UpdateProcThreadAttribute");
+    DeleteProcThreadAttributeList(list);
+    return error;
+  }
 
   STARTUPINFOEXW info{};
   info.StartupInfo.cb = sizeof(info);
@@ -153,15 +158,20 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
       CREATE_NO_WINDOW | CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
       env_block.empty() ? nullptr : env_block.data(), working_dir.empty() ? nullptr : working_dir.c_str(),
       &info.StartupInfo, &started);
+  if (!ok) {
+    auto error = failure(spec.program, "CreateProcessW");
+    DeleteProcThreadAttributeList(list);
+    return error;
+  }
   DeleteProcThreadAttributeList(list);
-  if (!ok) return failure(spec.program, "CreateProcessW");
   const Handle process(started.hProcess);
   const Handle thread(started.hThread);
   if (!AssignProcessToJobObject(job.get(), process.get())) {
+    auto error = failure(spec.program, "AssignProcessToJobObject");
     TerminateProcess(process.get(), 1);
-    return failure(spec.program, "AssignProcessToJobObject");
+    return error;
   }
-  ResumeThread(thread.get());
+  if (ResumeThread(thread.get()) == static_cast<DWORD>(-1)) return failure(spec.program, "ResumeThread");
   write.reset();  // seul l'enfant écrit : sa fin ferme le tube
 
   LineSplitter lines(on_line);
@@ -171,18 +181,20 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
     const auto now = Clock::now();
     if (!killed && (stop.stop_requested() || now >= start + spec.timeout)) {
       killed = stop.stop_requested() ? ExitKind::Cancelled : ExitKind::TimedOut;
-      TerminateJobObject(job.get(), 1);
+      if (!TerminateJobObject(job.get(), 1)) return failure(spec.program, "TerminateJobObject");
     }
     if (!eof) eof = drain(read.get(), lines);
     const auto left = std::chrono::duration_cast<milliseconds>(start + spec.timeout - now).count();
     const DWORD slice = killed ? INFINITE : static_cast<DWORD>(std::clamp<long long>(left, 0, kPollSlice));
-    if (WaitForSingleObject(process.get(), slice) == WAIT_OBJECT_0) break;
+    const DWORD wait = WaitForSingleObject(process.get(), slice);
+    if (wait == WAIT_OBJECT_0) break;
+    if (wait == WAIT_FAILED) return failure(spec.program, "WaitForSingleObject");
   }
   if (!eof) drain(read.get(), lines);
   lines.finish();
 
   DWORD code = 0;
-  GetExitCodeProcess(process.get(), &code);
+  if (!GetExitCodeProcess(process.get(), &code)) return failure(spec.program, "GetExitCodeProcess");
   ProcessExit exit{.code = code, .elapsed = std::chrono::duration_cast<milliseconds>(Clock::now() - start)};
   if (killed) {
     exit.kind = *killed;
