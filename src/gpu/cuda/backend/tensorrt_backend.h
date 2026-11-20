@@ -53,6 +53,8 @@ class GmfssFusedEngine;
 class GmfssPairEngine;
 struct IngestParams;
 struct WarpBlendParams;
+struct LayerArgs;
+struct LayerWarpBounds;
 
 class TensorRtBackend final : public Backend, public KernelOps {
  public:
@@ -117,9 +119,17 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> gmfss_still(const StillJob& job) override;
   std::expected<void, Refusal> soft_splat_fill(std::span<const KernelOps::SplatJob> jobs, const Tensor& time,
                                                float t) override;
+  std::expected<void, Refusal> gmfss_fuse_splats(Engine& fusion, std::span<const SplatJob> jobs,
+                                                const Tensor& time, float t, std::span<const Tensor> inputs,
+                                                std::span<Tensor> outputs) override;
   std::expected<void, Refusal> gmfss_compose(const KernelOps::ComposeJob& job) override;
   // La composition par calques (tensorrt_layers.cpp, kernels/spec/layers.h).
   std::expected<void, Refusal> compose_layers(const LayerJob& job) override;
+  std::expected<void, Refusal> warp_layered(const LayerJob& job, const Motion& motion, const Motion* previous,
+                                            float t, bool poses, bool same_sources) override;
+  std::expected<void, Refusal> warp_layered_ring(const LayerJob& job, const Motion& motion,
+                                                 const Motion* previous, float t, bool poses,
+                                                 bool same_sources, const RingTarget& ring) override;
   // L'analyse d'une image pour le grade (tensorrt_stats.cpp), relue sans attente.
   std::expected<std::uint64_t, Refusal> frame_stats_start(const Tensor& rgb,
                                                           kernels::FrameTransfer transfer) override;
@@ -128,6 +138,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& a, const Tensor& b,
                                                          bool restart) override;
   std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
+      std::uint64_t ticket) override;
+  std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> scene_roundtrip_take(
       std::uint64_t ticket) override;
   // L'affinage de la caméra de la carte (tensorrt_scene_flow.cpp, scene_camera.cpp), relu sans attente.
   std::expected<std::uint64_t, Refusal> scene_camera_start(
@@ -258,7 +270,14 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                                      Progress& progress);
   std::expected<std::unique_ptr<Engine>, Refusal> load_gmfss_fused(const Artifact& artifact);
   std::expected<void, Refusal> enqueue_gmfss_fused(GmfssFusedEngine& engine, std::span<const Tensor> inputs,
-                                                   std::span<Tensor> outputs);
+                                                   std::span<Tensor> outputs, bool packed_features = false);
+  struct SplatDestination {
+    void* pixels = nullptr;
+    int pitch = 0;
+  };
+  std::expected<void, Refusal> soft_splat(std::span<const SplatJob> jobs, const Tensor& time, float t,
+                                         std::span<const SplatDestination> direct,
+                                         const GmfssFusedEngine* fusion);
   // La paire de GMFSS au FeatureNet et au MetricNet natifs (tensorrt_gmfss_pair.cpp) : un manifeste
   // « .gmfsspair », la paire entière et son flot construits par trtexec, chargés ensemble, le natif essayé si
   // demandé.
@@ -329,7 +348,14 @@ class TensorRtBackend final : public Backend, public KernelOps {
     const Motion* previous = nullptr;
   };
   std::expected<void, Refusal> warp(const Tensor& a, const Tensor& b, const Motion& motion,
-                                    const Poses& poses, float t, const Target& target);
+                                    const Poses& poses, float t, const Target& target,
+                                    const LayerArgs* layers = nullptr);
+  std::expected<void, Refusal> warp_layered_into(const LayerJob& job, const Motion& motion,
+                                                 const Poses& poses, float t, bool same_sources,
+                                                 const Target& target);
+  std::expected<void, Refusal> certify_layered(const WarpBlendParams& p,
+                                               std::array<std::uintptr_t, 2> handles,
+                                               LayerWarpBounds& bounds);
   // Le noyau du warp, précédé de l'estimation du mouvement d'ensemble quand pan (kernels/spec/warp_pan.h).
   std::expected<void, Refusal> launch_warp(const WarpBlendParams& params, bool pan);
   // launch(surface) chronométré sous name : surface nulle (object 0) vers un tenseur ; vers un slot,
@@ -369,10 +395,12 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool filtered_warp_ = false;
   // kTrialL2Keep (--l2-keep, essai) : l'encodage gardé de RIFE fusionné tenu en L2.
   bool l2_keep_ = false;
-  bool span_native_ = false;   // bords du SPAN FP8 par les noyaux du FP16 natif (kTrialSpanNative)
+  bool span_native_ = false;             // bords du SPAN FP8 par les noyaux du FP16 natif (kTrialSpanNative)
+  bool span_fp8_native_blocks_ = false;  // convolutions avec ReLU du SPAN FP8 C48 (kTrialSpanFp8NativeBlocks)
   bool rife_hwc8_ = false;     // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
   bool rife_native_ = false;   // encodeur et blocs du RIFE fusionné par les noyaux natifs (kTrialRifeNative)
   bool gmfss_native_ = false;  // GridNet de la fusion de GMFSS par les noyaux natifs (kTrialGmfssNative)
+  bool gmfss_feature_reuse_ = false;
   bool tfix_native_ = false;  // convolutions de TemporalFix fusionné par les noyaux natifs (kTrialTfixNative)
   bool warp_l2_ = false;      // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
   std::optional<std::size_t> l2_persisting_;  // persisting_l2, une fois
@@ -401,6 +429,17 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::array<cudaStream_t, kLanes> streams_{};
   std::array<std::array<cudaEvent_t, kLaneMarks>, kLanes> lane_events_{};
   std::array<std::uint64_t, kLanes> unrecorded_{};  // rang dont l'événement reste à poser ; 0 : aucun
+  // Par voie : le certificat des deux images (adresses et taille comprises) est relu par leurs instants.
+  // Ecrire dans un des handles l'invalide via order(). Le troisième mot est le certificat du masque,
+  // refait quand le warp le lit sans le borner.
+  struct LayerProof {
+    unsigned* flags = nullptr;
+    std::array<std::uintptr_t, 2> handles{};
+    std::array<const void*, 2> sources{};
+    std::size_t elements = 0;
+  };
+  std::array<LayerProof, kLanes> layer_proofs_{};
+  bool layer_certificates_ = false;
   Lane lane_ = Lane::Upscale;
   int lanes_ = 1;
   // Voies qui ont reçu du travail, un bit par voie : à plusieurs, le profil de fin dit que ses
@@ -519,6 +558,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<PairScores, Refusal> pair_read(const PairRead& slot);
   // La session NVOF de la carte de la scène, créée au premier scene_flow_start ; détruite avant les voies.
   std::unique_ptr<SceneFlow> scene_flow_;
+  bool nvof_roundtrip_ = false;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).

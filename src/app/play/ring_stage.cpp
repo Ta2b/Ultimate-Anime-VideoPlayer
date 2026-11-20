@@ -11,6 +11,7 @@
 #include "core/clock.h"
 #include "core/thread.h"
 #include "core/thread_role.h"
+#include "core/trace.h"
 
 namespace kirari::app::play {
 
@@ -55,9 +56,11 @@ void RingStage::run(const std::stop_token& stop, const ThreadReport& report) {
   while (true) {
     // En attente d'un slot : réveillé toutes les kHealthAfterUs pour demander à la sous-classe si l'appareil
     // répond encore ; sinon, attente simple.
-    auto message = slot_wait_since_us_ == 0
-                       ? inbox_.wait(stop)
-                       : inbox_.wait_for(stop, std::chrono::microseconds(kHealthAfterUs));
+    auto message = [&] {
+      if (slot_wait_since_us_ == 0) return inbox_.wait(stop);
+      KIRARI_TRACE("ring.slot_wait");
+      return inbox_.wait_for(stop, std::chrono::microseconds(kHealthAfterUs));
+    }();
     if (!message) {
       if (stop.stop_requested()) return;
       if (slot_wait_since_us_ != 0 && !failed_ && host_now_us() - slot_wait_since_us_ >= kHealthAfterUs) {
@@ -213,7 +216,13 @@ void RingStage::emit(const ThreadReport& report) {
         if (free_[(next_slot_ + k) % count]) slot = (next_slot_ + k) % count;
       }
       if (slot == count) {  // attend un SlotFree
-        if (slot_wait_since_us_ == 0) slot_wait_since_us_ = host_now_us();
+        if (slot_wait_since_us_ == 0) {
+          slot_wait_since_us_ = host_now_us();
+          if (auto ok = before_slot_wait(front_done_); !ok) {
+            fail(report, ok.error());
+            break;
+          }
+        }
         return;
       }
       slot_found();

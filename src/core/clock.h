@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace kirari {
 
@@ -27,7 +28,24 @@ struct ClockSnapshot {
 
   // Temps média extrapolé à l'instant hôte host.
   std::int64_t media_at(std::int64_t host) const {
-    return media_us + std::llround(static_cast<double>(host - host_us) * rate);
+    const auto here = static_cast<std::uint64_t>(host), origin = static_cast<std::uint64_t>(host_us);
+    const double delta =
+        host >= host_us ? static_cast<double>(here - origin) : -static_cast<double>(origin - here);
+    const double offset = std::round(delta * rate);
+    constexpr double limit = 0x1p63;
+    constexpr auto minimum = std::numeric_limits<std::int64_t>::min();
+    constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
+    if (std::isnan(offset)) return media_us;
+    if (offset >= limit || offset < -limit) {
+      const double sum = static_cast<double>(media_us) + offset;
+      if (sum >= limit) return maximum;
+      if (sum <= -limit) return minimum;
+      return static_cast<std::int64_t>(sum);
+    }
+    const auto step = static_cast<std::int64_t>(offset);
+    if (step > 0 && media_us > maximum - step) return maximum;
+    if (step < 0 && media_us < minimum - step) return minimum;
+    return media_us + step;
   }
 };
 

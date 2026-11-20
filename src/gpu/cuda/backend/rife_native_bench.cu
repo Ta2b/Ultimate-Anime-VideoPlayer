@@ -24,6 +24,7 @@ __global__ void fill_kernel(__half* p, long n) {
 
 // stats[0] : le plus grand |want|, stats[1] : le plus grand |got - want| (infini si une valeur n'est pas
 // finie), en bits de flottant : positifs, ils se rangent comme des entiers.
+template <bool Exact>
 __global__ void compare_kernel(const __half* want, const __half* got, long n, unsigned* stats) {
   float peak = 0.F;
   float diff = 0.F;
@@ -32,7 +33,11 @@ __global__ void compare_kernel(const __half* want, const __half* got, long n, un
     const float a = __half2float(want[i]);
     const float d = fabsf(__half2float(got[i]) - a);
     peak = fmaxf(peak, fabsf(a));
-    diff = isfinite(d) ? fmaxf(diff, d) : INFINITY;
+    if constexpr (Exact) {
+      if (!isfinite(d) || __half_as_ushort(want[i]) != __half_as_ushort(got[i])) diff = INFINITY;
+    } else {
+      diff = isfinite(d) ? fmaxf(diff, d) : INFINITY;
+    }
   }
   for (int offset = 16; offset > 0; offset /= 2) {
     peak = fmaxf(peak, __shfl_xor_sync(0xFFFFFFFFU, peak, offset));
@@ -101,8 +106,12 @@ std::optional<bool> Bench::differs(const Shot& shot, std::string& error) {
   unsigned stats[2] = {0, 0};
   cudaError_t result = cudaMemsetAsync(stats_.as<void>(), 0, sizeof(stats), stream_);
   if (result == cudaSuccess) {
-    compare_kernel<<<blocks_for(n), 256, 0, stream_>>>(ref_.as<const __half>(), out_.as<const __half>(), n,
-                                                       stats_.as<unsigned>());
+    const auto* want = ref_.as<const __half>();
+    const auto* got = out_.as<const __half>();
+    if (shot.bit_exact)
+      compare_kernel<true><<<blocks_for(n), 256, 0, stream_>>>(want, got, n, stats_.as<unsigned>());
+    else
+      compare_kernel<false><<<blocks_for(n), 256, 0, stream_>>>(want, got, n, stats_.as<unsigned>());
     result = cudaGetLastError();
   }
   if (result == cudaSuccess)
@@ -114,6 +123,7 @@ std::optional<bool> Bench::differs(const Shot& shot, std::string& error) {
   }
   // Un défaut de rangement ou de lecture s'écarte de l'ordre du pic, l'ordre des sommes bien moins
   // (bench_tolerance, native_sums.h).
+  if (shot.bit_exact) return stats[1] != 0;
   return bench_differs(std::bit_cast<float>(stats[0]), std::bit_cast<float>(stats[1]), shot.sums);
 }
 

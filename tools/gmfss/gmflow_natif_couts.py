@@ -2,7 +2,7 @@
 """Coûts de GMFlow (graphe « paire » de GMFSS) opération par opération, et temps estimés du natif sur une
 RTX 4070 Ti (docs/gmflow-natif.md).
 
-    python3 tools/gmfss/gmflow_natif_couts.py [--width 1280 --height 768] [--scale 1|0.5] [--markdown]
+    python3 tools/gmfss/gmflow_natif_couts.py [--width 1280 --height 768] [--scale 1|0.5] [--plancher] [--reprise] [--winograd]
 
 La taille est celle de la paire (plans remplis : 1280x768 pour 720p de travail) ; GMFlow tourne sur les images
 réduites de moitié (× scale au demi-flot). FLOP : 2 par multiplication-addition, sans le rembourrage des canaux.
@@ -20,6 +20,7 @@ from dataclasses import dataclass
 # RTX 4070 Ti (AD104, 60 SM, 2,61 GHz) : tensor cores, TFLOPS denses.
 PIC = {"fp16-f32": 80.0, "fp16-f16": 160.0, "fp8-f32": 160.0, "fp8-f16": 320.0}
 BANDE = 504.0  # Go/s
+PIC_FP32_SCALAIRE = 40.0  # Tflop/s, sous l'hypothèse de la même fréquence que les Tensor Cores
 # Rendements supposés : convolutions de la famille de rife_native_kernels.cuh, GEMM à la CUTLASS (SPAN FP8 : 76 à
 # 83 % du pic en f32), attention fondue (FlashAttention-2 tient 50 à 70 % sur Ampere ; une tête de 128, des
 # fenêtres courtes : prudence).
@@ -36,19 +37,26 @@ class Op:
     graphe: float  # octets
     sorte: str  # conv, gemm, attn, mem
     fois: int = 1
+    wino_flop: float = 0.0
+    wino_transfo: float = 0.0
 
 
 def conv(bloc, nom, n, cin, cout, oh, ow, k, ih=None, iw=None, fois=1):
     ih, iw = ih or oh, iw or ow
     flop = 2.0 * n * oh * ow * cout * cin * k * k
     octets = 2.0 * n * (ih * iw * cin + oh * ow * cout)
-    return Op(bloc, nom, flop, octets, octets, "conv", fois)
+    op = Op(bloc, nom, flop, octets, octets, "conv", fois)
+    if k == 3 and (ih, iw) == (oh, ow):
+        tiles = n * ((oh + 1) // 2) * ((ow + 1) // 2)
+        op.wino_flop = 2.0 * tiles * 16 * cin * cout
+        op.wino_transfo = tiles * (32 * cin + 24 * cout)
+    return op
 
 
-def squelette(w, h):
+def squelette(w, h, *, decime=False, reprise=False):
     """CNNEncoder sur les deux images (lot 2) ; une InstanceNorm ajoute la relecture d'une sortie (statistiques à
     l'épilogue en natif ; passes séparées dans le graphe)."""
-    n, ops = 2, []
+    n, ops = 1 if reprise else 2, []
     h2, w2, h4, w4, h8, w8 = h // 2, w // 2, h // 4, w // 4, h // 8, w // 8
     ops.append(conv("squelette", "conv1 7x7/2 3->64", n, 3, 64, h2, w2, 7, h, w))
     for i in range(2):
@@ -61,7 +69,11 @@ def squelette(w, h):
     ops.append(conv("squelette", "layer3 3 x conv 3x3 128->128", n, 128, 128, h4, w4, 3, fois=3))
     ops.append(conv("squelette", "conv2 1x1 128->128", n, 128, 128, h4, w4, 1))
     ops.append(conv("squelette", "trident 3x3 /1", n, 128, 128, h4, w4, 3))
-    ops.append(conv("squelette", "trident 3x3 /2", n, 128, 128, h8, w8, 3, h4, w4))
+    if decime:
+        traffic = 2 * 2 * h8 * w8 * 128 * 2  # deux images, lecture et écriture FP16
+        ops.append(Op("squelette", "trident /2 par décimation du /1", 0, traffic, traffic, "mem"))
+    else:
+        ops.append(conv("squelette", "trident 3x3 /2", n, 128, 128, h8, w8, 3, h4, w4))
     # Fins de bloc (normes, somme, Relu) : 6 blocs, 3 tenseurs lus et 1 écrit ; normes du graphe : 2 passes.
     fin = 2.0 * n * (h2 * w2 * 64 * 2 + h4 * w4 * 96 * 2 + h4 * w4 * 128 * 2) * 4
     ops.append(Op("squelette", "fins de bloc et InstanceNorm", 0, fin, fin * 2, "mem"))
@@ -119,10 +131,10 @@ def fins(w4, h4):
     ]
 
 
-def operations(w, h):
+def operations(w, h, *, decime=False, reprise=False):
     """GMFlow sur une image de w × h (la demi-image de la paire, × scale)."""
     w8, h8, w4, h4 = w // 8, h // 8, w // 4, h // 4
-    ops = squelette(w, h)
+    ops = squelette(w, h, decime=decime, reprise=reprise)
     ops += transformeur("1/8 transformeur (6 blocs)", 2 * w8 * h8, (w8 // 2) * (h8 // 2))
     ops += globaux(w8 * h8)
     ops += transformeur("1/4 transformeur (6 blocs)", 4 * w4 * h4, (w4 // 8) * (h4 // 8))
@@ -142,11 +154,14 @@ def precision(op, recette):
     return PIC["fp16-f32"]
 
 
-def temps_us(op, recette):
+def temps_us(op, recette, *, plancher=False, winograd=False):
     octets = op.natif * (0.75 if recette.startswith("fp8") and op.sorte == "gemm" and "transformeur" in op.bloc else 1)
-    calcul = op.flop / (precision(op, recette) * 1e12 * RENDEMENT[op.sorte]) * 1e6 if op.flop else 0.0
-    memoire = octets / (BANDE * 1e9 * 0.75) * 1e6
-    return op.fois * (max(calcul, memoire) + LANCEMENT_US)
+    flop = op.wino_flop if winograd and op.wino_flop else op.flop
+    facteur = 1.0 if plancher else RENDEMENT[op.sorte]
+    calcul = flop / (precision(op, recette) * facteur * 1e6)
+    scalaire = op.wino_transfo / (PIC_FP32_SCALAIRE * 1e6) if winograd else 0.0
+    memoire = octets / (BANDE * (1.0 if plancher else 0.75) * 1e3)
+    return op.fois * (max(calcul, scalaire, memoire) + (0.0 if plancher else LANCEMENT_US))
 
 
 def main():
@@ -154,24 +169,34 @@ def main():
     parser.add_argument("--width", type=int, default=1280, help="largeur de la paire (plans remplis)")
     parser.add_argument("--height", type=int, default=768)
     parser.add_argument("--scale", type=float, choices=(1.0, 0.5), default=1.0)
+    parser.add_argument("--plancher", action="store_true",
+                        help="débits matériels idéaux et trident décimé, sans marge de lancement")
+    parser.add_argument("--reprise", action="store_true", help="calcul du CNN pour la nouvelle image seulement")
+    parser.add_argument("--winograd", action="store_true",
+                        help="F(2×2, 3×3) dans les convolutions de pas 1, transformations en cache")
     args = parser.parse_args()
     w, h = int(args.width // 2 * args.scale), int(args.height // 2 * args.scale)
-    ops = operations(w, h)
+    ops = operations(w, h, decime=args.plancher or args.reprise, reprise=args.reprise)
     recettes = ("fp16", "fp16-acc16", "fp8-gemm")
     print(f"GMFlow sur {w}x{h} (paire {args.width}x{args.height}, échelle {args.scale})\n")
+    if args.plancher or args.reprise or args.winograd:
+        print("Scénario " + ", ".join(("plancher optimiste" if args.plancher else "temps modélisé",
+                                       "CNN repris" if args.reprise else "recalcul complet",
+                                       "Winograd F(2×2)" if args.winograd else "convolutions directes")) + "\n")
     print("| Bloc | Opération | × | GFLOP | Mo natif | Mo graphe | µs fp16 | µs acc16 | µs fp8 |")
     print("|---|---|---|---|---|---|---|---|---|")
     tot = {"flop": 0.0, "natif": 0.0, "graphe": 0.0, **{r: 0.0 for r in recettes}}
     par_bloc: dict[str, list[float]] = {}
     for op in ops:
-        t = [temps_us(op, r) for r in recettes]
-        print(f"| {op.bloc} | {op.nom} | {op.fois} | {op.flop * op.fois / 1e9:.2f} | {op.natif * op.fois / 1e6:.1f} | "
+        t = [temps_us(op, r, plancher=args.plancher, winograd=args.winograd) for r in recettes]
+        flop = op.wino_flop if args.winograd and op.wino_flop else op.flop
+        print(f"| {op.bloc} | {op.nom} | {op.fois} | {flop * op.fois / 1e9:.2f} | {op.natif * op.fois / 1e6:.1f} | "
               f"{op.graphe * op.fois / 1e6:.1f} | " + " | ".join(f"{x:.0f}" for x in t) + " |")
-        tot["flop"] += op.flop * op.fois
+        tot["flop"] += flop * op.fois
         tot["natif"] += op.natif * op.fois
         tot["graphe"] += op.graphe * op.fois
         b = par_bloc.setdefault(op.bloc, [0.0, 0.0] + [0.0] * len(recettes))
-        b[0] += op.flop * op.fois
+        b[0] += flop * op.fois
         b[1] += op.natif * op.fois
         for i, r in enumerate(recettes):
             tot[r] += t[i]

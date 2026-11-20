@@ -22,6 +22,8 @@ struct LayerSetup {
   // La plaque (play.toml [interpolation] background_plate) : la sortie du SPAN de la lecture sur l'image clé,
   // reprise par les sources suivantes du plan.
   bool plate = false;
+  bool fused = false;  // essai de warp et calques en un passage
+  bool nvof_guard = false;
   constexpr bool plate_on() const { return plate; }
 };
 
@@ -30,6 +32,13 @@ struct LayerSetup {
 constexpr bool layers_ring_direct(const LayerSetup& setup, bool direct) {
   return direct && !setup.layers;
 }
+
+// Cible facultative du warp fusionné. Le repli écrit le tenseur intermédiaire et laisse le slot à
+// l'appelant. Seul un succès de warp_layered_ring consomme le protocole du slot.
+struct LayerRingOutput {
+  const gpu::RingTarget& target;
+  bool written = false;
+};
 
 class LayerStage {
  public:
@@ -49,6 +58,11 @@ class LayerStage {
   // L'image intermédiaire à l'instant t, déjà dans out (warp de RIFE) : son décor repris de a et b.
   std::expected<void, Refusal> compose_pair(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tensor& b,
                                             const gpu::Tensor& out, float t, bool cubic);
+  // true : warp et calques écrits. false : le chemin habituel reste à exécuter.
+  std::expected<bool, Refusal> warp_pair(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tensor& b,
+                                         const gpu::Tensor& out, const gpu::Motion& motion,
+                                         const gpu::Motion* previous, float t, bool poses, bool cubic,
+                                         LayerRingOutput* ring = nullptr);
   // SPAN de b vient d'être enfilé dans spanned (sur la voie de SPAN) : la plaque, si la paire en a une. Une
   // clé reprend spanned telle quelle, qui n'est pas réécrite ; les sources suivantes y reprennent leur décor.
   // Avant le grade : la plaque n'est jamais gradée, l'image composée l'est comme toute autre.
@@ -63,6 +77,8 @@ class LayerStage {
  private:
   std::optional<PairLayers> pair_;
   bool pair_layers_ = false;  // pair_ sert aussi aux images intermédiaires (setup.layers)
+  bool fused_ = false;
+  std::optional<std::array<std::uintptr_t, 2>> fused_sources_;
   PlateTrack plate_track_;
   NeighbourCameras neighbours_;
   PlateStep plate_step_;
@@ -73,6 +89,12 @@ class LayerStage {
     std::uint64_t pairs = 0;     // paires qui ont des calques
     std::uint64_t borrowed = 0;  // dont avec la caméra lk d'une paire voisine
     std::uint64_t composed = 0;  // images intermédiaires composées
+    std::uint64_t fused_composed = 0;
+    std::uint64_t roundtrip_edges = 0;
+    std::uint64_t roundtrip_camera_edges = 0;
+    std::uint64_t roundtrip_camera_pairs = 0;
+    std::uint64_t roundtrip_pairs = 0;
+    std::uint64_t roundtrip_protected = 0;
     std::array<std::uint64_t, kLayerSkipCount> skipped{};
     std::uint64_t smooth = 0;  // paires menées par le Smooth
     double share = 0.0;        // somme des parts de décor des paires avec calques

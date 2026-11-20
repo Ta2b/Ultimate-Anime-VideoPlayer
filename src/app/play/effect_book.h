@@ -116,8 +116,10 @@ class EffectTally {
 // neutre.
 class EffectFollower {
  public:
-  // L'image montrée (pts_us, kNoPts : inconnu) et la note de sa paire. Vrai si le masque a changé.
-  bool show(const std::optional<EffectNote>& note, std::int64_t pts_us);
+  // L'image montrée (pts_us, kNoPts : inconnu) et la note de sa paire. Sa propre époque fait foi,
+  // même sans note. Vrai si le masque a changé.
+  bool show(const std::optional<EffectNote>& note, std::int64_t pts_us,
+            std::optional<std::uint32_t> frame_epoch = std::nullopt);
   // Une source gradée avant le warp, de l'époque epoch, et la note de EffectBook::for_source. Une autre
   // époque remet le masque à zéro ; sans note, il fait un pas d'une image vers le neutre. Vrai si le masque a
   // changé.

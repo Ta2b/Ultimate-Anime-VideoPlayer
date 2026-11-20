@@ -5,6 +5,7 @@
 // estimé à 720p, images à 1080p).
 #pragma once
 
+#include <cstddef>
 #include <cuda_runtime_api.h>
 
 #include "gpu/cuda/backend/ring_surface.h"
@@ -56,6 +57,23 @@ struct WarpBlendParams {
 };
 
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream);
+
+struct LayerArgs;
+
+// Essai isolé warp CUDA exact + calques de la paire (pas la plaque). Un indicateur par tampon, lu sur la
+// même file et valable pour cette écriture du tampon seulement. Nul, le raccourci ne s'applique pas.
+struct LayerWarpBounds {
+  const unsigned* a_outside = nullptr;
+  const unsigned* b_outside = nullptr;
+  const unsigned* mask_outside = nullptr;
+};
+// Cherche une valeur FP16 hors de [-2,2] dans une source, ou hors de [0,1] dans un masque. NaN et Inf dehors.
+// Réinitialise *outside sur stream. elements compte les valeurs FP16, tous les plans du tampon inclus.
+cudaError_t launch_certify_layer_warp(const void* data, std::size_t elements, bool mask, unsigned* outside,
+                                      cudaStream_t stream);
+// shortcut_count, s'il est donné, est remis à zéro puis reçoit le nombre de pixels qui évitent le warp.
+cudaError_t launch_warp_blend_layers(const WarpBlendParams& warp, const LayerArgs& layer,
+                                     LayerWarpBounds bounds, unsigned* shortcut_count, cudaStream_t stream);
 
 // Mouvement d'ensemble de la paire (a et b de params, kernels/spec/warp_pan.h) dans out[0..2] : dx, dy et
 // 1 si l'estimation est sûre, 0 sinon. Un seul bloc ; pan de params n'est pas lu.

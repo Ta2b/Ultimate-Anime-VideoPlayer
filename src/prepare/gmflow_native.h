@@ -12,6 +12,7 @@
 
 #include "core/types.h"
 #include "prepare/gmflow_backbone.h"
+#include "prepare/gmflow_upsampler.h"
 
 namespace kirari::prepare {
 
@@ -19,7 +20,11 @@ namespace kirari::prepare {
 // trident aux poids partagés (pas 1 vers le quart, pas 2 vers le huitième). La paire peut être en FP16 ou en
 // FP32. Refus : ModelUnreadable (ONNX illisible), FieldMissing (un nom, une forme ou un attribut que les
 // noyaux ne font pas, avec son nom).
-std::expected<GmflowBackbone, Refusal> gmflow_backbone(std::span<const std::byte> pair);
+std::expected<GmflowBackbone, Refusal> gmflow_backbone(
+    std::span<const std::byte> pair, GmflowStemInput input = GmflowStemInput::kFolded);
+
+// La 3 × 3 (flot xy puis 128 caractéristiques, Relu) et la 1 × 1 (9 masques de 4 × 4) de la paire.
+std::expected<GmflowUpsampler, Refusal> gmflow_upsampler(std::span<const std::byte> pair);
 
 // Le plan se tient-il pour les noyaux ? Chaque opération lit des tenseurs déjà écrits et des statistiques
 // déjà faites sur ce tenseur, écrit un tenseur neuf de la taille que son pas demande, et ne demande que ce

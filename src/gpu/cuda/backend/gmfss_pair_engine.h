@@ -30,6 +30,7 @@ class IRuntime;
 namespace kirari::gpu::cuda {
 
 class SharedActivations;
+class GmflowPairFlowNet;
 
 class GmfssPairEngine final : public Engine {
  public:
@@ -37,17 +38,24 @@ class GmfssPairEngine final : public Engine {
   // double) ; cut : les noms des sorties du flot, relus dans le manifeste.
   static std::expected<std::unique_ptr<GmfssPairEngine>, Refusal> load(
       nvinfer1::IRuntime& runtime, const std::filesystem::path& cache_dir, const GmfssFusedKey& key,
-      const prepare::GmfssPairCut& cut, const std::shared_ptr<SharedActivations>& shared);
+      const prepare::GmfssPairCut& cut, const std::shared_ptr<SharedActivations>& shared, bool feature_reuse);
   ~GmfssPairEngine() override;
   GmfssPairEngine(const GmfssPairEngine&) = delete;
   GmfssPairEngine& operator=(const GmfssPairEngine&) = delete;
 
   std::span<const std::string> input_names() const override { return full_->input_names(); }
   std::span<const std::string> output_names() const override { return full_->output_names(); }
+  bool next_gmfss_pair(bool follows) override {
+    reuse_next_ = follows && feature_reuse_ && native_on_ && right_features_.front().handle != 0;
+    return reuse_next_;
+  }
+  std::span<const Tensor> take_right_features();
+  bool feature_already_bound(std::size_t output, const Tensor& tensor, std::span<const Tensor> reuse) const;
 
   // frames (1 × 6 × 2h × 2w), les quatorze sorties dans l'ordre d'output_names().
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared,
-                                       std::span<const Tensor> inputs, std::span<const Tensor> outputs);
+                                       std::span<const Tensor> inputs, std::span<const Tensor> outputs,
+                                       std::span<const Tensor> reuse = {});
 
   // L'essai du natif (gmfss_pair_trial.cpp) : le FeatureNet et le MetricNet natifs réglés au banc, puis deux
   // images de test passent par la paire entière et par le flot et les réseaux natifs, les sommes choisies
@@ -56,7 +64,8 @@ class GmfssPairEngine final : public Engine {
   // Les lignes du journal, la dernière disant ce qui a été retenu ; refus : l'essai n'a pas pu tourner (la
   // paire entière reste).
   std::expected<std::vector<std::string>, Refusal> try_native(
-      const prepare::GmfssPairNets& nets, const std::shared_ptr<SharedActivations>& shared, double min_db);
+      const prepare::GmfssPairNets& nets, std::span<const std::byte> pair,
+      const std::shared_ptr<SharedActivations>& shared, double min_db);
   bool native() const { return native_on_; }
 
   // Les sorties de la paire, dans l'ordre de kOutputNames (gmfss_pair_engine.cpp) : half0, half1, puis par
@@ -74,18 +83,33 @@ class GmfssPairEngine final : public Engine {
   GmfssPairEngine() = default;
   std::expected<void, Refusal> enqueue_native(cudaStream_t stream,
                                               const std::shared_ptr<SharedActivations>& shared,
-                                              const Tensor& frames, std::span<const Tensor> outputs);
+                                              const Tensor& frames, std::span<const Tensor> outputs,
+                                              const GmflowPairFlowNet* gmflow,
+                                              std::span<const Tensor> reuse = {});
+  std::expected<void, Refusal> enqueue_flow(cudaStream_t stream,
+                                            const std::shared_ptr<SharedActivations>& shared,
+                                            const Tensor& frames, std::span<const Tensor> outputs,
+                                            const GmflowPairFlowNet* gmflow, bool follows) const;
+  std::expected<std::string, Refusal> try_flow_native(std::span<const std::byte> pair, cudaStream_t stream,
+                                                      const std::shared_ptr<SharedActivations>& shared,
+                                                      const Tensor& frames, std::span<const Tensor> outputs,
+                                                      double min_db);
   // Un réseau natif (GmfssPairNativeNet::kFeatureNet, ses deux images ; kMetricNet) sur ce que le flot a
   // écrit : la fin de enqueue_native, et le temps d'un morceau à l'essai.
   std::expected<void, Refusal> enqueue_piece(cudaStream_t stream, int piece, const Tensor& frames,
-                                             std::span<const Tensor> outputs) const;
+                                             std::span<const Tensor> outputs,
+                                             std::span<const Tensor> reuse = {}) const;
 
   // Les sorties du flot, dans l'ordre de la coupe : l'entrée du MetricNet, les six flots, half0, half1.
   static constexpr std::size_t kFlowOutputs = 1 + prepare::kGmfssPairFlows + 2;
   std::unique_ptr<TrtEngine> full_;
   std::unique_ptr<TrtEngine> flow_;
   std::unique_ptr<GmfssPairNativeNet> native_;
+  std::unique_ptr<GmflowPairFlowNet> gmflow_;
   bool native_on_ = false;
+  bool feature_reuse_ = false;
+  bool reuse_next_ = false;
+  std::array<Tensor, prepare::kGmfssFeatureLevels> right_features_{};
   int height_ = 0;
   int width_ = 0;
   std::array<std::size_t, kOutputs> at_{};           // la place de chaque sortie dans output_names()

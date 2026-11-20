@@ -206,11 +206,11 @@ TEST_CASE("RIFE natif : variante mouvement, une barre par groupe", "[rife_mix]")
       // Le natif f16 du morceau 1 abîme le masque (39 dB), celui du morceau 0 reste à 50 dB partout.
       const double flow = o[p] == kF16 ? sigma_of(50.0) : 0.0;
       const double mask = o[p] == kF16 ? sigma_of(p == 1 ? 39.0 : 50.0) : 0.0;
-      std::normal_distribution<double> nf(0.0, flow);
-      std::normal_distribution<double> nm(0.0, mask);
-      for (std::size_t i = 0; i < 4 * kPlane && flow > 0.0; ++i) out[i] += static_cast<float>(nf(rng));
+      std::normal_distribution<double> nf;
+      std::normal_distribution<double> nm;
+      for (std::size_t i = 0; i < 4 * kPlane && flow > 0.0; ++i) out[i] += static_cast<float>(nf(rng) * flow);
       for (std::size_t i = 4 * kPlane; i < 5 * kPlane && mask > 0.0; ++i)
-        out[i] += static_cast<float>(nm(rng));
+        out[i] += static_cast<float>(nm(rng) * mask);
     }
     return out;
   };

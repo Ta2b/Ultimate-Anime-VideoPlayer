@@ -126,6 +126,9 @@ struct Outcome {
   bool keep = false;
 };
 
+// Écart de deux sorties FP16. Toute valeur non finie invalide la comparaison.
+double output_db(const std::vector<__half>& reference, const std::vector<__half>& candidate);
+
 // Une référence TensorRT, puis le natif f32 (la base) ; le temps seul de chaque option de chaque morceau ; le
 // mélange le plus rapide dont chaque sortie tient min_db contre TensorRT (native_mix.h), gardé s'il bat
 // TensorRT d'au moins gmfss_mix::kMinGain sur une passe entière. tuning : les secondes du réglage. Refus :

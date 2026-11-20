@@ -57,7 +57,7 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
           std::move(init), static_cast<std::uint32_t>(setup.slots.size()), setup.slots.front().generation,
           smooth_extra_frames(setup.smooth_drawings) + temporal_extra_frames(setup.temporal_fix != nullptr)),
       setup_(std::move(setup)),
-      scene_(setup_.scene_map) {
+      scene_(setup_.scene_map, setup_.nvof_roundtrip) {
   graded_copies_ = graded_copies(setup_);
   note_screen_grade(setup_, interpolates(), warps_spanned());
   reuse_.enabled = setup_.span_reuse.whole;
@@ -109,6 +109,10 @@ UpscaleStage::~UpscaleStage() {
         gmfss_.pairs + gmfss_.ahead_pairs, gmfss_.fusions, gmfss_.halves, gmfss_.behind_pairs,
         gmfss_.spare_keys, gmfss_.more_keys, gmfss_.ahead_pairs, gmfss_.ahead_used, gmfss_.ahead_wasted,
         gmfss_.composed, gmfss_.camera_pairs, gmfss_.camera_images);
+    if (gmfss_only())
+      log_channel("gpu")->info(
+          "GMFSS seul : {} avances reprises sans instant à temps, {} avances évitées (échéance passée)",
+          gmfss_.ahead_adopted_all_late, gmfss_.ahead_declined_expired);
   }
   // RIFE à chaud, un compromis qualité contre vitesse (B45-07) : le milieu d'une paire calme qui accélère
   // garde l'échelle grossière de la paire d'avant. Ni le gain ni la perte ne sont mesurés : l'essai reste
@@ -140,6 +144,11 @@ UpscaleStage::~UpscaleStage() {
   if (early_.passes > 0)
     log_channel("gpu")->info("RIFE : {} passes enfilées à l'arrivée de {} paires, sans attendre leur slot",
                              early_.passes, early_.pairs);
+  if (setup_.span_b_ahead)
+    log_channel("gpu")->info(
+        "SPAN B : {} lancés avant le premier slot, {} parvenus à une soumission d'écriture, "
+        "{:.1f} ms d'avance hôte cumulée jusqu'à cette soumission",
+        span_body_ahead_, span_body_seen_, static_cast<double>(span_body_headroom_us_) / 1000.0);
   if (encodes_kept_ + encodes_followed_ + encodes_after_gap_ + encodes_cold_ > 0)
     log_channel("gpu")->info(
         "RIFE : encodage repris sur {} passes, B seule sur {}, A et B sur {} après une paire sans passe et "
@@ -158,14 +167,17 @@ UpscaleStage::~UpscaleStage() {
         "Smooth : {} tenues fondues en un mouvement (sur 2 sources : {}, 3 : {}, 4 : {}, 5 : {}, 6 : {})",
         h[2] + h[3] + h[4] + h[5] + h[6], h[2], h[3], h[4], h[5], h[6]);
   }
+  const char* motion = gmfss_only() ? "GMFSS union"
+                       : setup_.distil_drba != nullptr && !setup_.drba_by_shot ? "DistilDRBA"
+                                                                           : "RIFE";
   if (setup_.late_fate) {
     log_channel("gpu")->info(
-        "Rapide : {} instants laissés en retard sans calcul, {} calculés après leur instant", late_dropped_,
+        "Interpolation : {} instants laissés en retard sans calcul, {} calculés après leur instant", late_dropped_,
         late_computed_);
   }
   if (late_pairs_ > 0) {
-    log_channel("gpu")->info("RIFE : {} paires en retard sur l'horloge, {} instants sautés pour la rattraper",
-                             late_pairs_, late_instants_);
+    log_channel("gpu")->info("{} : {} paires en retard sur l'horloge, {} instants sautés pour la rattraper",
+                             motion, late_pairs_, late_instants_);
   }
   if (skipped_ > 0) {
     log_channel("gpu")->info(
@@ -174,9 +186,11 @@ UpscaleStage::~UpscaleStage() {
         skipped_);
   }
   if (interpolates()) {
-    log_channel("gpu")->info("RIFE {} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
-                             factor_text(setup_.live ? setup_.live->factor_now() : setup_.rife_factor),
-                             pairs_, interpolated_, cuts_, held_);
+    const std::string cadence = setup_.live && setup_.live->free_active()
+                                    ? "Auto"
+                                    : factor_text(setup_.live ? setup_.live->factor_now() : setup_.rife_factor);
+    log_channel("gpu")->info("{} {} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
+                             motion, cadence, pairs_, interpolated_, cuts_, held_);
   }
   if (setup_.live && setup_.live->cuts().active())
     log_channel("gpu")->info(

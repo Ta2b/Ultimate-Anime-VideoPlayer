@@ -65,9 +65,10 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
   std::swap(drba_.before, rgb_[current_]);
   if (small_[current_]) std::swap(drba_.small_before, small_[current_]);
   drba_.small_taken = false;
-  drba_.filled01 = {};
-  drba_.filled12 = {};
+  const auto filled01 = std::exchange(drba_.filled01, {});
+  const auto filled12 = std::exchange(drba_.filled12, {});
   drba_.before_ok = drba_.continuous && previous_ && previous_->epoch == frame.epoch;
+  const bool from_previous = drba_.before_ok && !drba_.bridge_ticket;
   drba_.continuous = false;
   if (drba_.bridge_ticket) {
     // L'image d'avant est l'image sautée : gardée si rien ne la coupe de l'image de reprise.
@@ -88,6 +89,17 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
     }
     drba_.after_id.reset();
     debanded_ = drba_.after_debanded;
+    // La seconde moitié de (A, B) et la première de (B, C) lisent les mêmes images (A, B, C).
+    // Elles ont seulement changé de place : le tampon recyclé pour la suivante ne fait pas partie du trio.
+    const gpu::Tensor& before = small_[current_] ? drba_.small_before->tensor() : drba_.before->tensor();
+    const gpu::Tensor& a = rife_source(current_ ^ 1U);
+    const gpu::Tensor& b = rife_source(current_);
+    const bool same_triplet =
+        filled01.first == &before && filled01.second == &a && filled12.first == &a && filled12.second == &b;
+    if (from_previous && same_triplet) {
+      drba_.filled01 = filled01;
+      drba_.filled12 = filled12;
+    }
     return {};
   }
   drba_.after_id.reset();
@@ -239,11 +251,11 @@ std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& cal
   const gpu::Tensor& img0 = call.on_b ? a : (whole ? before : a);
   const gpu::Tensor& img1 = call.on_b ? b : a;
   const gpu::Tensor& img2 = call.on_b ? (whole ? after : b) : b;
-  // Rend vrai quand seul le plan du temps a été réécrit.
+  // Rend vrai quand les six plans RGB ont été repris.
   const auto fill = [&](gpu::TensorBuffer& input, DrbaBuffers::Filled& filled, const gpu::Tensor& first,
-                        const gpu::Tensor& second) -> std::expected<bool, Refusal> {
+                        const gpu::Tensor& second, bool reads_time) -> std::expected<bool, Refusal> {
     if (drba_.time_only && filled.first == &first && filled.second == &second) {
-      if (ops.rife_time(input.tensor(), call.u)) return true;
+      if (!reads_time || ops.rife_time(input.tensor(), call.u)) return true;
       drba_.time_only = false;
     }
     filled = {};
@@ -252,9 +264,10 @@ std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& cal
     filled = {.first = &first, .second = &second};
     return false;
   };
-  auto times01 = fill(*drba_.pair01, drba_.filled01, img0, img1);
+  auto times01 = fill(*drba_.pair01, drba_.filled01, img0, img1, true);
   if (!times01) return std::unexpected(std::move(times01.error()));
-  auto times12 = fill(*drba_.pair12, drba_.filled12, img1, img2);
+  // Le fusionné ne lit pas le plan temps de pair12, même quand il doit réencoder le trio.
+  auto times12 = fill(*drba_.pair12, drba_.filled12, img1, img2, !setup_.drba_fused);
   if (!times12) return std::unexpected(std::move(times12.error()));
   // D6 : les mêmes images, un autre instant : le moteur fusionné garde leurs réductions et leurs encodages.
   if (*times01 && *times12) setup_.distil_drba->next_times_only();

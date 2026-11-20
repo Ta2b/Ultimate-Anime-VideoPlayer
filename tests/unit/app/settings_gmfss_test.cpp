@@ -23,6 +23,34 @@
 
 namespace kirari::app::play {
 
+TEST_CASE("GMFSS 540p attend Appliquer sans disparaître lors d'un changement de volume", "[app][gmfss]") {
+  const PlaySettings seen;
+  PlaySettings draft = seen;
+  draft.gmfss_light = true;
+  PlaySettings running = seen;
+  running.volume = 0.5F;
+  const PlaySettings followed = follow_running(draft, seen, running, true);
+  CHECK(followed.gmfss_light);
+  CHECK(followed.volume == running.volume);
+}
+
+TEST_CASE("GMFSS : les options avancées rouvrent la chaîne avec le moteur GMFSS", "[app][gmfss]") {
+  PlaySettings running;
+  running.rife_factor = 3;
+  running.motion_engine = MotionEngine::Gmfss;
+  for (auto option : {&PlaySettings::gmfss_half_flow, &PlaySettings::gmfss_every_instant,
+                      &PlaySettings::gmfss_light, &PlaySettings::gmfss_compose}) {
+    PlaySettings draft = running;
+    draft.*option = !(running.*option);
+    CHECK(change_between(running, draft, true).cost == ChangeCost::Reopen);
+    CHECK(change_between(draft, running, true).cost == ChangeCost::Reopen);
+  }
+  running.gmfss_every_instant = true;
+  PlaySettings draft = running;
+  draft.gmfss_half_flow = !running.gmfss_half_flow;
+  CHECK(change_between(running, draft, true).cost == ChangeCost::Reopen);
+}
+
 TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GMFSS",
           "[app][settings][gmfss]") {
   // L'ancien GMFSS (0.10.0) : « gmfss » se lit en RIFE (A22-18). GMFSS union, retiré du menu en novembre
@@ -179,7 +207,8 @@ TEST_CASE("GMFSS : une paire d'avant le format 2 est écartée avant la construc
   const auto dir = std::filesystem::temp_directory_path() / "kirari-gmfss-format";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
-  const auto graph_with = [&](std::string_view file, std::initializer_list<std::string_view> outputs) {
+  const auto graph_with = [&](const std::filesystem::path& file,
+                              std::initializer_list<std::string_view> outputs) {
     prepare::onnx_build::Message graph;
     for (const std::string_view name : outputs) {
       const std::array<std::int64_t, 4> dims{1, 3, 32, 32};
@@ -198,6 +227,11 @@ TEST_CASE("GMFSS : une paire d'avant le format 2 est écartée avant la construc
   const auto found = find_gmfss(dirs);
   REQUIRE(found);
   CHECK(gmfss_pair_current(found->pair));
+  GmfssMenuProbe menu;
+  CHECK(menu.read(dirs).available);
+  CHECK_FALSE(menu.read(dirs).half_flow);
+  CHECK(gmfss_availability(dirs).available);
+  CHECK_FALSE(gmfss_availability(dirs).half_flow);
   const auto stale = gmfss_pair_current(found->half_pair);
   REQUIRE_FALSE(stale);
   CHECK(stale.error().code == RefusalCode::GraphInvalid);
@@ -206,6 +240,7 @@ TEST_CASE("GMFSS : une paire d'avant le format 2 est écartée avant la construc
   auto usable = gmfss_usable(*found, true, dropped);
   REQUIRE(usable);
   CHECK(usable->pair == found->pair);  // le demi-flot périmé : le flot entier
+  CHECK(usable->pair != usable->half_pair);
   CHECK(dropped.find(kGmfssHalfPairFile) != std::string::npos);
   usable = gmfss_usable(*found, false, dropped);
   REQUIRE(usable);
@@ -216,6 +251,9 @@ TEST_CASE("GMFSS : une paire d'avant le format 2 est écartée avant la construc
   usable = gmfss_usable(*found, false, dropped);
   REQUIRE(usable);
   CHECK(usable->pair == found->half_pair);
+  CHECK(usable->pair == usable->half_pair);  // le budget doit suivre le modèle qui tourne
+  CHECK(menu.read(dirs).available);
+  CHECK(menu.read(dirs).half_flow);
   CHECK(dropped.find(kGmfssPairFile) != std::string::npos);
   usable = gmfss_usable(*found, true, dropped);
   REQUIRE(usable);
@@ -232,6 +270,27 @@ TEST_CASE("GMFSS : une paire d'avant le format 2 est écartée avant la construc
   REQUIRE_FALSE(usable);
   CHECK(usable.error().detail.find(kGmfssHalfPairFile) != std::string::npos);
   CHECK(dropped.empty());
+  const auto bundled = dir / "package" / "models" / "rife";
+  std::filesystem::create_directories(bundled);
+  graph_with(bundled / kGmfssPairFile, {"half0", "half1", "feature0_1", "feature1_1"});
+  graph_with(bundled / kGmfssFusionFile, {"out"});
+  const std::vector ordered{dir, bundled};
+  usable = find_usable_gmfss(ordered, true, dropped);
+  REQUIRE(usable);
+  CHECK(usable->pair == bundled / kGmfssPairFile);
+  CHECK(usable->fusion == bundled / kGmfssFusionFile);
+  CHECK(dropped.find(kGmfssHalfPairFile) != std::string::npos);
+  CHECK_FALSE(gmfss_availability(dirs).available);
+  CHECK_FALSE(menu.read(dirs).available);
+  CHECK(menu.read(ordered).available);
+  CHECK(gmfss_availability(ordered).available);
+  CHECK_FALSE(gmfss_availability(ordered).half_flow);
+  graph_with(bundled / kGmfssHalfPairFile, {"half0", "half1", "feature0_1", "feature1_1"});
+  std::filesystem::remove(bundled / kGmfssPairFile);
+  CHECK(gmfss_availability(ordered).half_flow);
+  const auto half_only = find_usable_gmfss(ordered, false, dropped);
+  REQUIRE(half_only);
+  CHECK(half_only->pair == bundled / kGmfssHalfPairFile);
   std::filesystem::remove_all(dir);
 }
 
@@ -245,15 +304,15 @@ TEST_CASE(
   ChainEngines c;
   CHECK(gmfss_auto_cap(c, 0, 23.976) == 0);  // RIFE : l'écran
   c.gmfss_use = GmfssUse::Only;
-  c.played.gmfss_half_flow = false;  // le flot entier
+  c.played.gmfss_half_flow = true;  // demandé, mais le flot entier a été chargé
+  c.played.gmfss_light = true;      // ce réglage ne change que le mélange
   CHECK(gmfss_auto_cap(c, 0, 23.976) == 48);
   CHECK(gmfss_auto_cap(c, 30, 23.976) == 30);  // un plafond choisi plus bas reste
-  c.played.gmfss_half_flow = true;
+  c.gmfss_half_loaded = true;
+  c.played.gmfss_half_flow = false;  // demandé entier, repli sur le demi-flot
   CHECK(gmfss_auto_cap(c, 0, 23.976) == 60);
   CHECK(gmfss_auto_cap(c, 165, 24.0) == 60);
-  c.played.gmfss_half_flow = false;
-  c.played.gmfss_light = true;  // 540 lignes : comme le demi-flot
-  CHECK(gmfss_auto_cap(c, 0, 24.0) == 60);
+  CHECK(gmfss_auto_cap(c, 90, 0.0) == 90);
   // Le mélange, Élevé comme Très élevé : les clés guident RIFE jusqu'à l'écran, le plafond choisi reste.
   c.gmfss_use = GmfssUse::Middle;
   CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);

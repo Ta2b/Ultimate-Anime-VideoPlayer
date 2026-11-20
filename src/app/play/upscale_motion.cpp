@@ -118,22 +118,22 @@ std::expected<void, Refusal> UpscaleStage::settle_motion() {
   return {};
 }
 
-std::expected<void, Refusal> UpscaleStage::measure_first_pair(const gpu::Motion& middle, float t) {
+std::expected<bool, Refusal> UpscaleStage::measure_first_pair(const gpu::Motion& middle, float t) {
   // C09-04 : la première paire d'un plan (après une coupe ou un saut) n'a pas de paire d'avant pour décider :
   // sa propre mesure est attendue, comme sans poses, s'il reste un instant hors du milieu. Une attente de
   // l'hôte par plan, SPAN de b enfilé avant elle quand le warp le suit.
-  if (!flow_max_async_ || motion_measured_ || (intermediates_ <= 1 && t == 0.5F)) return {};
+  if (!flow_max_async_ || motion_measured_ || (intermediates_ <= 1 && t == 0.5F)) return false;
   gpu::KernelOps& ops = *setup_.backend->kernels();
   auto ticket = ops.flow_max_start(middle);
-  if (!ticket) return {};
+  if (!ticket) return false;
   if (warps_spanned()) {
-    if (auto ok = span_current(); !ok) return ok;
+    if (auto ok = span_current(); !ok) return std::unexpected(std::move(ok.error()));
   }
   auto biggest = ops.flow_max_take(*ticket);
   if (!biggest) return std::unexpected(std::move(biggest.error()));
   pair_motion_ = *biggest;
   strong_motion_ = pair_motion_ >= kernels::single_run_motion(setup_.rife_height);
-  return {};
+  return true;
 }
 
 std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu::Tensor& b,
@@ -146,6 +146,12 @@ std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu
   read.warp = setup_.warp;
   read.pan_lock = setup_.pan_lock;
   if (out.ring != nullptr) return ops.warp_blend_ring(a, b, read, t, *out.ring);
+  if (layered) {
+    const auto fused = layers_.warp_pair(ops, a, b, *out.tensor, read, nullptr, t, false,
+                                         setup_.warp == kernels::RifeWarp::CatmullRom, out.layer_ring);
+    if (!fused) return std::unexpected(fused.error());
+    if (*fused) return {};
+  }
   if (auto ok = ops.warp_blend(a, b, read, t, *out.tensor); !ok || !layered) return ok;
   // Calques (layer_stage.h) : le décor repris de a et b au seul mouvement de caméra ; sans carte, rien. Pas
   // pour DistilDRBA (a et b inversés après ½) ni GMFSS (a et b des clés intermédiaires).
@@ -159,6 +165,10 @@ std::expected<void, Refusal> UpscaleStage::blend_poses(const gpu::Tensor& a, con
   gpu::Motion read = triage_.doubted(*setup_.backend, motion, 0.5F);  // avec les poses : toujours du milieu
   read.warp = setup_.warp;
   if (out.ring != nullptr) return ops.warp_blend_poses_ring(a, b, read, previous, t, *out.ring);
+  const auto fused = layers_.warp_pair(ops, a, b, *out.tensor, read, previous, t, true,
+                                       setup_.warp == kernels::RifeWarp::CatmullRom, out.layer_ring);
+  if (!fused) return std::unexpected(fused.error());
+  if (*fused) return {};
   if (auto ok = ops.warp_blend_poses(a, b, read, previous, t, *out.tensor); !ok) return ok;
   // Les poses gardent le rythme des dessins ; le décor suit la caméra à l'instant t (le rythme par calque).
   return layers_.compose_pair(ops, a, b, *out.tensor, t, setup_.warp == kernels::RifeWarp::CatmullRom);
@@ -228,9 +238,11 @@ std::expected<void, Refusal> UpscaleStage::begin_motion_pair(float t) {
     // chaque paire, une seule image intermédiaire comprise : en Rapide sur un GPU chargé (ou à ×1,5),
     // l'unique instant tombe rarement à 1/2, et sans mesure il gardait le milieu extrapolé en plein
     // mouvement (hachures, contours doublés).
-    if (auto ok = measure_first_pair(middle, t); !ok) return ok;
-    motion_measured_ = false;
-    if (flow_max_async_) {
+    auto measured = measure_first_pair(middle, t);
+    if (!measured) return std::unexpected(std::move(measured.error()));
+    // Le milieu n'a pas changé : la paire d'après reprend la mesure déjà relue, ou celle encore en vol.
+    motion_measured_ = *measured;
+    if (flow_max_async_ && !*measured) {
       if (auto ticket = ops.flow_max_start(middle))
         motion_ = PendingMotion{.ticket = *ticket, .scale = 1.0F, .known = true};
       else
@@ -279,7 +291,7 @@ std::optional<bool> UpscaleStage::strong_half(float t) const {
   if (direct_run_) return strong_motion_;
   // Moins de passes sur les paires fortes (essai) : l'instant proche du milieu s'en déduit, comme sur une
   // paire calme ; seuls les instants que le milieu prolongé ne sert plus repassent par RIFE.
-  if (strong_motion_ && t != 0.5F && setup_.live && setup_.live->strong_middle() &&
+  if (poses_ && strong_motion_ && t != 0.5F && setup_.live && setup_.live->strong_middle() &&
       middle_reaches(pair_motion_, t, kernels::single_run_motion(setup_.rife_height)))
     return std::nullopt;
   // Garder les poses, mouvement fort : RIFE à l'instant exact (l'atout de RIFE), les poses ne valent que pour

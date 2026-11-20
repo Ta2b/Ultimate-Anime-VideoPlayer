@@ -2,6 +2,7 @@
 // (écrits ici, sans fichier binaire), l'agencement des étages et l'image juste ; et la matrice de couleur que
 // le flux annonce, BT.601 contre BT.709. Caché ([.e2e]) comme les autres cas du lecteur.
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -194,28 +195,36 @@ TEST_CASE("Bout en bout : un flux BT.601 se rend en BT.601, pas en BT.709", "[.e
   REQUIRE(clip709);
   REQUIRE(clip601);
   std::vector<std::string> args709 = base_args(alone(*clip709, dir), dir, dir / "709.ppm");
-  args709.insert(args709.end(), {"--no-upscale", "--rife=0"});
+  args709.insert(args709.end(), {"--no-upscale", "--rife=0", "--sdr"});
   const Run run709 = run_player(args709);
   INFO(run709.output);
   REQUIRE(run709.code == 0);
   std::vector<std::string> args601 = base_args(alone(*clip601, dir), dir, dir / "601.ppm");
-  args601.insert(args601.end(), {"--no-upscale", "--rife=0"});
+  args601.insert(args601.end(), {"--no-upscale", "--rife=0", "--sdr"});
   const Run run601 = run_player(args601);
   INFO(run601.output);
   REQUIRE(run601.code == 0);
   const Picture a = read_ppm(dir / "709.ppm");
   const Picture b = read_ppm(dir / "601.ppm");
-  REQUIRE(a.width > 0);
+  REQUIRE(a.width >= 16);
+  REQUIRE(a.height >= 16);
   REQUIRE(b.width == a.width);
+  REQUIRE(b.height == a.height);
   // Les mêmes YUV (le vert pâle du plan 0) : en BT.709, RVB 155, 238, 151 environ ; en BT.601, 161, 253,
   // 154. Le vert s'écarte d'une quinzaine : une matrice ignorée (les deux rendus en 709) le laisse à 0.
-  const std::size_t probe = (static_cast<std::size_t>(a.height * 3 / 8) * static_cast<std::size_t>(a.width) +
-                             static_cast<std::size_t>(a.width / 2)) *
-                            3;
-  const int green = static_cast<int>(b.rgb[probe + 1]) - static_cast<int>(a.rgb[probe + 1]);
-  const int red = static_cast<int>(b.rgb[probe]) - static_cast<int>(a.rgb[probe]);
-  CHECK(green >= 8);
-  CHECK(green <= 22);
-  CHECK(red >= 2);
-  CHECK(red <= 12);
+  // Sur l'aplat, la moyenne rend la mesure indépendante de la phase du tramage.
+  std::array<int, 2> delta{};
+  for (int y = a.height * 3 / 8 - 4; y <= a.height * 3 / 8 + 4; ++y) {
+    for (int x = a.width / 2 - 4; x <= a.width / 2 + 4; ++x) {
+      const auto pixel = (static_cast<std::size_t>(y) * static_cast<std::size_t>(a.width) +
+                          static_cast<std::size_t>(x)) * 3;
+      for (std::size_t c = 0; c < delta.size(); ++c)
+        delta[c] += static_cast<int>(b.rgb[pixel + c]) - static_cast<int>(a.rgb[pixel + c]);
+    }
+  }
+  constexpr int area = 9 * 9;
+  CHECK(delta[1] >= 8 * area);
+  CHECK(delta[1] <= 22 * area);
+  CHECK(delta[0] >= 2 * area);
+  CHECK(delta[0] <= 12 * area);
 }

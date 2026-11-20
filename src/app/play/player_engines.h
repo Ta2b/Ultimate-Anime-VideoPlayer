@@ -253,7 +253,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
 
 // La lecture du fichier : décodeur du moteur, langues, sortie audio (A16-02) et pistes gardées d'une
 // réouverture.
+struct ChainEngines;
 PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const std::filesystem::path& file,
-                               const std::string& backend_name);
+                               const ChainEngines& engines);
 
 }  // namespace kirari::app::play

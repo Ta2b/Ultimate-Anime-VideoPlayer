@@ -248,7 +248,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   set_live_motion(*live, settings);
   live->set_pair_marks(settings.stats.pairs);
   live->set_effect_highlights(options.map_highlights());
-  const PipelineConfig config = pipeline_config(p, settings, options.file, c.backend_name);
+  const PipelineConfig config = pipeline_config(p, settings, options.file, c);
   PlaceboScreen& out = p.screen;
   LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
   // C08-07 : le démuxeur, la mesure du télécinéma et les sous-titres du dossier hors du thread de la fenêtre,
@@ -338,7 +338,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::int64_t bench_period_us = session_config.display_period_us;
   session_config.display_hz = display_refresh_hz(out.window());
   session_config.display_sync = settings.display_sync;
-  session_config.swapchain_depth = kSwapchainDepth;
+  session_config.swapchain_depth = out.swapchain_depth();
   session_config.video_latency_us = std::int64_t{settings.video_latency_ms} * 1000;
   session_config.stats = settings.stats;
   session_config.subtitle_scale = settings.subtitle_scale;

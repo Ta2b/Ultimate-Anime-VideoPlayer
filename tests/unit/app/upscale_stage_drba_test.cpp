@@ -59,6 +59,36 @@ TEST_CASE("Étage gpu : sous DistilDRBA, la carte de (b, après) part avec l'ima
   CHECK(rig.backend.count("scene_flow_start 3 4") == 1);
 }
 
+TEST_CASE("Étage gpu : DistilDRBA ×3 reprend le trio déjà ingéré de la paire précédente", "[app][stage]") {
+  for (const bool fused : {false, true}) {
+    for (const bool reduced : {false, true}) {
+      Rig rig;
+      UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+      s.rife = nullptr;
+      s.drba_fused = fused;
+      s.distil_drba = reduced ? &rig.drba_motion : &rig.drba;
+      if (reduced) {
+        s.drba_motion = true;
+        s.warp_after_span = true;
+        s.rife_width = kWidth / 2;
+        s.rife_height = kHeight / 2;
+      }
+      rig.start(std::move(s));
+      rig.feed(1, 5);
+      REQUIRE(rig.collect(10));
+      rig.stage.reset();
+
+      CHECK(shape_of(rig.sink.frames()) ==
+            std::vector<std::string>{"1", "1-2", "1-2", "2", "2-3", "2-3", "3", "3-4", "3-4", "4"});
+      CHECK(rig.backend.rife_pairs() == std::vector<std::pair<std::uint32_t, std::uint32_t>>{
+                                            {1, 1}, {1, 2}, {1, 2}, {2, 3}, {2, 3}, {3, 4}, {3, 4}, {4, 5}});
+      // Aux premiers instants de (2,3) et (3,4), seul l'entier lit aussi le temps de pair12.
+      CHECK(rig.backend.count("rife_time") == (fused ? 2 : 4));
+      CHECK((reduced ? rig.drba_motion : rig.drba).times_only() == 2);
+    }
+  }
+}
+
 TEST_CASE("Étage gpu : DistilDRBA rend b sans passe quand (b, après) est un dessin tenu", "[app][stage]") {
   Rig rig;
   rig.backend.score(SourceId{4}, SourceId{5}, 0.0, 10);  // dessin tenu

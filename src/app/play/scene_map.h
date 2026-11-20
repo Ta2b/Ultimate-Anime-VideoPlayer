@@ -46,7 +46,7 @@ namespace kirari::app::play {
 
 class SceneMap {
  public:
-  explicit SceneMap(bool wanted) : on_(wanted) {}
+  explicit SceneMap(bool wanted, bool roundtrip = false) : on_(wanted), roundtrip_(roundtrip) {}
   bool on() const { return on_; }
 
   // Lance la paire (left, right) des images de travail a et b, d'époque epoch. Les indices temporels de
@@ -54,15 +54,16 @@ class SceneMap {
   void start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tensor& b, SourceId left, SourceId right,
              std::uint32_t epoch);
   // La carte de la paire (left, right) si elle est relue ; sinon rien. Relit sans attente ce qui est fini.
-  std::optional<kernels::SceneMotion> for_pair(gpu::KernelOps& ops, SourceId left, SourceId right);
+  std::optional<kernels::SceneMotion> for_pair(gpu::KernelOps& ops, SourceId left, SourceId right,
+                                               std::uint32_t epoch = 0);
   // La paire (left, right) a-t-elle été lancée (la dernière lancée) ?
-  bool started(SourceId left, SourceId right) const {
-    return last_left_ && *last_left_ == left && last_right_ && *last_right_ == right;
+  bool started(SourceId left, SourceId right, std::uint32_t epoch) const {
+    return last_epoch_ == epoch && last_left_ && *last_left_ == left && last_right_ && *last_right_ == right;
   }
   // La paire (left, right) enjambe une coupe (mesurée par le lecteur) : sa carte, relue ou à venir, n'a que
   // des tuiles incertaines (kernels::ref::mark_cut), et la paire lancée ensuite repart sans indices ni
   // classes.
-  void cut(SourceId left, SourceId right);
+  void cut(SourceId left, SourceId right, std::uint32_t epoch = 0);
   // Relit ce qui est fini et lance l'affinage des caméras, sans attendre (à chaque image de sortie).
   void advance(gpu::KernelOps& ops) {
     if (on_) poll(ops);
@@ -72,7 +73,13 @@ class SceneMap {
   struct Latest {
     SourceId left;
     SourceId right;
+    std::uint64_t ticket = 0;
+    std::uint32_t epoch = 0;
+    int flow_width = 0;
+    int flow_height = 0;
+    int divisor = 1;
     kernels::SceneMotion motion;
+    std::vector<std::uint8_t> photo_edge_a;  // attente du retour pour ce ticket
   };
   const std::optional<Latest>& latest() const { return latest_; }
 
@@ -96,6 +103,7 @@ class SceneMap {
     std::uint64_t ticket = 0;
     SourceId left;
     SourceId right;
+    std::uint32_t epoch = 0;
     bool restart = false;     // les classes des paires d'avant ne valent pas pour elle
     bool across_cut = false;  // elle enjambe une coupe dite par le lecteur (cut)
     std::uint64_t shot = 0;   // le plan (shot_ à son lancement)
@@ -147,11 +155,13 @@ class SceneMap {
   void finish(Pending& pair);                // la carte de la paire de tête, avec sa caméra telle qu'elle est
   // L'étage décide de la paire (left, right) : elle, et celles d'avant que l'affinage retient encore, partent
   // avec la caméra de NVOF, dans l'ordre (l'historique des classes les suit une à une).
-  void settle(gpu::KernelOps& ops, SourceId left, SourceId right);
+  void settle(gpu::KernelOps& ops, SourceId left, SourceId right, std::uint32_t epoch);
   void stop(const Refusal& refusal, const char* where);
   void stop_refine(const Refusal& refusal, const char* where);
 
   bool on_ = false;
+  bool roundtrip_ = false;
+  std::uint64_t roundtrip_kept_ = 0;
   std::vector<Pending> pending_;
   std::vector<Late> late_;
   std::optional<Latest> latest_;

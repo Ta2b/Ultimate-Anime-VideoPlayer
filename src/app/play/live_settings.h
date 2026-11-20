@@ -192,10 +192,11 @@ class LiveSettings {
                     bool repeated = false) {
     const std::scoped_lock lock(mutex_);
     if (!auto_on_ && !free_on_) return;
-    // Le temps propre de cette image : de sa soumission (ou de la fin de la précédente, si le GPU était
-    // pris) à sa fin vue. L'attente d'un slot du ring avant la soumission n'y compte pas.
+    // La part de l'intervalle soumission-écriture au-delà de la dernière fin déjà vue. Main peut
+    // relire des écritures dans un autre ordre que le veilleur : une fin plus ancienne ne doit
+    // pas remettre dans le service de la suivante un intervalle déjà compté.
     const std::int64_t service = std::max<std::int64_t>(done_us - std::max(submitted_us, frame_done_us_), 0);
-    frame_done_us_ = done_us;
+    frame_done_us_ = std::max(frame_done_us_, done_us);
     for (Expected& e : ledger_) {
       if (e.id != right || e.images == 0) continue;
       if (e.first_us == 0 || submitted_us < e.first_us) e.first_us = submitted_us;

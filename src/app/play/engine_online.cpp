@@ -15,6 +15,8 @@
 #include "core/log.h"
 #include "core/toml_fields.h"
 #include "core/utf8_path.h"
+#include "prepare/cache_io.h"
+#include "prepare/key_lock.h"
 
 namespace kirari::app::play {
 
@@ -32,6 +34,7 @@ constexpr auto kRetryAfter = std::chrono::hours(6);
 // Un seul budget pour les deux requêtes (l'index puis sa signature), pas 8 s chacune plus la marge du
 // processus (C26-08).
 constexpr int kFetchSeconds = 16;
+constexpr std::string_view kSignedCopy = "kirari-signed-engine-index-v1\n";
 
 std::string read_text(const std::filesystem::path& file) {
   std::ifstream in(file, std::ios::binary);
@@ -44,6 +47,12 @@ bool fresh(const std::filesystem::path& file, std::filesystem::file_time_type::d
   if (error) return false;
   const auto age = std::filesystem::file_time_type::clock::now() - written;
   return age >= std::filesystem::file_time_type::duration::zero() && age < within;
+}
+
+std::string_view signature_payload(std::string_view sig) {
+  while (!sig.empty() && (sig.back() == '\n' || sig.back() == '\r' || sig.back() == ' '))
+    sig.remove_suffix(1);
+  return sig;
 }
 
 }  // namespace
@@ -63,9 +72,7 @@ std::string release_repo_prefix(std::string_view repo) {
 
 bool release_index_signed(std::string_view text, std::string_view signature,
                           const std::vector<std::string>& keys) {
-  std::string_view sig = signature;
-  while (!sig.empty() && (sig.back() == '\n' || sig.back() == '\r' || sig.back() == ' '))
-    sig.remove_suffix(1);
+  const auto sig = signature_payload(signature);
   if (sig.empty()) return false;
   return std::ranges::any_of(keys,
                              [&](const std::string& key) { return ed25519_verify_hex(key, text, sig); });
@@ -140,27 +147,31 @@ void write_marker(const std::filesystem::path& file, std::string_view version) {
 
 }  // namespace
 
-bool release_index_due(const std::filesystem::path& cache, std::string_view version, bool once_per_version) {
+bool release_index_due(const std::filesystem::path& cache, std::string_view version,
+                       const std::vector<std::string>& keys, bool once_per_version) {
   const std::filesystem::path absent = beside(cache, ".absent");
   const std::filesystem::path tried = beside(cache, ".tried");
   std::error_code error;
   // Une copie d'une autre release (le lecteur vient d'être remplacé) ne vaut rien, fût-elle d'hier.
-  const bool cache_current = std::filesystem::exists(cache, error) &&
-                             release_index_tag(read_text(cache)) == std::format("v{}", version);
+  const ReleaseIndexCopy copy = read_release_index(cache);
+  const bool cache_current = release_index_signed(copy.text, copy.signature, keys) &&
+                             release_index_tag(copy.text) == std::format("v{}", version);
   const bool absent_current = std::filesystem::exists(absent, error) && marker_for(absent, version);
   const bool tried_current = marker_for(tried, version);
   const auto within = once_per_version ? std::filesystem::file_time_type::duration::max() : kFreshFor;
   // Un 404 se retient moins qu'une copie : le paquet TensorRT est joint à la release après coup, quelques
   // minutes ou heures après sa publication (C06-04).
-  const auto absent_within = once_per_version ? within : kAbsentFor;
   if (cache_current && fresh(cache, within)) return false;
-  if (absent_current && fresh(absent, absent_within)) return false;
+  if (absent_current && fresh(absent, kAbsentFor)) return false;
   return !(tried_current && fresh(tried, kRetryAfter));
 }
 
 void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,
-                           std::string_view version, const UpdateFetch& fetch, const std::stop_token& stop) {
-  if (repo.empty() || version.empty() || !fetch || !release_index_due(cache, version)) return;
+                           std::string_view version, const std::vector<std::string>& keys,
+                           const UpdateFetch& fetch, const std::stop_token& stop) {
+  if (repo.empty() || version.empty() || !fetch || stop.stop_requested() ||
+      !release_index_due(cache, version, keys))
+    return;
   const std::string url = release_download_prefix(repo, version) + "engines-nvidia.lock";
   const std::filesystem::path signature = beside(cache, ".sig");
   // Un 404 se retient quelques heures (A38-10, C06-04), un autre échec (hors ligne, portail captif) un peu
@@ -169,38 +180,57 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
   const std::filesystem::path tried = beside(cache, ".tried");
   const auto log = log_channel("app");
   std::error_code error;
-  std::filesystem::create_directories(cache.parent_path(), error);
-  const std::filesystem::path part = beside(cache, ".part");
-  const std::filesystem::path sig_part = beside(signature, ".part");
-  std::filesystem::remove(part, error);
-  std::filesystem::remove(sig_part, error);
+  const auto parent = cache.has_parent_path() ? cache.parent_path() : std::filesystem::path(".");
+  std::filesystem::create_directories(parent, error);
+  // Deux démarrages ne doivent pas publier, ni retirer sur un 404, la copie l’un après l’autre.
+  auto lock = prepare::KeyLock::acquire(beside(cache, ".refresh-lock"), stop, prepare::LockWait::Block,
+                                       std::chrono::seconds(kFetchSeconds));
+  if (!lock) {
+    if (lock.error().code != RefusalCode::Cancelled)
+      log->info("moteurs de la release : {}", lock.error().detail);
+    return;
+  }
+  if (!release_index_due(cache, version, keys)) return;
+  auto stage = prepare::reserve_stage(parent, ".kirari-index-", "engines-nvidia");
+  if (!stage) {
+    log->info("moteurs de la release : {}", stage.error().detail);
+    return;
+  }
+  const auto part = *stage / "index";
+  const auto sig_part = *stage / "signature";
   const auto begun = std::chrono::steady_clock::now();
   auto got = fetch(url, part, kFetchSeconds / 2, stop);
+  const bool index_missing = !got && got.error().code == RefusalCode::TrackUnavailable;
   if (got) {
     const auto spent =
         std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - begun);
     got = fetch(url + ".sig", sig_part, std::max(2, kFetchSeconds - static_cast<int>(spent.count())), stop);
   }
   if (got) {
-    // L'ancienne copie part d'abord, puis la signature, puis le texte : un arrêt entre deux renommages laisse
-    // une copie absente (relue au lancement suivant), jamais une signature neuve à côté d'un texte ancien
-    // daté de moins d'un jour, que release_index_signed écarterait pour vingt-quatre heures (C06-10).
+    const auto text = read_text(part);
+    const auto sig = read_text(sig_part);
+    if (!release_index_signed(text, sig, keys))
+      got = refuse(RefusalCode::HashMismatch, "signature de l'index absente ou fausse");
+    else if (release_index_tag(text) != std::format("v{}", version))
+      got = refuse(RefusalCode::FieldOutOfRange, "étiquette de l'index différente de celle du lecteur");
+    else if (!stop.stop_requested())
+      got = core::write_text_atomically(cache, std::format("{}{}\n{}", kSignedCopy, signature_payload(sig), text));
+  }
+  static_cast<void>(prepare::cleanup_stage(*stage));
+  if (stop.stop_requested()) return;
+  if (got) {
     std::filesystem::remove(absent, error);
     std::filesystem::remove(tried, error);
-    std::filesystem::remove(cache, error);
-    std::filesystem::rename(sig_part, signature, error);
-    if (!error) std::filesystem::rename(part, cache, error);
-    if (error) log->info("moteurs de la release : {}", error.message());
     return;
   }
-  std::filesystem::remove(part, error);
-  std::filesystem::remove(sig_part, error);
-  if (got.error().code == RefusalCode::Cancelled || stop.stop_requested()) return;  // lecteur fermé
+  if (got.error().code == RefusalCode::Cancelled) return;  // lecteur fermé
   if (got.error().code == RefusalCode::TrackUnavailable) {
-    // 404 : la release n'a pas de paquet NVIDIA (ou pas de signature) ; une copie gardée d'avant ne vaut
-    // plus.
-    std::filesystem::remove(cache, error);
-    std::filesystem::remove(signature, error);
+    // Sans index sur la release, retire la copie gardée. Si seule la signature manque,
+    // la publication peut être en cours : la dernière copie vérifiée reste disponible.
+    if (index_missing) {
+      std::filesystem::remove(cache, error);
+      std::filesystem::remove(signature, error);
+    }
     write_marker(absent, version);
   } else {
     write_marker(tried, version);
@@ -209,7 +239,13 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
 }
 
 ReleaseIndexCopy read_release_index(const std::filesystem::path& cache) {
-  return {.text = read_text(cache), .signature = read_text(beside(cache, ".sig"))};
+  std::string stored = read_text(cache);
+  if (!stored.starts_with(kSignedCopy))
+    return {.text = std::move(stored), .signature = read_text(beside(cache, ".sig"))};
+  const auto newline = stored.find('\n', kSignedCopy.size());
+  if (newline == std::string::npos) return {};
+  return {.text = stored.substr(newline + 1),
+          .signature = stored.substr(kSignedCopy.size(), newline - kSignedCopy.size())};
 }
 
 void merge_release_copy(EngineCatalog& catalog, const ReleaseIndexCopy& copy, std::string_view repo,
@@ -239,7 +275,7 @@ void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& ca
                          std::string_view version, const std::vector<std::string>& keys,
                          const UpdateFetch& fetch) {
   if (repo.empty() || version.empty()) return;
-  refresh_release_index(cache, repo, version, fetch, std::stop_token{});
+  refresh_release_index(cache, repo, version, keys, fetch, std::stop_token{});
   merge_release_copy(catalog, read_release_index(cache), repo, keys, version);
 }
 

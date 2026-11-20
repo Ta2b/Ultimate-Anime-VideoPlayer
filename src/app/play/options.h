@@ -198,6 +198,7 @@ struct PlayOptions {
   // --span-native-edges (essai) : les bords du SPAN FP8 (conv_1, conv_cat, to_pixel) par les mêmes noyaux
   // (gpu::kTrialSpanNative) ; éteint jusqu'à sa mesure.
   bool span_native_edges = false;
+  bool span_fp8_native_blocks = false;
   // L'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux CUDA, morceau par morceau à côté
   // de TensorRT (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB : le défaut depuis la séance PC
   // (4.25 et 4.22 lite plus rapides de 26 et 17 % par passe), --no-rife-native (essai) l'éteint.
@@ -208,6 +209,13 @@ struct PlayOptions {
   // avec GMFSS union au menu (interp_retired.h) ; --no-gmfss-native (essai) laisse tout GMFSS à TensorRT et
   // le retire du menu.
   bool gmfss_native = true;
+  bool gmfss_feature_reuse = true;  // reprend FeatureNet quand deux paires partagent la même source
+  // --gmfss-budget : coûts mesurés à la taille de l'essai.
+  struct GmfssBudget {
+    std::int64_t pair_us;
+    std::int64_t key_us;
+  };
+  std::optional<GmfssBudget> gmfss_budget;
   // --tfix-native (essai) : les convolutions de TemporalFix fusionné par nos noyaux CUDA (docs/tfix-natif.md,
   // gpu::kTrialTfixNative), gardées à 45 dB de TensorRT ; éteint jusqu'à la séance finale.
   bool tfix_native = false;
@@ -233,11 +241,17 @@ struct PlayOptions {
   // --rife-at-slot (mesure) : chaque passe RIFE d'une paire forte attend le slot de son image, au lieu d'être
   // enfilée à l'arrivée de la paire ; la sortie est la même (UpscaleSetup::rife_at_slot). Pour l'ABAB.
   bool rife_at_slot = false;
+  // --span-b-ahead : enfile le SPAN de la source B quand le premier slot de la paire manque.
+  bool span_b_ahead = false;
+  bool fused_layers = false;
+  bool nvof_layer_guard = false;
   // La carte de la scène par le flux optique de NVIDIA (UpscaleSetup::scene_map, scene_map.h), allumée par
   // défaut pour la caméra, les calques et la plaque de décor ; --no-scene-map (essai) l'éteint. Sans NVOF
   // (AMD, Intel, avant RTX 30), elle se refuse et rien ne change ; la ligne « carte de la scène » du journal
   // de fin dit ce qu'elle a fait.
   bool scene_map = true;
+  bool nvof_roundtrip =
+      false;  // --nvof-roundtrip : mesure du retour de chaque paire, sans l'utiliser au rendu
   // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3
   // à 4.5). Éteint par défaut jusqu'à sa validation sur l'écran.
   bool skip_held = false;

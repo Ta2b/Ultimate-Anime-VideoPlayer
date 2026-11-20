@@ -33,7 +33,8 @@ namespace {
 // pts + durée, kNoPts si l'un manque ou si la somme déborde (un fichier forgé, A15-10). La durée n'est
 // jamais négative.
 std::int64_t end_of(std::int64_t pts, std::int64_t duration) {
-  if (pts == kNoPts || duration > std::numeric_limits<std::int64_t>::max() - pts) return kNoPts;
+  if (pts == kNoPts || duration < 0 || pts > std::numeric_limits<std::int64_t>::max() - duration)
+    return kNoPts;
   return pts + duration;
 }
 

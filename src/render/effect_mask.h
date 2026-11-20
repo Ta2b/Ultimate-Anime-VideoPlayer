@@ -73,7 +73,7 @@ class EffectMask {
   std::span<const float> values() const { return shown_; }
   // L'effet sûr de la seconde couche (lissé, dilaté, flouté), ligne par ligne, de 0 à 1 ; vide avec values.
   std::span<const float> sure() const { return sure_shown_; }
-  // Augmenté à chaque changement des valeurs (la composition gardée de l'écran en dépend).
+  // Augmenté à chaque changement des valeurs ou de leur grille (la composition gardée de l'écran en dépend).
   std::uint64_t serial() const { return serial_; }
 
  private:

@@ -62,6 +62,21 @@ TEST_CASE("Réglages du menu : le mouvement estimé en 720p rouvre la lecture",
   CHECK_FALSE(change.reason.empty());
 }
 
+TEST_CASE("Réglages du menu : les panoramiques stables rechargent aussi DistilDRBA",
+          "[app][settings]") {
+  PlaySettings running;
+  running.motion_engine = MotionEngine::DistilDrba;
+  running.rife_factor = 3;
+  PlaySettings wanted = running;
+  wanted.pan_lock = true;
+  const PlaySettings live = live_part(running, wanted, true);
+  CHECK_FALSE(live.pan_lock);
+  CHECK(change_between(live, wanted, true).cost == ChangeCost::Reopen);
+  wanted = running;
+  wanted.motion_720p = true;
+  CHECK(change_between(running, wanted, true).cost == ChangeCost::Reopen);
+}
+
 // A22-05 : `--rife` coupe le mode auto pour la lecture ; play.toml garde le mode auto du fichier.
 TEST_CASE("L'option --rife n'enregistre pas la coupure du mode auto", "[app][settings]") {
   PlaySettings from_file;
@@ -191,6 +206,13 @@ TEST_CASE("Réglages : « Lisser les dessins tenus » rouvre la lecture, l'optio
   CHECK(poses_kept(running));
   CHECK_FALSE(poses_kept(smooth));
   CHECK(smooth.keep_poses);
+
+  for (MotionEngine engine : {MotionEngine::DistilDrba, MotionEngine::Gmfss, MotionEngine::Apple}) {
+    smooth.motion_engine = engine;
+    CHECK(smooth.smooth_drawings);
+    CHECK_FALSE(smooth_drawings_requested(smooth));
+    CHECK(poses_kept(smooth));
+  }
 
   PlaySettings from_file;
   from_file.smooth_drawings = false;

@@ -19,6 +19,7 @@
 #endif
 
 #include "app/play/i18n.h"
+#include "app/play/source_fit.h"
 #include "core/text.h"
 #include "prepare/utf8.h"
 
@@ -41,6 +42,15 @@ std::string rate_text(media::Rational rate) {
 
 }  // namespace
 
+Factor export_factor(const PlaySettings& s) {
+  const Factor factor = factor_of(s);
+  return s.rife_auto && factor.num > factor.den ? Factor{.num = 2, .den = 1} : factor;
+}
+
+Factor export_factor(const PlaySettings& s, double source_fps) {
+  return motion_off_for_rate(s, source_fps) ? Factor{} : export_factor(s);
+}
+
 PlaySettings export_chain(const PlaySettings& s) {
   PlaySettings out = s;
   out.hdr_native = false;
@@ -48,11 +58,10 @@ PlaySettings export_chain(const PlaySettings& s) {
   out.smooth_motion = false;
   // P3.87 : en Auto, la lecture prend ce que l'écran affiche (×6 à 144 Hz) ; l'export, lu sur un téléviseur
   // ou un téléphone, prend ×2 quel que soit l'écran. Un multiplicateur choisi à la main reste.
-  if (out.rife_auto && out.rife_factor > 0) {
-    out.rife_auto = false;
-    out.rife_factor = 2;
-    out.rife_factor_den = 1;
-  }
+  const Factor factor = export_factor(s);
+  out.rife_auto = false;
+  out.rife_factor = factor.num;
+  out.rife_factor_den = factor.den;
   return out;
 }
 

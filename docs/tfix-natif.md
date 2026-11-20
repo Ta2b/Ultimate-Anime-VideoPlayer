@@ -133,10 +133,12 @@ d'environ 0,26 ms à l'essai, halo compris), à regarder avec ncu.
 
 ## Mémoire
 
-Par pixel, les tampons de la fenêtre grossissent (26 → 32 et 25 → 32 canaux) ; la zone de travail des noyaux
-garde deux tampons de la plus grande activation (la tête couche par couche : 6 × 32 canaux à demi-résolution
-du réseau), soit environ 400 Mo à pleine taille en 1080p et 100 Mo en demi-taille (le défaut). La tête fondue
-n'en a pas besoin ; la zone reste réservée pour une tête qui passerait couche par couche.
+Par pixel, les tampons de la fenêtre grossissent (26 → 32 et 25 → 32 canaux). La zone de travail native
+couvre les morceaux exécutés couche par couche, avec leurs deux tampons et, si nécessaire, les sommes
+partielles. Sur s1 à s3 en 1080p, la tête fondue ramène ce besoin à environ 24 Mio en demi-taille (le
+défaut) et 95 Mio à pleine taille. Le chemin couche par couche de la tête demande 95 et 380 Mio
+respectivement. Ces chiffres concernent les convolutions natives seules. Les tampons de la fenêtre
+s'ajoutent à la zone de travail, dont le minimum dépend aussi de TensorRT et des autres moteurs de la voie.
 
 ## Séance finale (sur le PC, binaire `linux-release` puis `windows-release`)
 

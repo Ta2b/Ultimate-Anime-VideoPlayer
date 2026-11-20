@@ -214,7 +214,7 @@ pl_hook_res LookTable::Impl::run(const pl_hook_params& params) {
   return res;
 }
 
-std::expected<std::unique_ptr<LookTable>, Refusal> LookTable::create(pl_gpu gpu) {
+std::expected<std::unique_ptr<LookTable>, Refusal> LookTable::create(pl_gpu gpu, pl_hook_stage stage) {
   auto impl = std::make_unique<Impl>();
   impl->gpu = gpu;
   impl->fmt = pl_find_named_fmt(gpu, "rgba32f");
@@ -234,7 +234,7 @@ std::expected<std::unique_ptr<LookTable>, Refusal> LookTable::create(pl_gpu gpu)
   if (impl->table == nullptr)
     return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "look en une table : pl_tex_create"});
   for (std::size_t i = 0; i < kLookSlots; ++i) impl->mix_names.push_back(slot_name("look_mix", i));
-  impl->hook.stages = PL_HOOK_OUTPUT;
+  impl->hook.stages = stage;
   impl->hook.input = PL_HOOK_SIG_TEX;
   impl->hook.priv = impl.get();
   impl->hook.hook = [](void* priv, const pl_hook_params* params) {

@@ -138,6 +138,12 @@ std::vector<std::string> piece_names(const GmfssNativeParts& parts) {
 
 }  // namespace
 
+double output_db(const std::vector<__half>& reference, const std::vector<__half>& candidate) {
+  if (reference.empty() || reference.size() != candidate.size())
+    return -std::numeric_limits<double>::infinity();
+  return native_mix::worst_db({peak_of(reference)}, {mse_of(reference, candidate)});
+}
+
 std::expected<Outcome, Refusal> try_mix(const Unit& u, double min_db, double tuning) {
   const auto started = std::chrono::steady_clock::now();
   GmfssNativeParts& parts = *u.parts;

@@ -11,6 +11,10 @@
 
 #include <spdlog/spdlog.h>
 
+extern "C" {
+#include <libavutil/common.h>
+}
+
 #include "audio/log.h"
 #include "core/clock.h"
 #include "core/types.h"
@@ -344,10 +348,10 @@ bool AudioPlayer::push(PcmBlock& block) {
     report(pushed.error());
     return true;
   }
-  pushed_end_us_ = block.pts_us + frames_to_us(block.frames(), output_->format().sample_rate);
+  pushed_end_us_ = av_sat_add64(block.pts_us, frames_to_us(block.frames(), output_->format().sample_rate));
   // Premières trames de l'époque : la position est connue avant d'être entendue.
   if (!clock_->snapshot().valid) {
-    clock_->publish({.media_us = block.pts_us + output_->delay_us(),
+    clock_->publish({.media_us = av_sat_add64(block.pts_us, output_->delay_us()),
                      .host_us = output_->reading().host_us,
                      .epoch = epoch_,
                      .valid = true});
@@ -357,7 +361,7 @@ bool AudioPlayer::push(PcmBlock& block) {
 
 void AudioPlayer::fill_gap(std::int64_t pts_us) {
   if (master_ || !pushed_end_us_) return;  // l'écran maître : align() cale déjà chaque bloc
-  const std::int64_t gap_us = pts_us - *pushed_end_us_;
+  const std::int64_t gap_us = av_sat_sub64(pts_us, *pushed_end_us_);
   if (gap_us <= kGapFillUs || gap_us > kMaxGapFillUs) return;
   log_->info("trou de {} ms dans l'audio : comblé d'un silence", gap_us / 1000);
   const int rate = output_->format().sample_rate;
@@ -376,8 +380,8 @@ bool AudioPlayer::align(PcmBlock& block) {
   const int rate = output_->format().sample_rate;
   // Ce qui sera poussé maintenant s'entendra après la file et le tampon du périphérique.
   const std::int64_t heard_at = output_->reading().host_us + output_->queued_us() + output_->latency_us();
-  const std::int64_t target_us = master.media_at(heard_at) - output_->delay_us();
-  const std::int64_t lead_us = block.pts_us - target_us;
+  const std::int64_t target_us = av_sat_sub64(master.media_at(heard_at), output_->delay_us());
+  const std::int64_t lead_us = av_sat_sub64(block.pts_us, target_us);
   if (lead_us > 0) {
     const std::int64_t silence_us = std::min(lead_us, config_.queue_target_us);
     if (auto silence = output_->push_silence(us_to_frames(silence_us, rate)); !silence) {
@@ -430,8 +434,8 @@ void AudioPlayer::follow(std::int64_t heard_us, const DeviceReading& reading) {
   if (!master_ || aligning_) return;
   const ClockSnapshot master = master_->snapshot();
   if (!master.valid || master.epoch != epoch_ || master.rate == 0.0) return;
-  const std::int64_t error_us = heard_us - master.media_at(reading.host_us);
-  if (std::abs(error_us) > config_.resync_us) {
+  const std::int64_t error_us = av_sat_sub64(heard_us, master.media_at(reading.host_us));
+  if (error_us > config_.resync_us || error_us < -config_.resync_us) {
     log_->info("écart de {} ms avec l'écran : recalage", error_us / 1000);
     realign();
     return;

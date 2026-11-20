@@ -139,10 +139,11 @@ TEST_CASE("Étage gpu : RIFE mouvement avec poses, la première paire d'un plan 
   rig.feed(1, 3);
   REQUIRE(rig.collect(7));
   rig.stage.reset();
-  // (1,2) : le milieu, sa mesure attendue (forte), RIFE à 1/3 et 2/3 ; (2,3) décidée sur la mesure en fond
-  // de (1,2) : de même, sans attente.
+  // (1,2) : le milieu, sa mesure attendue (forte), RIFE à 1/3 et 2/3. (2,3) décide sur le résultat déjà
+  // relu de (1,2) : de même, sans nouvelle mesure de (1,2).
   CHECK(rig.backend.count("engine rife_motion") == 3 + 3);
-  CHECK(rig.backend.count("flow_max_take") == 1 + 1);
+  CHECK(rig.backend.count("flow_max_start") == 2);
+  CHECK(rig.backend.count("flow_max_take") == 1);
   CHECK(rig.backend.count("flow_max_now") == 0);
 }
 

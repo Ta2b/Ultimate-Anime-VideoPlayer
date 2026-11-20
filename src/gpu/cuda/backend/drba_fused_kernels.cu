@@ -36,10 +36,21 @@ __device__ __forceinline__ float read_z(const SourceZ& z, int c, int zy, int zx)
                           static_cast<std::size_t>(zx >> 1)]);
 }
 
+template <int Width, int Height>
+struct TileZ {
+  const float* values;
+  int zh, zw, left, top;
+};
+
+template <int Width, int Height>
+__device__ __forceinline__ float read_z(const TileZ<Width, Height>& z, int c, int zy, int zx) {
+  return z.values[(c * Height + zy - z.top) * Width + zx - z.left];
+}
+
 // Resize bilinéaire demi-pixel de facteur s de Z (canaux c0 .. c0 + N - 1) au pixel (px, py) du plan agrandi,
 // arrondi FP16 comme la sortie du Cast qui suit le Resize FP32 du graphe.
-template <int N>
-__device__ __forceinline__ void enlarge(const SourceZ& z, int c0, int s, int px, int py, float (&r)[N]) {
+template <int N, class Z>
+__device__ __forceinline__ void enlarge(const Z& z, int c0, int s, int px, int py, float (&r)[N]) {
   const float inv = 1.0F / static_cast<float>(s);
   float sy = (static_cast<float>(py) + 0.5F) * inv - 0.5F;
   float sx = (static_cast<float>(px) + 0.5F) * inv - 0.5F;
@@ -169,11 +180,15 @@ __global__ void __launch_bounds__(256) pre_kernel(DrbaPreParams p) {
   for (int k = 0; k < 3; ++k) {
     if (j < sections[k].plane) {
       const Section& sec = sections[k];
-      const int oy = static_cast<int>(j / static_cast<std::size_t>(sec.ow));
-      const int ox = static_cast<int>(j % static_cast<std::size_t>(sec.ow));
-      sec.x[static_cast<std::size_t>(sec.time_channel) * sec.plane + j] = __float2half_rn(
-          2.0F * __half2float(u[static_cast<std::size_t>(sec.s * oy) * static_cast<std::size_t>(p.width) +
-                                static_cast<std::size_t>(sec.s * ox)]));
+      std::size_t at = 0;
+      if (!p.scalar_time) {
+        const int oy = static_cast<int>(j / static_cast<std::size_t>(sec.ow));
+        const int ox = static_cast<int>(j % static_cast<std::size_t>(sec.ow));
+        at = static_cast<std::size_t>(sec.s * oy) * static_cast<std::size_t>(p.width) +
+             static_cast<std::size_t>(sec.s * ox);
+      }
+      sec.x[static_cast<std::size_t>(sec.time_channel) * sec.plane + j] =
+          __float2half_rn(2.0F * __half2float(u[at]));
       return;
     }
     j -= sections[k].plane;
@@ -260,7 +275,31 @@ __global__ void __launch_bounds__(128) glue_kernel(DrbaGlueParams p) {
   }
 }
 
+constexpr int kFinishWidth = 32, kFinishHeight = 8;
+
+// Le halo bilinéaire tient dans (taille du bloc / S + 2) par axe. La lecture FP16 vers FP32
+// est commune à la tuile, et chaque pixel conserve son Resize et ses frontières d'arrondi.
+template <int S>
 __global__ void __launch_bounds__(256) finish_kernel(DrbaFinishParams p) {
+  constexpr int tw = kFinishWidth / (S != 0 ? S : 4) + 2;
+  constexpr int th = kFinishHeight / (S != 0 ? S : 4) + 2;
+  constexpr int cells = tw * th;
+  const int scale = S != 0 ? S : p.upscale;
+  const SourceZ z{static_cast<const __half*>(p.y), p.height / scale, p.width / scale};
+  __shared__ float inputs[S != 0 ? 5 * cells : 1];
+  const int left = static_cast<int>(blockIdx.x) * (tw - 2) - 1;
+  const int top = static_cast<int>(blockIdx.y) * (th - 2) - 1;
+  if constexpr (S != 0) {
+    static_assert(5 * cells <= kFinishWidth * kFinishHeight);
+    const int thread = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
+    if (thread < 5 * cells) {
+      const int c = thread / cells, i = thread % cells;
+      const int zy = max(0, min(z.zh - 1, top + i / tw));
+      const int zx = max(0, min(z.zw - 1, left + i % tw));
+      inputs[thread] = read_z(z, c, zy, zx);
+    }
+    __syncthreads();
+  }
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;
@@ -270,12 +309,14 @@ __global__ void __launch_bounds__(256) finish_kernel(DrbaFinishParams p) {
   const auto* pair01 = static_cast<const __half*>(p.pair01);
   const auto* pair12 = static_cast<const __half*>(p.pair12);
   const bool before = before_side(pair01, plane);
-  const SourceZ z{static_cast<const __half*>(p.y), p.height / p.upscale, p.width / p.upscale};
   float r[5];
-  enlarge<5>(z, 0, p.upscale, x, y, r);
+  if constexpr (S != 0)
+    enlarge<5>(TileZ<tw, th>{inputs, z.zh, z.zw, left, top}, 0, S, x, y, r);
+  else
+    enlarge<5>(z, 0, scale, x, y, r);
   float flow[4];
 #pragma unroll
-  for (int k = 0; k < 4; ++k) flow[k] = rounded(r[k] * static_cast<float>(p.upscale));
+  for (int k = 0; k < 4; ++k) flow[k] = rounded(r[k] * static_cast<float>(scale));
   const float sigmoid = rounded(1.0F / (1.0F + expf(-r[4])));
   if (p.flow != nullptr) {
     // Variante mouvement : flot et masque, le warp et le mélange se font après SPAN (kernels/spec/warp.h).
@@ -337,8 +378,14 @@ cudaError_t launch_drba_glue(const DrbaGlueParams& params, cudaStream_t stream) 
 }
 
 cudaError_t launch_drba_finish(const DrbaFinishParams& params, cudaStream_t stream) {
-  const dim3 block(32, 8);
-  finish_kernel<<<grid_for(params.width, params.height, block), block, 0, stream>>>(params);
+  const dim3 block(kFinishWidth, kFinishHeight);
+  const dim3 grid = grid_for(params.width, params.height, block);
+  if (params.shared_resize && params.upscale == 4)
+    finish_kernel<4><<<grid, block, 0, stream>>>(params);
+  else if (params.shared_resize && params.upscale == 8)
+    finish_kernel<8><<<grid, block, 0, stream>>>(params);
+  else
+    finish_kernel<0><<<grid, block, 0, stream>>>(params);
   return cudaGetLastError();
 }
 

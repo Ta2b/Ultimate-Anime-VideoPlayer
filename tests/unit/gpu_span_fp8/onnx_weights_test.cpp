@@ -38,7 +38,7 @@ Node node(std::string op, std::vector<std::string> in, std::string out) {
 }
 
 // Un SPAN aux poids réguliers (b8f64 par défaut ; b5f48 : channels 48, blocks 5), du graphe que les noyaux
-// supposent (les noms, pas les calculs).
+// supposent.
 Model synthetic_model(int channels = kChannels, int blocks = kBlocks) {
   Model model;
   auto& g = model.graph;
@@ -47,6 +47,14 @@ Model synthetic_model(int channels = kChannels, int blocks = kBlocks) {
   g.outputs.push_back({.name = "output"});
   g.initializers.push_back(tensor("conv_1.1.eval_conv.weight", {c, 12, 3, 3}));
   g.initializers.push_back(tensor("conv_1.1.eval_conv.bias", {c}));
+  const auto add_conv = [&](const std::string& input, const std::string& base, std::string output, int side) {
+    Node conv = node("Conv", {input, base + ".weight", base + ".bias"}, std::move(output));
+    const std::int64_t pad = side / 2;
+    conv.attributes.push_back({.name = "pads", .type = AttributeType::Ints, .ints = {pad, pad, pad, pad}});
+    g.nodes.push_back(std::move(conv));
+  };
+  std::string x = "/conv_1/conv_1.1/eval_conv/Conv_output_0";
+  add_conv("/conv_1/conv_1.0/Reshape_1_output_0", "conv_1.1.eval_conv", x, 3);
   for (int k = 1; k <= blocks; ++k) {
     for (const char* n : {"c1_r", "c2_r", "c3_r"}) {
       g.initializers.push_back(tensor(std::format("block_{}.{}.eval_conv.weight", k, n), {c, c, 3, 3}));
@@ -54,28 +62,40 @@ Model synthetic_model(int channels = kChannels, int blocks = kBlocks) {
     }
     g.initializers.push_back(tensor(std::format("block_{}.att_conv.weight", k), {c, c, 1, 1}));
     g.initializers.push_back(tensor(std::format("block_{}.att_conv.bias", k), {c}));
-    g.nodes.push_back(node("Relu", {"x"}, std::format("/block_{}/act1/Relu_output_0", k)));
-    g.nodes.push_back(node("Relu", {"x"}, std::format("/block_{}/act1_1/Relu_output_0", k)));
-    g.nodes.push_back(node("Mul", {"x"}, std::format("/block_{}/Mul_output_0", k)));
+    const std::string name = std::format("block_{}", k), prefix = "/" + name;
+    const std::string c1 = prefix + "/c1_r/eval_conv/Conv_output_0", r1 = prefix + "/act1/Relu_output_0";
+    const std::string c2 = prefix + "/c2_r/eval_conv/Conv_output_0", r2 = prefix + "/act1_1/Relu_output_0";
+    const std::string c3 = prefix + "/c3_r/eval_conv/Conv_output_0", sum = prefix + "/Add_output_0";
+    const std::string att = prefix + "/att_conv/Conv_output_0", gate = prefix + "/Tanh_output_0";
+    add_conv(x, name + ".c1_r.eval_conv", c1, 3);
+    g.nodes.push_back(node("Relu", {c1}, r1));
+    add_conv(r1, name + ".c2_r.eval_conv", c2, 3);
+    g.nodes.push_back(node("Relu", {c2}, r2));
+    add_conv(r2, name + ".c3_r.eval_conv", c3, 3);
+    add_conv(c3, name + ".att_conv", att, 1);
+    g.nodes.push_back(node("Tanh", {att}, gate));
+    g.nodes.push_back(node("Add", {x, c3}, sum));
+    x = prefix + "/Mul_output_0";
+    g.nodes.push_back(node("Mul", {sum, gate}, x));
   }
   g.nodes.push_back(
       node("Concat",
            {"/conv_1/conv_1.1/eval_conv/Conv_output_0", std::format("/block_{}/Mul_output_0", blocks),
             "/block_1/Mul_output_0", std::format("/block_{}/act1/Relu_output_0", blocks)},
            "/Concat_output_0"));
-  g.nodes.push_back(
-      node("Conv", {"/Concat_output_0", "conv_cat.weight", "conv_cat.bias"}, "/conv_cat/Conv_output_0"));
+  g.nodes.back().attributes.push_back({.name = "axis", .type = AttributeType::Int, .i = 1});
+  add_conv("/Concat_output_0", "conv_cat", "/conv_cat/Conv_output_0", 1);
   g.initializers.push_back(tensor("conv_cat.weight", {c, 4 * c, 1, 1}));
   g.initializers.push_back(tensor("conv_cat.bias", {c}));
   g.initializers.push_back(tensor("to_pixel.eval_conv.weight", {48, c, 3, 3}));
   g.initializers.push_back(tensor("to_pixel.eval_conv.bias", {48}));
-  g.nodes.push_back(node("Conv", {"x"}, "/conv_1/conv_1.1/eval_conv/Conv_output_0"));
+  add_conv("/conv_cat/Conv_output_0", "to_pixel.eval_conv", "/to_pixel/eval_conv/Conv_output_0", 3);
   Node transpose = node("Transpose", {"a"}, "/conv_1/conv_1.0/Transpose_output_0");
   transpose.attributes.push_back({.name = "perm", .type = AttributeType::Ints, .ints = {0, 1, 3, 5, 2, 4}});
   g.nodes.push_back(transpose);
   g.nodes.push_back(
       node("Reshape", {"/conv_1/conv_1.0/Transpose_output_0"}, "/conv_1/conv_1.0/Reshape_1_output_0"));
-  Node d2s = node("DepthToSpace", {"y"}, "/upsampler/DepthToSpace_output_0");
+  Node d2s = node("DepthToSpace", {"/to_pixel/eval_conv/Conv_output_0"}, "output");
   d2s.attributes.push_back({.name = "blocksize", .type = AttributeType::Int, .i = 4});
   d2s.attributes.push_back({.name = "mode", .type = AttributeType::String, .s = "CRD"});
   g.nodes.push_back(d2s);
@@ -157,6 +177,32 @@ TEST_CASE("un graphe dont le dégroupage ou le DepthToSpace diffèrent est refus
   const auto absent = package_from_onnx(missing);
   REQUIRE_FALSE(absent);
   CHECK(absent.error().detail.find("/block_5/act1_1/Relu_output_0") != std::string::npos);
+}
+
+TEST_CASE("le paquet ne remplace pas un bloc de calcul différent de SPAN", "[span_fp8][onnx]") {
+  Model dilated = synthetic_model();
+  for (Node& n : dilated.graph.nodes) {
+    if (n.outputs[0] != "/block_2/c1_r/eval_conv/Conv_output_0") continue;
+    n.attributes[0].ints = {2, 2, 2, 2};  // la taille de la sortie reste identique
+    n.attributes.push_back({.name = "dilations", .type = AttributeType::Ints, .ints = {2, 2}});
+  }
+  const auto refused = package_from_onnx(dilated);
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().detail.find("block_2") != std::string::npos);
+
+  Model changed_activation = synthetic_model();
+  for (Node& n : changed_activation.graph.nodes)
+    if (n.outputs[0] == "/block_3/act1/Relu_output_0") n.op_type = "LeakyRelu";
+  CHECK_FALSE(package_from_onnx(changed_activation));
+
+  Model changed_output = synthetic_model();
+  changed_output.graph.nodes.push_back(node("Neg", {"output"}, "negative"));
+  changed_output.graph.outputs[0].name = "negative";
+  CHECK_FALSE(package_from_onnx(changed_output));
+
+  Model default_domain = synthetic_model();
+  for (Node& n : default_domain.graph.nodes) n.domain = "ai.onnx";
+  CHECK(package_from_onnx(default_domain));
 }
 
 TEST_CASE("un SPAN à un seul bloc est refusé à la lecture, comme par les noyaux (A02-10)",

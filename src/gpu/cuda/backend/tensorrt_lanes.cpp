@@ -100,6 +100,8 @@ void TensorRtBackend::drain() {
 void TensorRtBackend::destroy_lanes() {
   for (std::size_t lane = 0; lane < kLanes; ++lane) {
     if (streams_[lane] != nullptr) cudaStreamSynchronize(streams_[lane]);
+    if (layer_proofs_[lane].flags != nullptr) cudaFree(layer_proofs_[lane].flags);
+    layer_proofs_[lane] = {};
   }
   for (std::size_t lane = 0; lane < kLanes; ++lane) {
     for (cudaEvent_t event : lane_events_[lane]) {
@@ -199,6 +201,13 @@ std::expected<void, Refusal> TensorRtBackend::order(std::initializer_list<std::u
 
 std::expected<void, Refusal> TensorRtBackend::order(std::span<const std::uintptr_t> reads,
                                                     std::span<const std::uintptr_t> writes) {
+  if (layer_certificates_ && !writes.empty()) {
+    for (LayerProof& proof : layer_proofs_) {
+      if (proof.handles[0] != 0 && (std::ranges::find(writes, proof.handles[0]) != writes.end() ||
+                                    std::ranges::find(writes, proof.handles[1]) != writes.end()))
+        proof.handles = {};
+    }
+  }
   if (lanes_ == 1) return {};
   used_lanes_ |= 1U << lane_index(lane_);
   return apply(hazards_.access(lane_, reads, writes));

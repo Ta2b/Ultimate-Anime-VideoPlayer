@@ -49,6 +49,10 @@ std::expected<void, Refusal> validate(const RenderRequest& request) {
   if (!timestamp_in_range(request.pts_us)) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("sous-titres : pts {} µs", request.pts_us));
   }
+  if (!timestamp_in_range(request.delay_us)) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("sous-titres : décalage {} µs", request.delay_us));
+  }
   return {};
 }
 
@@ -67,7 +71,9 @@ struct VideoRect {
 };
 
 double pixel_aspect(const RenderTarget& target) {
-  return std::isfinite(target.sample_aspect) && target.sample_aspect > 0.0 ? target.sample_aspect : 1.0;
+  // Le SAR des sources est un rapport de deux entiers positifs (AVRational).
+  constexpr double largest = std::numeric_limits<int>::max();
+  return target.sample_aspect >= 1.0 / largest && target.sample_aspect <= largest ? target.sample_aspect : 1.0;
 }
 
 VideoRect fit(const RenderTarget& target) {

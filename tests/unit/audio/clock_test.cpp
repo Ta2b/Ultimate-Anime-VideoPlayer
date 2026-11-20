@@ -1,6 +1,7 @@
 #include "audio/clock.h"
 
 #include <atomic>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -22,6 +23,19 @@ TEST_CASE("ClockSnapshot : extrapole le temps média selon sa vitesse", "[audio]
 
   const ClockSnapshot ntsc{.media_us = 0, .host_us = 0, .rate = 1.001, .valid = true};
   CHECK(ntsc.media_at(1'000'000) == 1'001'000);
+}
+
+TEST_CASE("ClockSnapshot : les sauts d'horodatage sont bornés", "[audio][clock]") {
+  constexpr auto minimum = std::numeric_limits<std::int64_t>::min();
+  constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
+  const ClockSnapshot positive{.media_us = maximum - 1, .host_us = 0, .rate = 1.0};
+  CHECK(positive.media_at(2) == maximum);
+  const ClockSnapshot negative{.media_us = minimum + 1, .host_us = 0, .rate = 1.0};
+  CHECK(negative.media_at(-2) == minimum);
+  const ClockSnapshot shifted{.media_us = 0, .host_us = minimum, .rate = 1.0};
+  CHECK(shifted.media_at(maximum) == maximum);
+  const ClockSnapshot paused{.media_us = 123, .host_us = minimum, .rate = 0.0};
+  CHECK(paused.media_at(maximum) == 123);
 }
 
 TEST_CASE("kirari::host_now_us : horloge monotone", "[audio][clock]") {

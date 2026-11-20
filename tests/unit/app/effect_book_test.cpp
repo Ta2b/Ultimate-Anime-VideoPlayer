@@ -118,6 +118,36 @@ TEST_CASE("Éclats des effets : l'écran suit une fois par paire, puis revient a
   CHECK(follower.mask().neutral());
 }
 
+TEST_CASE("Éclats des effets : une coupe sans tuiles signale la fin du masque après un saut", "[app]") {
+  EffectFollower follower;
+  REQUIRE(follower.show(note(0, 41'708, 0.0F, true), 41'708));
+  REQUIRE_FALSE(follower.mask().neutral());
+  render::EffectTiles tiles;
+  tiles.cut = true;
+  const EffectNote next{.epoch = 2,
+                        .from_us = 1'000'000,
+                        .to_us = 1'041'708,
+                        .tiles = std::make_shared<const render::EffectTiles>(tiles)};
+  CHECK(follower.show(next, next.to_us));
+  CHECK(follower.mask().neutral());
+  CHECK_FALSE(follower.show(next, next.to_us));
+}
+
+TEST_CASE("Éclats des effets : après un saut, une image sans carte ne garde pas l'ancien masque", "[app]") {
+  const auto old = note(0, 41'708, 0.0F, true);
+  EffectFollower follower;
+  REQUIRE(follower.show(old, old.to_us, 1));
+  REQUIRE_FALSE(follower.mask().neutral());
+  CHECK(follower.show(std::nullopt, 25'000, 2));  // PTS réutilisé, mais nouvelle époque
+  CHECK(follower.mask().neutral());
+  CHECK_FALSE(follower.show(old, 25'000, 2));  // une note de l'ancienne époque ne le réactive pas
+  CHECK(follower.mask().neutral());
+  auto current = old;
+  current.epoch = 2;
+  CHECK(follower.show(current, 30'000, 2));
+  CHECK_FALSE(follower.mask().neutral());
+}
+
 TEST_CASE("Éclats des effets : la source gradée prend la note la plus récente de son époque", "[app]") {
   EffectBook book;
   CHECK_FALSE(book.for_source(1, 100));

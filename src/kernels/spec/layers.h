@@ -15,10 +15,13 @@
 //      à l'image ; dedans_i : q_i dans [0, W − 1] × [0, H − 1]. Si source_grid est posé (la plaque : un
 //      masque à elle, sur sa propre image), m_i = masque de source_grid en q_i comme en 1., sinon 1.
 //   3. w_i = weight_i · dedans_i · m_i ; S = Σ w_i. S = 0 : out inchangé. décor = Σ w_i v_i / S.
-//   4. garde : deux sources toutes deux dedans, d = |Y(v_0) − Y(v_1)| ; une source, d = |Y(v_0) − Y(out)| ;
-//      sinon d = 0. Y la luma BT.709 du RGB. k = 1 − borne((d − guard_low) / (guard_high − guard_low), 0, 1).
+//   4. garde : deux sources toutes deux dedans, d = |Y(v_0) − Y(v_1)|, Y la luma BT.709 du RGB ; une source
+//      (la plaque), d = max sur R, G, B de |v_0 − out|, car un dessin resté dans l'image clé peut avoir la
+//      luma du décor qui l'a remplacé (trait violet sur ciel bleu, traits fantômes de la v0.13.0-rc.2) ;
+//      sinon d = 0. k = 1 − borne((d − guard_low) / (guard_high − guard_low), 0, 1).
 //      Le décor qui ne suit pas la caméra (lumière qui change, personnage de fond, plaque périmée) garde out.
-//   5. out = borne(out + m k (décor − out), 0, 1), par canal.
+//   5. out = borne(out + m k a (décor − out), 0, 1), par canal. Pour la plaque a = m_0 ; sinon a = 1.
+//      Avec une seule source, la normalisation en 3 annule m_0 ; a conserve la transition de son masque.
 // Un pixel ne lit que lui-même dans out : sur place sans risque. Les sources ne sont jamais out.
 //
 // Les déplacements viennent du mouvement de caméra de la carte (SceneMotion::camera, pixels de travail, a

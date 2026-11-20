@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "prepare/gmfss_pair_native.h"
 #include "prepare/gmfss_pair_split.h"
@@ -113,10 +114,13 @@ TEST_CASE("GMFSS natif : les réseaux de la paire se vérifient, leurs fautes so
 }
 
 TEST_CASE("GMFSS natif : la paire exportée se lit et se coupe", "[prepare][gmfss]") {
+  const bool half = GENERATE(false, true);
+  const std::filesystem::path dir(KIRARI_RIFE_MODEL_DIR);
   const std::filesystem::path pair =
-      std::filesystem::path(KIRARI_RIFE_MODEL_DIR) / "gmfss_fortuna_union_pair.onnx";
+      dir / (half ? "gmfss_fortuna_union_s05_pair.onnx" : "gmfss_fortuna_union_pair.onnx");
+  CAPTURE(pair);
   if (std::string(KIRARI_RIFE_MODEL_DIR).empty() || !std::filesystem::is_regular_file(pair))
-    SKIP("gmfss_fortuna_union_pair.onnx absente de KIRARI_RIFE_MODEL_DIR");
+    SKIP("paire GMFSS absente de KIRARI_RIFE_MODEL_DIR");
   const auto bytes = read_onnx_bytes(pair);
   REQUIRE(bytes);
   const auto nets = gmfss_pair_nets(*bytes);
@@ -128,7 +132,7 @@ TEST_CASE("GMFSS natif : la paire exportée se lit et se coupe", "[prepare][gmfs
   REQUIRE(cut);
   CHECK_FALSE(cut->metric_input.empty());
   for (const std::string& flow : cut->flows) CHECK_FALSE(flow.empty());
-  const auto flow = gmfss_flow_piece(*bytes, *cut, 96, 128);
+  const auto flow = gmfss_flow_piece(*bytes, *cut, half ? 128 : 96, 128);
   REQUIRE(flow);
   CHECK(flow->size() < bytes->size());  // ni le FeatureNet ni le MetricNet
 }

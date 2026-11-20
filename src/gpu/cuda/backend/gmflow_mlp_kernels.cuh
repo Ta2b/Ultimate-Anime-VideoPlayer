@@ -59,6 +59,7 @@ struct Block {
   static constexpr int kTokens = Warps * kRows;
   static constexpr int kTileBytes = kTokens * kLdx * 2;
   static constexpr int kSmemBytes = kTileBytes + kStages * kStageVec * 16;
+  static constexpr int kWideSmemBytes = kTileBytes + 4 * kStageVec * 16;
 };
 
 struct Params {
@@ -134,6 +135,28 @@ __device__ __forceinline__ const uint4* acquire(Ring& r, int q) {
   return r.slots + (q % kStages) * kStageVec;
 }
 
+// L'anneau large utilise deux cases de deux étages. L'ancienne case n'est réutilisée
+// qu'après le point de rendez-vous qui publie la suivante ; une copie reste en vol pendant le calcul.
+template <int Threads>
+__device__ __forceinline__ void issue_wide(Ring& r) {
+  if (r.next == r.end) return;
+  constexpr int kVectors = 2 * kStageVec;
+  const uint4* from = r.w + static_cast<long>(r.next) * kVectors;
+  const std::uint32_t to = rn::smem_u32(r.slots + (r.next & 1) * kVectors);
+  for (int i = static_cast<int>(threadIdx.x); i < kVectors; i += Threads)
+    rn::cp_async16(to + static_cast<std::uint32_t>(i * 16), from + i, true);
+  cp_async_commit();
+  ++r.next;
+}
+
+template <int Threads>
+__device__ __forceinline__ const uint4* acquire_wide(Ring& r, int q) {
+  cp_async_wait<0>();
+  __syncthreads();
+  issue_wide<Threads>(r);
+  return r.slots + (q & 1) * (2 * kStageVec);
+}
+
 // Un étage de W1 : les pas k 2i et 2i + 1 de H = X · W1. a_base : l'adresse ldmatrix de la lane (ligne lane %
 // 16 du warp, demi-K lane / 16) ; slot : l'étage en mémoire partagée.
 template <Acc A>
@@ -152,6 +175,28 @@ __device__ __forceinline__ void gemm1_stage(rn::Frag<A> (&h)[2 * kNP1], std::uin
   }
 }
 
+using InputStage = std::uint32_t[2][4];
+
+__device__ __forceinline__ void load_input_stage(InputStage& a, std::uint32_t a_base, int i) {
+#pragma unroll
+  for (int kl = 0; kl < 2; ++kl)
+    rn::ldmatrix4(a[kl], a_base + static_cast<std::uint32_t>((2 * i + kl) * 16 * 2));
+}
+
+template <Acc A>
+__device__ __forceinline__ void gemm1_stage(rn::Frag<A> (&h)[2 * kNP1], const InputStage& a,
+                                            const uint4* slot, int lane) {
+#pragma unroll
+  for (int kl = 0; kl < 2; ++kl) {
+#pragma unroll
+    for (int np = 0; np < kNP1; ++np) {
+      const uint4 b = slot[(kl * kNP1 + np) * 32 + lane];
+      h[2 * np].mma(a[kl], b.x, b.y);
+      h[2 * np + 1].mma(a[kl], b.z, b.w);
+    }
+  }
+}
+
 // GELU exacte du graphe : x · (erf(x / √2) + 1) · 0,5.
 __device__ __forceinline__ float gelu(float v) {
   return 0.5F * v * (1.F + erff(v * kInvSqrt2));
@@ -164,6 +209,16 @@ __device__ __forceinline__ std::uint32_t pack_half2(float lo, float hi) {
 
 // GELU de H, arrondie en FP16, rangée dans les fragments A de H · W2 : le pas k j prend les tuiles 2j (canaux
 // k 2t, 2t + 1 : a0 ligne g, a1 ligne g + 8) et 2j + 1 (canaux k 2t + 8, 2t + 9 : a2, a3).
+template <Acc A>
+__device__ __forceinline__ void gelu_stage(const rn::Frag<A> (&h)[2 * kNP1], int j, std::uint32_t (&a)[4]) {
+#pragma unroll
+  for (int half = 0; half < 2; ++half) {
+    const float2 lo = h[2 * j + half].pair(0), hi = h[2 * j + half].pair(1);
+    a[2 * half] = pack_half2(gelu(lo.x), gelu(lo.y));
+    a[2 * half + 1] = pack_half2(gelu(hi.x), gelu(hi.y));
+  }
+}
+
 template <Acc A>
 __device__ __forceinline__ void gelu_to_a(const rn::Frag<A> (&h)[2 * kNP1], std::uint32_t (&a)[kK2][4]) {
 #pragma unroll
@@ -209,6 +264,44 @@ __device__ __forceinline__ void chunk(rn::Frag<A> (&o)[kTiles], Ring& ring, int&
   for (int j = 0; j < kK2; ++j) gemm2_stage<A>(o, a[j], acquire<Threads>(ring, q++), lane);
 #pragma unroll
   for (int nt = 0; nt < kTiles; ++nt) o[nt].promote();
+}
+
+template <int Threads>
+__device__ __forceinline__ void paired_gemm2(rn::Frag<Acc::kF32> (&o)[kTiles],
+                                            const rn::Frag<Acc::kF32> (&h)[2 * kNP1],
+                                            Ring& ring, int& q, int lane) {
+#pragma unroll
+  for (int j = 0; j < kK2; j += 2) {
+    std::uint32_t a[4];
+    gelu_stage(h, j, a);
+    const auto* slot = acquire_wide<Threads>(ring, q++);
+    gemm2_stage(o, a, slot, lane);
+    gelu_stage(h, j + 1, a);
+    gemm2_stage(o, a, slot + kStageVec, lane);
+  }
+}
+
+// Deux tranches cachées partagent chaque ldmatrix de X. Les sommes de W1 restent indépendantes et W2
+// consomme toujours les deux tranches de gauche à droite. Sa GELU libère H un pas K à la fois.
+template <int Threads>
+__device__ __forceinline__ void chunk_pair(rn::Frag<Acc::kF32> (&o)[kTiles], Ring& ring, int& q,
+                                           std::uint32_t a_base, int lane) {
+  rn::Frag<Acc::kF32> h0[2 * kNP1], h1[2 * kNP1];
+#pragma unroll
+  for (int nt = 0; nt < 2 * kNP1; ++nt) {
+    h0[nt].clear();
+    h1[nt].clear();
+  }
+#pragma unroll
+  for (int i = 0; i < kW1Stages; ++i) {
+    const auto* first = acquire_wide<Threads>(ring, q++);
+    InputStage a;
+    load_input_stage(a, a_base, i);
+    gemm1_stage(h0, a, first, lane);
+    gemm1_stage(h1, a, first + kStageVec, lane);
+  }
+  paired_gemm2<Threads>(o, h0, ring, q, lane);
+  paired_gemm2<Threads>(o, h1, ring, q, lane);
 }
 
 // Somme des quatre fils d'une ligne (même g = lane / 4).
@@ -279,10 +372,11 @@ __device__ __forceinline__ void spill_rows(const rn::Frag<A> (&o)[kTiles], const
 }
 
 // Une couche du MLP sur 16 · Warps jetons (blockIdx.x), pour les tranches cachées de la part blockIdx.y.
-template <int Warps, Acc A>
+template <int Warps, Acc A, bool Paired = false>
 __global__ void __launch_bounds__(Warps * 32, Warps == 4 ? 2 : 1) mlp_kernel(Params p) {
   static_assert(Warps == 4 || Warps == 8, "64 ou 128 jetons par bloc");
   using B = Block<Warps>;
+  constexpr int kGroupsPerChunk = kChunkStages / (Paired ? 2 : 1);
   extern __shared__ __align__(16) unsigned char smem_raw[];
   auto* s = reinterpret_cast<__half*>(smem_raw);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
@@ -295,10 +389,14 @@ __global__ void __launch_bounds__(Warps * 32, Warps == 4 ? 2 : 1) mlp_kernel(Par
   cp_async_commit();
   Ring ring{.w = p.w,
             .slots = reinterpret_cast<uint4*>(smem_raw + B::kTileBytes),
-            .next = c0 * kChunkStages,
-            .end = c1 * kChunkStages};
-  issue<B::kThreads>(ring);
-  issue<B::kThreads>(ring);
+            .next = c0 * kGroupsPerChunk,
+            .end = c1 * kGroupsPerChunk};
+  if constexpr (Paired) {
+    issue_wide<B::kThreads>(ring);
+  } else {
+    issue<B::kThreads>(ring);
+    issue<B::kThreads>(ring);
+  }
 
   const std::uint32_t a_base =
       rn::smem_u32(s) +
@@ -306,12 +404,26 @@ __global__ void __launch_bounds__(Warps * 32, Warps == 4 ? 2 : 1) mlp_kernel(Par
   rn::Frag<A> o[kTiles];
 #pragma unroll
   for (int nt = 0; nt < kTiles; ++nt) o[nt].clear();
-  int q = c0 * kChunkStages;
+  int q = c0 * kGroupsPerChunk;
+  if constexpr (Paired) {
+    static_assert(A == Acc::kF32);
 #pragma unroll 1
-  for (int c = c0; c < c1; ++c) chunk<B::kThreads, A>(o, ring, q, a_base, lane);
+    for (int c = c0; c < c1; c += 2) chunk_pair<B::kThreads>(o, ring, q, a_base, lane);
+  } else {
+#pragma unroll 1
+    for (int c = c0; c < c1; ++c) chunk<B::kThreads, A>(o, ring, q, a_base, lane);
+  }
   if (p.splits > 1) {
     spill_rows<A>(o, p, t0, warp, lane);
     return;
+  }
+  // La sortie de W2 est Half à l'entrée de la LayerNorm TensorRT, après l'accumulation entière.
+  if constexpr (A != Acc::kF16) {
+#pragma unroll
+    for (auto& tile : o) {
+#pragma unroll
+      for (float& value : tile.r) value = __half2float(__float2half_rn(value));
+    }
   }
   finish_rows<A>(o, s, p, t0, warp, lane);
 }
@@ -328,6 +440,10 @@ __global__ void __launch_bounds__(256) finish_kernel(Params p) {
     const float4 part = *reinterpret_cast<const float4*>(p.partial + k * p.tokens * kChannels + at);
     v.x += part.x, v.y += part.y, v.z += part.z, v.w += part.w;
   }
+  v.x = __half2float(__float2half_rn(v.x));
+  v.y = __half2float(__float2half_rn(v.y));
+  v.z = __half2float(__float2half_rn(v.z));
+  v.w = __half2float(__float2half_rn(v.w));
   float sum = v.x + v.y + v.z + v.w;
 #pragma unroll
   for (int m = 16; m >= 1; m >>= 1) sum += __shfl_xor_sync(0xffffffffU, sum, m);

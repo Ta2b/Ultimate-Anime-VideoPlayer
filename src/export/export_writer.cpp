@@ -2,7 +2,13 @@
 
 #include <algorithm>
 #include <format>
+#include <limits>
 #include <utility>
+
+extern "C" {
+#include <libavutil/common.h>
+#include <libavutil/mathematics.h>
+}
 
 #include "core/log.h"
 #include "core/thread.h"
@@ -11,6 +17,14 @@
 #include "export/video_encoder.h"
 
 namespace kirari::exporter {
+
+std::int64_t repeats_between(std::int64_t previous_us, std::int64_t next_us, int fps_num, int fps_den) {
+  if (fps_num <= 0 || fps_den <= 0 || next_us <= previous_us || previous_us == kNoPts) return 0;
+  const std::int64_t gap = av_sat_sub64(next_us, previous_us);
+  if (gap == std::numeric_limits<std::int64_t>::max()) return 0;
+  const std::int64_t periods = av_rescale(gap, fps_num, 1'000'000LL * fps_den);
+  return periods > 1 && periods <= kMaxRepeatRun + 1 ? periods - 1 : 0;
+}
 
 struct ExportWriter::State {
   Muxer muxer;
@@ -222,12 +236,13 @@ void ExportWriter::run(const std::stop_token& stop) {
   const auto repeat_last = [&](std::int64_t next_pts) -> std::expected<void, Refusal> {
     if (!s.last) return {};
     const std::int64_t repeats = repeats_between(s.last_pts, next_pts, s.fps_num, s.fps_den);
+    if (repeats == 0) return {};
     const std::int64_t from = s.last_pts;
     const std::int64_t gap = next_pts - from;
-    for (std::int64_t k = 1; k <= repeats; ++k) {
+    for (std::int64_t k = 1; k <= repeats && !stop.stop_requested(); ++k) {
       FramePtr copy(av_frame_clone(s.last.get()));  // une référence de plus sur la même mémoire
       if (!copy) return std::unexpected(Refusal{RefusalCode::EncodeFailed, "image : mémoire"});
-      copy->pts = from + k * gap / (repeats + 1);
+      copy->pts = from + av_rescale_rnd(gap, k, repeats + 1, AV_ROUND_DOWN);
       copy->duration = gap / (repeats + 1);
       s.last_pts = copy->pts;
       if (auto encoded = s.encoder->encode(copy.get(), sink); !encoded) return encoded;
@@ -262,14 +277,19 @@ void ExportWriter::run(const std::stop_token& stop) {
     frame->color_range = s.color.range;
     frame->chroma_location = s.color.siting;
     // Sur la ligne du conteneur, comme les pistes copiées ; strictement croissant pour l'encodeur.
-    std::int64_t pts = picture.pts_us + s.muxer.start_us();
+    std::int64_t pts = av_sat_add64(picture.pts_us, s.muxer.start_us());
+    if (picture.pts_us == kNoPts || pts == kNoPts)
+      return fail(Refusal{RefusalCode::EncodeFailed, "image : horodatage de présentation invalide"});
     if (s.any && pts <= s.last_pts) {
+      if (s.last_pts == std::numeric_limits<std::int64_t>::max())
+        return fail(Refusal{RefusalCode::EncodeFailed, "image : plus de pas après le dernier horodatage"});
       if (s.shifted++ == 0)
         log->warn("image à {} µs, pas après la précédente ({} µs) : décalée à {} µs", pts, s.last_pts,
                   s.last_pts + 1);
       pts = s.last_pts + 1;
     }
     if (auto repeated = repeat_last(pts); !repeated) return fail(std::move(repeated.error()));
+    if (stop.stop_requested()) return;
     s.last_pts = pts;
     s.any = true;
     frame->pts = pts;

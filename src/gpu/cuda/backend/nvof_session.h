@@ -28,7 +28,7 @@ class NvofSession {
   // Une luma 8 bits de width × height, grille kernels::kSceneFlowGrid, sur une file créée pour elle.
   // Refus : bibliothèque absente (AMD, Intel, pilote sans flux optique : LibraryUnavailable), GPU sans carte
   // de coût, grille ou taille refusées (FormatUnsupported, ShapeInvalid), appel refusé par le pilote.
-  static std::expected<std::unique_ptr<NvofSession>, Refusal> open(int width, int height);
+  static std::expected<std::unique_ptr<NvofSession>, Refusal> open(int width, int height, bool urgent = true);
   ~NvofSession();  // attend la file, puis rend tout au pilote
   NvofSession(const NvofSession&) = delete;
   NvofSession& operator=(const NvofSession&) = delete;

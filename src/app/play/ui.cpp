@@ -545,6 +545,7 @@ void PlayerUi::set_running(const PlaySettings& running) {
 
 void PlayerUi::refresh_choices(std::int64_t now_us) {
   if (catalog_ == nullptr || (!refresh_pending_ && now_us - refreshed_us_ < kChoicesRefreshUs)) return;
+  if (refresh_pending_ && choices_.refresh_motion_models) choices_.refresh_motion_models(choices_, running_);
   refresh_host_choices(choices_, *catalog_);
   refreshed_us_ = now_us;
   refresh_pending_ = false;

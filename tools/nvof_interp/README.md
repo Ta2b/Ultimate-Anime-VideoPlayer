@@ -108,6 +108,33 @@ Pistes, dans l'ordre :
    défile à part, ce n'est pas du décor et la paire est juste. Si ce sont des blocs à texture faible, les
    sortir du total changerait la définition de la part du décor : c'est à Tatoub de trancher.
 
+## Rejeu du budget RIFE
+
+Pour mesurer quelles paires pourraient se contenter d'une passe RIFE au milieu, reprendre les lumas
+d'un extrait exporté pour `carte_rejeu`. Capturer les deux sens dans un sous-répertoire : le dump
+contient les vecteurs S10.5 et le coût de l'aller, puis les mêmes plans pour le retour.
+
+```sh
+mkdir -p bidir
+awk -F '\t' 'BEGIN {OFS="\t"} NR<=24 {print $1,$2,$3,$4,"bidir/"$5}' taches.tsv > taches_bidir.tsv
+"$NVOF_DUMP" --grid 4 --preset medium --cost < taches_bidir.tsv
+python3 -I "$KIRARI/tools/bench/qualite/rife_budget.py" taches_bidir.tsv \
+    --json budget.json --reseau "$RIFE_ONNX" --video "$SOURCE_VIDEO"
+```
+
+`--temoin LIGNE` ajoute un contrôle refusé par le diagnostic. La comparaison rend six instants
+réguliers en RGB avec RIFE à l'instant, ou depuis le milieu. Dans le scénario trois passes, les
+deux instants extrêmes restent exacts et les autres dérivent du milieu. Elle vérifie chaque luma
+capturée avant de décoder la couleur. Elle ne mesure ni le grade HDR, ni SPAN, ni le temps CUDA.
+
+Les en-têtes NVOF livrés sont ceux de l'API 2. Pour un essai dans le lecteur, conserver la session
+avant et son historique. Ouvrir une session retour indépendante, dans le même contexte CUDA, avec
+ses propres sorties. Désactiver d'abord ses indices temporels : les appels arrière (B→A, puis C→B)
+sont soumis dans l'ordre d'arrivée de la lecture, tandis qu'une succession temporelle arrière
+parcourt C→B puis B→A. Rattacher le résultat aux identifiants des deux sources et à l'époque. En
+cas de coupure, de saut ou de retour tardif, le lecteur garde la politique RIFE courante sur la
+paire. Mesurer la file et l'éventuelle copie device avant de décider si le retour est rentable.
+
 ## Ce qui reste ouvert
 
 - Les flux sont calculés sans indices temporels (paires indépendantes) ; le lecteur devra faire de

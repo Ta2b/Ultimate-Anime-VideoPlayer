@@ -32,6 +32,10 @@ struct ExportJob {
   friend bool operator==(const ExportJob&, const ExportJob&) = default;
 };
 
+// La cadence automatique devient ×2 dans le fichier ; une source hors des cadences d'anime reste à ×1.
+Factor export_factor(const PlaySettings& s);
+Factor export_factor(const PlaySettings& s, double source_fps);
+
 // La chaîne d'un export : celle des réglages sans HDR ni grade, sans Smooth Motion
 // (une couche de l'écran) : l'image de la chaîne telle quelle, comme la lecture la donne en SDR. L'Auto
 // devient ×2, qui ne dépend pas de l'écran (P3.87). Le grade se pose au rendu de l'export (export_grade).

@@ -109,19 +109,48 @@ std::expected<std::unique_ptr<GmfssFusedEngine>, Refusal> GmfssFusedEngine::load
 std::expected<void, Refusal> GmfssFusedEngine::enqueue(cudaStream_t stream,
                                                        const std::shared_ptr<SharedActivations>& shared,
                                                        std::span<const Tensor> inputs,
-                                                       std::span<const Tensor> outputs) {
+                                                       std::span<const Tensor> outputs,
+                                                       bool packed_features) {
   if (inputs.size() != kInputs || outputs.size() != 1)
     return refuse(RefusalCode::ShapeInvalid, "GMFSS natif : neuf entrées et une sortie attendues");
   if (!native_on_) {
     KIRARI_TRACE("gmfss.fusion.tensorrt");
     return full_->enqueue(stream, shared, inputs, outputs);
   }
-  return enqueue_native(stream, shared, inputs, outputs[0]);
+  return enqueue_native(stream, shared, inputs, outputs[0], packed_features);
+}
+
+std::optional<std::array<GmfssFusedEngine::SplatTarget, 6>> GmfssFusedEngine::packed_splats(
+    std::span<const Tensor> inputs) const {
+  if (!native_on_ || inputs.size() != kInputs) return std::nullopt;
+  std::array<SplatTarget, 6> targets;
+  const auto planes = native_->feature_inputs();
+  for (std::size_t s = 0; s < 2; ++s) {
+    for (std::size_t l = 0; l < planes.size(); ++l) {
+      const auto at = at_[kW01 + s * planes.size() + l];
+      Tensor warped = inputs[at];
+      if (warped.type != TensorType::F16 || warped.handle == 0 || !(warped.shape == full_->input_shape(at)))
+        return std::nullopt;
+      if (l == 0) {
+        constexpr std::uint64_t kRgbBytes = 3U * sizeof(std::uint16_t);
+        warped.offset += kRgbBytes * static_cast<std::uint64_t>(height_) * static_cast<std::uint64_t>(width_);
+        warped.shape.dims[1] -= 3;
+      }
+      const auto channels = static_cast<int>(warped.shape.dims[1]);
+      const auto cells = features_c8_ ? static_cast<std::size_t>(warped.shape.dims[2] * warped.shape.dims[3])
+                                      : std::size_t{1};
+      void* to = static_cast<std::byte*>(planes[l]) + s * static_cast<std::size_t>(channels) * cells *
+                                                      sizeof(std::uint16_t);
+      targets[s * planes.size() + l] = {.planar = warped, .pixels = to,
+                                        .pitch = features_c8_ ? -2 * channels : 2 * channels};
+    }
+  }
+  return targets;
 }
 
 std::expected<void, Refusal> GmfssFusedEngine::enqueue_native(
     cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, std::span<const Tensor> inputs,
-    const Tensor& out) {
+    const Tensor& out, bool packed_features) {
   // Les noyaux lisent et écrivent les plans sans autre garde : chaque tenseur à la forme du moteur entier.
   const auto matches = [](const Tensor& t, const Shape& shape) {
     return t.type == TensorType::F16 && t.shape == shape && t.handle != 0;
@@ -129,22 +158,33 @@ std::expected<void, Refusal> GmfssFusedEngine::enqueue_native(
   bool good = matches(out, full_->output_shape(0));
   for (std::size_t i = 0; i < inputs.size(); ++i) good = good && matches(inputs[i], full_->input_shape(i));
   if (!good) return refuse(RefusalCode::ShapeInvalid, "GMFSS natif : forme d'entrée ou de sortie");
-  std::array<Tensor, 3> ifnet_in;
-  for (std::size_t j = 0; j < 3; ++j) ifnet_in[j] = inputs[at_[ifnet_from_[j]]];
-  const Tensor rife = fused_tensor(reinterpret_cast<std::uintptr_t>(rife_), 0, 3, height_, width_);
-  const Tensor ifnet_out[]{rife};
-  {
-    KIRARI_TRACE("gmfss.fusion.ifnet");  // Nsight Systems : l'envoi de chaque morceau (docs/gmfss-natif.md)
-    if (auto ok = ifnet_->enqueue(stream, shared, ifnet_in, ifnet_out); !ok) return ok;
-  }
+  if (auto ok = enqueue_ifnet(stream, shared, inputs, native_ifnet_ != nullptr); !ok) return ok;
   GmfssNativeInputs in;
   for (std::size_t level = 0; level < 3; ++level) {
     in.warped0[level] = fused_address(inputs[at_[kW01 + level]]);
     in.warped1[level] = fused_address(inputs[at_[kW11 + level]]);
   }
   in.rife = rife_;
+  in.packed_features = packed_features;
   KIRARI_TRACE("gmfss.fusion.gridnet");
   return cuda_check(native_->run(stream, in, fused_address(out)), "GMFSS natif : GridNet");
+}
+
+std::expected<void, Refusal> GmfssFusedEngine::enqueue_ifnet(
+    cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared,
+    std::span<const Tensor> inputs, bool native) {
+  if (native) {
+    KIRARI_TRACE("gmfss.fusion.ifnet.cuda");
+    return cuda_check(native_ifnet_->run(stream, fused_address(inputs[at_[kHalf0]]),
+                                        fused_address(inputs[at_[kHalf1]]),
+                                        fused_address(inputs[at_[kTime]]), rife_),
+                      "GMFSS natif : IFNet");
+  }
+  KIRARI_TRACE("gmfss.fusion.ifnet");
+  std::array<Tensor, 3> ifnet_in;
+  for (std::size_t j = 0; j < ifnet_in.size(); ++j) ifnet_in[j] = inputs[at_[ifnet_from_[j]]];
+  const Tensor out[]{fused_tensor(reinterpret_cast<std::uintptr_t>(rife_), 0, 3, height_, width_)};
+  return ifnet_->enqueue(stream, shared, ifnet_in, out);
 }
 
 }  // namespace kirari::gpu::cuda

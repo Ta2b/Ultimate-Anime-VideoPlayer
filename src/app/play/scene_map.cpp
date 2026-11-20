@@ -48,13 +48,27 @@ void SceneMap::stop(const Refusal& refusal, const char* where) {
   pending_.clear();
   late_.clear();
   guess_.reset();
+  latest_.reset();
+  last_refined_.reset();
   log_channel("gpu")->info("carte de la scène éteinte pour la lecture ({} : {})", where, refusal.detail);
 }
 
 void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tensor& b, SourceId left,
                      SourceId right, std::uint32_t epoch) {
   if (!on_) return;
+  if (last_epoch_ != epoch) {
+    pending_.clear();
+    late_.clear();
+    latest_.reset();
+    last_refined_.reset();
+    guess_.reset();
+    history_.clear();
+    last_left_.reset();
+    last_right_.reset();
+    last_epoch_ = epoch;
+  }
   poll(ops);
+  if (!on_) return;
   const bool follows = last_right_ && *last_right_ == left && last_epoch_ == epoch;
   const bool restart = restart_ || !follows;
   const auto asked = std::chrono::steady_clock::now();
@@ -74,7 +88,8 @@ void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tenso
     ++lost_;
   }
   if (restart) ++shot_;
-  pending_.push_back({.ticket = *ticket, .left = left, .right = right, .restart = restart, .shot = shot_});
+  pending_.push_back(
+      {.ticket = *ticket, .left = left, .right = right, .epoch = epoch, .restart = restart, .shot = shot_});
   request_early(ops, pending_.back());
   last_left_ = left;
   last_right_ = right;
@@ -252,7 +267,28 @@ void SceneMap::finish(Pending& pair) {
   }
   if (motion.fade) ++fades_;
   if (motion.camera_fit) ++camera_fits_;
-  latest_ = Latest{.left = pair.left, .right = pair.right, .motion = std::move(motion)};
+  std::vector<std::uint8_t> photo_edge_a;
+  if (roundtrip_ && motion.camera_refined && !motion.cut_likely && !motion.fade &&
+      pair.camera.checks.size() == motion.tiles.size()) {
+    constexpr float kArea = kernels::kSceneTileFlowPixels * kernels::kSceneTileFlowPixels;
+    // Banc du retour : des bords nets restent après l'affine sur la même paire. La carte en production
+    // utilise d'autres seuils (scene_pixel_moving et kMovingShare) et garde ses décisions.
+    constexpr float kSharpShare = 0.025F;
+    photo_edge_a.reserve(pair.camera.checks.size());
+    for (const auto& check : pair.camera.checks) {
+      photo_edge_a.push_back(check.pixels >= kernels::scene::kCheckCover * kArea &&
+                             check.sharp >= kSharpShare);
+    }
+  }
+  latest_ = Latest{.left = pair.left,
+                   .right = pair.right,
+                   .ticket = pair.ticket,
+                   .epoch = pair.epoch,
+                   .flow_width = pair.tiles->flow_width,
+                   .flow_height = pair.tiles->flow_height,
+                   .divisor = pair.tiles->divisor,
+                   .motion = std::move(motion),
+                   .photo_edge_a = std::move(photo_edge_a)};
   pending_.erase(pending_.begin());
 }
 
@@ -273,8 +309,10 @@ void SceneMap::poll(gpu::KernelOps& ops) {
   }
 }
 
-void SceneMap::settle(gpu::KernelOps& ops, SourceId left, SourceId right) {
-  const auto wanted = [&](const Pending& p) { return p.left == left && p.right == right; };
+void SceneMap::settle(gpu::KernelOps& ops, SourceId left, SourceId right, std::uint32_t epoch) {
+  const auto wanted = [&](const Pending& p) {
+    return p.left == left && p.right == right && p.epoch == epoch;
+  };
   if (!std::ranges::any_of(pending_, wanted)) return;
   while (on_ && !pending_.empty() && pending_.front().tiles) {
     const bool reached = wanted(pending_.front());
@@ -285,27 +323,41 @@ void SceneMap::settle(gpu::KernelOps& ops, SourceId left, SourceId right) {
   }
 }
 
-std::optional<kernels::SceneMotion> SceneMap::for_pair(gpu::KernelOps& ops, SourceId left, SourceId right) {
+std::optional<kernels::SceneMotion> SceneMap::for_pair(gpu::KernelOps& ops, SourceId left, SourceId right,
+                                                       std::uint32_t epoch) {
   if (!on_) return std::nullopt;
   poll(ops);
-  settle(ops, left, right);
-  if (!latest_ || !(latest_->left == left) || !(latest_->right == right)) {
-    if (std::ranges::any_of(pending_, [&](const Pending& p) { return p.left == left && p.right == right; }))
+  settle(ops, left, right, epoch);
+  if (!latest_ || !(latest_->left == left) || !(latest_->right == right) || latest_->epoch != epoch) {
+    if (std::ranges::any_of(pending_, [&](const Pending& p) {
+          return p.left == left && p.right == right && p.epoch == epoch;
+        }))
       ++missed_;
     return std::nullopt;
   }
   ++attached_;
+  Latest& latest = *latest_;
+  if (roundtrip_ && !latest.motion.cut_likely && !latest.motion.fade && !latest.motion.roundtrip) {
+    auto measured = ops.scene_roundtrip_take(latest.ticket);
+    if (measured && *measured &&
+        (**measured).matches(latest.ticket, latest.flow_width, latest.flow_height, latest.divisor)) {
+      latest.motion.roundtrip = std::move(**measured);
+      latest.motion.roundtrip_photo_edge_a = std::move(latest.photo_edge_a);
+      ++roundtrip_kept_;
+    }
+  }
   return latest_->motion;
 }
 
-void SceneMap::cut(SourceId left, SourceId right) {
+void SceneMap::cut(SourceId left, SourceId right, std::uint32_t epoch) {
   restart_ = true;
-  if (latest_ && latest_->left == left && latest_->right == right && !latest_->motion.cut_likely) {
+  if (latest_ && latest_->left == left && latest_->right == right && latest_->epoch == epoch &&
+      !latest_->motion.cut_likely) {
     kernels::ref::mark_cut(latest_->motion);
     ++cuts_;
   }
   for (Pending& pair : pending_) {
-    if (pair.left == left && pair.right == right) pair.across_cut = true;
+    if (pair.left == left && pair.right == right && pair.epoch == epoch) pair.across_cut = true;
   }
 }
 
@@ -323,6 +375,8 @@ void SceneMap::log_summary() const {
       refine_missed_, refine_early_, refine_off_, cuts_, fades_,
       start_us_ / static_cast<double>(started_ + busy_),
       read_ > 0 ? map_us_ / static_cast<double>(read_) : 0.0);
+  if (roundtrip_)
+    log_channel("gpu")->info("carte de la scène : {} retours NVOF posés sur leur paire", roundtrip_kept_);
 }
 
 }  // namespace kirari::app::play

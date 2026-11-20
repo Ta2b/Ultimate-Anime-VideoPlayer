@@ -171,8 +171,10 @@ std::expected<void, Refusal> UpscaleStage::late(const DecodedFrame& frame, std::
   // d'une pose (copy_written_) n'a pas ce cas : late_fate_now_ est éteint pour elle.
   if (b_shown_ && output == b_output_) b_shown_ = false;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
-  if (instant.t >= 1.0F) {
-    // Le warp de la paire suivante lit les deux sources agrandies : le SPAN de celle-ci, sans écriture.
+  const bool last = output + 1 >= outputs_;
+  // Si aucune sortie n'a encore matérialisé B, le warp de la paire suivante a besoin de son SPAN,
+  // même quand la grille n'avait programmé que des intermédiaires et que tous sont passés.
+  if (instant.t >= 1.0F || (last && warps_spanned() && !spanned_now_)) {
     if (warps_spanned()) {
       if (auto ok = span_current(); !ok) return ok;
     }
@@ -180,8 +182,7 @@ std::expected<void, Refusal> UpscaleStage::late(const DecodedFrame& frame, std::
     shown_source_ = false;
   }
   // La dernière sortie de la paire : la source reste l'image d'avant de la suivante, écrite ou non.
-  if (output + 1 >= outputs_)
-    previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
+  if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
   return {};
 }
 

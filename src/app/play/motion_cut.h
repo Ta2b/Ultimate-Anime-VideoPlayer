@@ -90,18 +90,24 @@ class MotionWatch {
 struct InterpolationChoice {
   int rife_factor = 0;
   int rife_factor_den = 1;
+  int auto_cap = 0;
   bool rife_auto = false;
   bool auto_free = false;
   bool auto_off = false;
+  bool keep_poses = false;
+  bool strong_middle = false;
   friend bool operator==(const InterpolationChoice&, const InterpolationChoice&) = default;
 };
 
 inline InterpolationChoice interpolation_choice(const PlaySettings& s) {
   return {.rife_factor = s.rife_factor,
           .rife_factor_den = s.rife_factor_den,
+          .auto_cap = s.auto_cap,
           .rife_auto = s.rife_auto,
           .auto_free = s.auto_free,
-          .auto_off = s.auto_off};
+          .auto_off = s.auto_off,
+          .keep_poses = poses_kept(s),
+          .strong_middle = poses_kept(s) && s.strong_middle};
 }
 
 struct Chain;

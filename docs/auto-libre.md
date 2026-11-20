@@ -156,6 +156,22 @@ Porte du chantier 0.3 : 165 i/s tenus en ×7 avec le GPU sous 60 %, lue sur la c
 19 novembre 2026 (#856, #877, #904, #940) : 160,3 i/s en mouvement pour un plafond de l'écran à 163,4, GPU à 54 %
 (118 i/s avant).
 
+### Rejeu 4K HDR du 20 novembre
+
+Avec SPAN Balanced FP16, RIFE 4.25 et le warp fusionné, la lecture de 36 s sur Re:Zero passe de
+136,6 à 154,1 i/s en mouvement quand la composition omet la seconde détection du pic sur les images PQ
+déjà gradées dans la colorimétrie de sortie. Le mode différé atteint 152,8 i/s. Le compteur Rapide donne
+la cadence planifiée ; le journal de présentation et `present_id` relié au registre Wayland donnent les
+images neuves effectivement confirmées. Sur 36 s, Wayland date 4 625 images au témoin, 5 164 en différé
+et 5 210 sans la seconde détection.
+
+Les expériences utilisent `KIRARI_AB_GRADED_PQ_PEAK=off` ou `delayed`, `--debug --fused-layers` et
+`--vrr-margin=0`. Les trois captures PQ à 983,025 s sont bit à bit identiques, OSD masqué. Avec
+`KIRARI_AB_SWAP_DEPTH=3` au lieu de `2`, quatre lectures alternées sur la même fenêtre en mouvement donnent
+162,5–162,9 i/s confirmées sur 17 s, contre 156,5–160,4. Les sauts passent de 42–63 à 2 dans cette fenêtre.
+Sur 2 s, 164,2–164,5 i/s sont confirmées sans saut. La médiane de soumission→affichage monte de
+16,9–17,3 à 17,9–18,0 ms. Les deux réglages de présentation restent des options d'essai.
+
 ### Ce qui reste fixe
 
 La paire source `(g, d)` : `d` est décodée en avance et `g` est la précédente ; le décodeur et le ring ne

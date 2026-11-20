@@ -3,7 +3,7 @@
 // (PSNR et SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
 //   kirari_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
-//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--band N]
+//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--band N] [--native-blocks]
 //                    [--shared-weights | --no-shared-weights] [--winograd | --no-winograd] [--compare]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
@@ -13,12 +13,14 @@
 // canaux, l'ancien calcul en 64 canaux ou le K par position du filtre (SpanFp8Width), pour les mesurer contre
 // le calcul natif du lecteur. --fp16 : les blocs en FP16 sans quantification (SpanFp8Weights::fp16), à
 // mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. --acc16 :
-// accumulateur f16, comme le drapeau du paquet. --acc32 : le FP16 natif somme en f32, en f16 sans l'option.
+// accumulateur f16, comme le drapeau du paquet. Sans surcharge, le banc reprend la précision du paquet ;
+// --fp16 choisit les sommes f16, --acc32 les sommes f32 pour un calcul FP16.
 // --band N : le FP16 natif en bandes de N lignes de demi-résolution (0 : chaque couche sur l'image entière ;
 // sans l'option, SpanFp8Weights::band, celle du lecteur). --shared-weights, --no-shared-weights : le FP16
 // natif prend ou non les poids de chaque pas en mémoire partagée ; sans l'option, le choix du lecteur
 // (SpanFp8Weights::shared_weights). --winograd, --no-winograd : les 3×3 des blocs par Winograd F(2×2, 3×3)
 // (64 canaux, sommes f16) ou non ; sans l'option, le choix du lecteur (SpanFp8Weights::winograd).
+// --native-blocks : les c1 et c2 en FP8 natif pour C48, la porte et les bords en CUTLASS.
 // --compare : la sortie est aussi calculée par la référence FP16 (sommes f32) et l'écart dit sur la sortie
 // standard (PSNR, plus grand écart, valeurs non finies) : un seul lancement juge la vitesse et la justesse.
 // À lancer sous le
@@ -65,7 +67,8 @@ bool read_all(const char* path, std::vector<std::byte>& out) {
 
 bool number(const char* text, int& value) {
   const std::string_view view(text);
-  return std::from_chars(view.data(), view.data() + view.size(), value).ec == std::errc{};
+  const auto [end, error] = std::from_chars(view.data(), view.data() + view.size(), value);
+  return error == std::errc{} && end == view.data() + view.size();
 }
 
 struct Options {
@@ -74,6 +77,7 @@ struct Options {
   kirari::gpu::cuda::SpanFp8Width width48 = kirari::gpu::cuda::SpanFp8Width::Native;
   bool fp16 = false;
   bool acc16 = false;
+  bool native_relu = false;
   kirari::gpu::cuda::SpanNativeSums sums = kirari::gpu::cuda::SpanNativeSums::F16;
   bool compare = false;
   int band = -1;  // --band ; négatif : celle du lecteur
@@ -93,6 +97,8 @@ std::string read_options(int argc, char* const* argv, Options& options) {
       options.fp16 = true;
     } else if (option == "--acc16") {
       options.acc16 = true;
+    } else if (option == "--native-blocks") {
+      options.native_relu = true;
     } else if (option == "--acc32") {
       options.sums = kirari::gpu::cuda::SpanNativeSums::F32;
     } else if (option == "--shared-weights") {
@@ -138,9 +144,10 @@ kirari::gpu::cuda::SpanFp8Weights weights_for(const kirari::gpu::span_fp8::Packa
                                               const Options& options) {
   kirari::gpu::cuda::SpanFp8Weights weights = kirari::gpu::cuda::span_fp8_view(package);
   weights.width48 = options.width48;
-  weights.fp16 = options.fp16;
+  weights.fp16 = weights.fp16 || options.fp16;
   weights.acc16 = weights.acc16 || options.acc16;
-  weights.sums = options.sums;
+  weights.native_relu = options.native_relu;
+  if (options.fp16 || options.sums == kirari::gpu::cuda::SpanNativeSums::F32) weights.sums = options.sums;
   if (options.band >= 0) weights.band = options.band;
   weights.shared_weights = options.shared_weights;
   weights.winograd = options.winograd;
@@ -196,9 +203,8 @@ int compare_to_reference(const kirari::gpu::cuda::SpanFp8Weights& weights, int h
 }
 
 // --bench N : N lancements du réseau dans un graphe CUDA, la médiane sur la sortie standard.
-int bench_graph(SpanFp8Net& net, const Options& options, int height, int width, void* input, void* output,
-                cudaStream_t stream) {
-  const int bench = options.bench;
+int bench_graph(SpanFp8Net& net, const kirari::gpu::cuda::SpanFp8Weights& weights, int bench, int height,
+                int width, void* input, void* output, cudaStream_t stream) {
   std::string why;
   cudaGraph_t graph = nullptr;
   cudaGraphExec_t exec = nullptr;
@@ -221,10 +227,11 @@ int bench_graph(SpanFp8Net& net, const Options& options, int height, int width, 
   for (std::size_t i = 0; i < ms.size(); ++i)
     CU(cudaEventElapsedTime(&ms[i], events[2 * i], events[2 * i + 1]));
   std::ranges::sort(ms);
-  const bool f32 = options.sums == kirari::gpu::cuda::SpanNativeSums::F32;
-  std::printf("SPAN %s %dx%d : médiane %.3f ms, min %.3f ms sur %d lancements (graphe CUDA)\n",
-              options.fp16 ? (f32 ? "FP16 natif (sommes f32)" : "FP16 natif") : "FP8", width, height,
-              static_cast<double>(ms[ms.size() / 2]), static_cast<double>(ms.front()), bench);
+  const bool f32 = weights.sums == kirari::gpu::cuda::SpanNativeSums::F32;
+  const char* mode = weights.fp16 ? (f32 ? "FP16 natif (sommes f32)" : "FP16 natif")
+                                  : weights.native_relu ? "FP8 (ReLU natives)" : "FP8";
+  std::printf("SPAN %s %dx%d : médiane %.3f ms, min %.3f ms sur %d lancements (graphe CUDA)\n", mode, width,
+              height, static_cast<double>(ms[ms.size() / 2]), static_cast<double>(ms.front()), bench);
   return 0;
 }
 
@@ -241,16 +248,19 @@ int main(int argc, char* const* argv) {
     return fail("option inconnue ou illisible : " + bad);
   const int bench = options.bench;
   const bool reference_mode = options.reference;
+  if (reference_mode && options.native_relu) return fail("--native-blocks ne s'applique pas à --reference");
   if (const std::string why = size_refusal(height, width); !why.empty()) return fail(why);
 
   const auto package = load_package(argv[1], options.fp16);
   if (!package) return fail(package.error().detail);
 
+  const auto weights = weights_for(*package, options);
+  if (!weights.fp16 && weights.sums == kirari::gpu::cuda::SpanNativeSums::F32)
+    return fail("--acc32 demande un paquet FP16 ou l'option --fp16");
   cudaDeviceProp props{};
   CU(cudaGetDeviceProperties(&props, 0));
-  if (const char* why_not = device_refusal(props, options.fp16)) return fail(why_not);
+  if (const char* why_not = device_refusal(props, weights.fp16)) return fail(why_not);
 
-  const kirari::gpu::cuda::SpanFp8Weights weights = weights_for(*package, options);
   kirari::gpu::cuda::SpanFp8Status status = kirari::gpu::cuda::SpanFp8Status::Ok;
   std::string why;
   std::unique_ptr<kirari::gpu::cuda::SpanFp8Reference> reference;
@@ -306,6 +316,6 @@ int main(int argc, char* const* argv) {
     if (const int failed = compare_to_reference(weights, height, width, input, stream, pixels, out);
         failed != 0)
       return failed;
-  if (bench > 0 && net) return bench_graph(*net, options, height, width, input, output, stream);
+  if (bench > 0 && net) return bench_graph(*net, weights, bench, height, width, input, output, stream);
   return 0;
 }

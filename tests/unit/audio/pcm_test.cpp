@@ -16,6 +16,9 @@ TEST_CASE("pcm : conversions trames et microsecondes arrondies au plus proche", 
   CHECK(frames_to_us(1, 48'000) == 21);    // 20,83 µs
   CHECK(frames_to_us(-1, 48'000) == -21);  // symétrique
   CHECK(frames_to_us(1, 44'100) == 23);    // 22,68 µs
+  const auto maximum = std::numeric_limits<std::int64_t>::max();
+  CHECK(frames_to_us(maximum, 48'000) == maximum);
+  CHECK(us_to_frames(maximum, 48'000) == 442'721'857'769'029'239);
   CHECK(us_to_frames(1'000'000, 44'100) == 44'100);
   CHECK(us_to_frames(11, 48'000) == 1);  // 0,528 trame
   CHECK(us_to_frames(-11, 48'000) == -1);

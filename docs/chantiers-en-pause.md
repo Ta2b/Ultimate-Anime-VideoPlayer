@@ -4,6 +4,42 @@ On ne relance aucun de ces chantiers sans son accord explicite. Ce qui est déj�
 
 Repris le 19/11 à 16:35 (Tatoub : « on vise tout ça pour RIFE aussi ») : la suite du RIFE natif (78bfe89 sur `claude/project-thread-i22zy2`), le GMFlow natif avec attention fondue (#930) et Winograd sur SPAN et GridNet (toujours en dernier). Objectifs et leviers dans la section « Viser les plafonds théoriques » du plan. Le PC sert d'abord aux chantiers dont la porte n'est pas passée.
 
+## Reprise du 20 novembre
+
+- **Cadence 4K**. Sur Re:Zero à 16:00, SPAN Balanced FP16 et RIFE 4.25 avec HDR passent de 110,7–114,0 à
+  116,7 i/s en mouvement avec le warp Catmull-Rom optimisé. La médiane du warp passe de 1,61–1,62 à 1,35 ms.
+  Le calcul partage les coefficients et les indices entre les trois plans RGB. L'avance SPAN expérimentale
+  donne 119,1 i/s, avec 52 pertes à l'affichage contre 31 dans le passage précédent. Avec la grille NVOF
+  compacte et une marge VRR à zéro, un passage atteint 121,4 i/s en mouvement, 107,5 i/s sur l'extrait.
+  Le warp fusionné vers l'anneau puis la composition PQ sans seconde mesure du pic ramènent le service vers
+  5,4 ms. Sur 36 s, le dernier témoin comparable donne 136,6 i/s en mouvement et l'essai 154,1. Une
+  profondeur de présentation de 3 donne 162,5–162,9 i/s confirmées par Wayland sur la fenêtre en mouvement
+  de 17 s, et jusqu'à 164,5 sur 2 s sans saut. Voir [`auto-libre.md`](auto-libre.md#rejeu-4k-hdr-du-20-novembre).
+- **GMFSS**. L'IFNet d'Union a maintenant quatre blocs de convolutions CUDA. L'essai à 960×576 les retient
+  à 1,35 ms contre 1,47 ms et 73,19 dB sur sa sortie. GridNet transcrit ses six entrées de caractéristiques
+  par tuiles contiguës, bit pour bit. La fusion passe de 22,18 à 20,16 ms de médiane en lecture.
+  Les groupes de plans qui tiennent dans le L2, le dénominateur FP32 partagé et la marge de tuile plus courte
+  ramènent la médiane des splats de 8,16–8,41 à 4,00 ms au meilleur passage. GMFlow possède une chaîne CUDA
+  complète, qui tourne vers 8 ms une fois chaude à 960×576. Le contrôle de fidélité garde encore son flot TensorRT.
+- **NVOF**. L'essai aller-retour compact obtient 352 résultats pour 360 paires lancées, dont 288
+  rendus à la paire correspondante, avec 0,43 ms de latence moyenne. La relecture passe de 259 200 à
+  12 240 octets à la taille interne 960×540. Le contrôle recense 72 tuiles de bord suspectes ; huit sont
+  corroborées par le suivi LK. L'option `--nvof-layer-guard` rend 90 tuiles de bord à RIFE sur le passage
+  SPY×FAMILY. Elle exige une corroboration sous la caméra affinée de la même paire.
+- **Couleurs de l'export**. Le grade attend du RGB. L'export l'applique désormais au stade
+  `PREOUTPUT` de libplacebo avant le codage YCbCr. Sur une mire avec un look, l'écart maximal
+  face au témoin RGB converti séparément passe de 76 à 1 code 10 bits. Les exports de la mire
+  en FFV1 et HEVC Vulkan décodent tous 48 images BT.2020/PQ en plage limitée.
+- **Éclats et NVOF**. Le [rejeu des lueurs](hdr-anime.md#rejeu-des-lueurs-fixes-sur-la-source-sdr)
+  et le banc des paires aller-retour dans [`tools/nvof_interp`](../tools/nvof_interp/README.md)
+  documentent les témoins qui empêchent d'élargir le masque HDR ou de remplacer des passes de RIFE.
+- **SPAN Performance FP8**. Les deux convolutions ReLU de chaque bloc C48 utilisent les poids E4M3 plats et
+  reproduisent les groupes de sommes de CUTLASS. Sur une mire saturée et une image 1080p, le réseau donne les
+  mêmes codes, en sommes FP16 et FP32. L'essai du lecteur retient 5,73 ms contre 7,70 ms à sommes FP32.
+  Dans le graphe CUDA du banc d'image, les sommes FP16 donnent 4,92 ms contre 6,19 ms.
+
+## Points d'arrêt du 19 novembre
+
 | Depuis | Chantier | Fil | État au moment de la pause | Pour reprendre |
 |---|---|---|---|---|
 | 19/11, 14:44 | SPAN FP8 en noyaux natifs (cran Performance) | « Battre AnimeJaNai sur SPAN en FP16 » | Convolutions FP8 (mma m16n8k32 E4M3) en cours d'écriture, rien de fusionné. Le FP8 CUTLASS reste en service | Commit 41a4a2f sur `claude/project-thread-avpwom` (sans PR), copie dans `/mnt/project-files/span-native/fp8-natif-en-pause.patch` ; note de reprise dans `docs/span-native16.md`, section « FP8 natif (en pause) », avec les six étapes qui restent |

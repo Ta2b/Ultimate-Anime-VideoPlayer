@@ -1,7 +1,7 @@
 // La fusion de GMFSS Fortuna Union vue comme un gpu::Engine (--gmfss-native, docs/gmfss-natif.md), avec les
 // entrées et la sortie du moteur TensorRT de la fusion entière qu'elle remplace : l'étage
-// (upscale_gmfss.cpp) ne voit pas la différence. Natif : l'IFNet (moteur TensorRT extrait,
-// prepare/gmfss_fused.h) écrit l'image « rife », puis le GridNet par les noyaux de gmfss_native_net.h. Le
+// (upscale_gmfss.cpp) ne voit pas la différence. L'IFNet écrit l'image « rife », puis le GridNet natif
+// la combine aux autres entrées. Les deux réseaux CUDA sont évalués au chargement. Le
 // moteur de la fusion entière reste chargé : référence de l'essai au chargement, et repli quand le natif est
 // écarté ou que l'essai n'a pas été demandé.
 #pragma once
@@ -12,12 +12,14 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/fused_keys.h"
+#include "gpu/cuda/backend/gmfss_ifnet_native.h"
 #include "gpu/cuda/backend/gmfss_native_net.h"
 #include "gpu/cuda/backend/trt_engine.h"
 
@@ -44,7 +46,15 @@ class GmfssFusedEngine final : public Engine {
 
   // Les entrées dans l'ordre de input_names(), la sortie 1 × 3 × 2h × 2w.
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared,
-                                       std::span<const Tensor> inputs, std::span<const Tensor> outputs);
+                                       std::span<const Tensor> inputs, std::span<const Tensor> outputs,
+                                       bool packed_features = false);
+
+  struct SplatTarget {
+    Tensor planar;  // l'ancienne tranche, pour la retrouver parmi les splats de l'appelant
+    void* pixels = nullptr;
+    int pitch = 0;  // positif : HWC. Négatif : plan par groupe C8.
+  };
+  std::optional<std::array<SplatTarget, 6>> packed_splats(std::span<const Tensor> inputs) const;
 
   // L'essai du natif (gmfss_fused_trial.cpp) : le GridNet natif réglé au banc, puis des entrées de test
   // passent par le moteur entier et par l'IFNet et le GridNet natif, les sommes choisies morceau par morceau
@@ -52,21 +62,32 @@ class GmfssFusedEngine final : public Engine {
   // bat d'au moins 2 % en temps. Les lignes du journal, la dernière disant ce qui a été retenu ; refus :
   // l'essai n'a pas pu tourner (le moteur entier reste).
   std::expected<std::vector<std::string>, Refusal> try_native(
-      const prepare::GmfssGrid& grid, const std::shared_ptr<SharedActivations>& shared, double min_db);
+      const prepare::GmfssGrid& grid, const std::shared_ptr<SharedActivations>& shared, double min_db,
+      const std::array<RifeNativePiece, 4>* ifnet = nullptr);
   bool native() const { return native_on_; }
 
  private:
   GmfssFusedEngine() = default;
   std::expected<void, Refusal> enqueue_native(cudaStream_t stream,
                                               const std::shared_ptr<SharedActivations>& shared,
-                                              std::span<const Tensor> inputs, const Tensor& out);
+                                              std::span<const Tensor> inputs, const Tensor& out,
+                                              bool packed_features = false);
+  std::expected<void, Refusal> enqueue_ifnet(cudaStream_t stream,
+                                             const std::shared_ptr<SharedActivations>& shared,
+                                             std::span<const Tensor> inputs, bool native);
+  std::expected<std::string, Refusal> try_ifnet(
+      const std::array<RifeNativePiece, 4>& pieces, cudaStream_t stream,
+      const std::shared_ptr<SharedActivations>& shared, std::span<const Tensor> inputs,
+      const Tensor& out, double min_db);
 
   // Les entrées de la fusion, par nom.
   enum Input : std::size_t { kHalf0, kHalf1, kTime, kW01, kW02, kW03, kW11, kW12, kW13, kInputs };
   std::unique_ptr<TrtEngine> full_;
   std::unique_ptr<TrtEngine> ifnet_;
+  std::unique_ptr<GmfssIfnetNative> native_ifnet_;
   std::unique_ptr<GmfssNativeNet> native_;
   bool native_on_ = false;
+  bool features_c8_ = false;
   int height_ = 0;
   int width_ = 0;
   std::array<std::size_t, kInputs> at_{};    // la place de chaque entrée dans input_names()

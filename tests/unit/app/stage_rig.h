@@ -50,6 +50,8 @@ class FakeEngine final : public gpu::Engine {
   void next_pair_follows() override { ++follows_; }
   int times_only() const { return times_only_; }
   int follows() const { return follows_; }
+  void offer_gmfss_reuse() { gmfss_reuse_ = true; }
+  bool next_gmfss_pair(bool follows) override { return gmfss_reuse_ && follows; }
   std::span<const std::string> input_names() const override { return inputs_; }
   std::span<const std::string> output_names() const override { return outputs_; }
   // Les tuiles qui bougent : la grille offerte (aucune par défaut) ; chaque demande acceptée garde le tenseur
@@ -71,6 +73,7 @@ class FakeEngine final : public gpu::Engine {
   kernels::SpanTileGrid grid_;
   std::vector<std::uintptr_t> tiles_from_;
   bool warm_ = false;
+  bool gmfss_reuse_ = false;
   int warm_asked_ = 0;
   int times_only_ = 0;
   int follows_ = 0;
@@ -118,6 +121,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   // BackendCaps::ring_targets : warp_blend_ring et les autres écrivent le slot (written()) au lieu
   // d'un tenseur ; faux par défaut.
   void offer_ring_targets(bool on) { ring_targets_ = on; }
+  void offer_layered(bool on) { layered_ = on; }
   // BackendCaps::yuv_targets : write_yuv écrit la cible (yuv_written()) et la signale aussitôt ;
   // faux par défaut.
   void offer_yuv_targets(bool on) { yuv_targets_ = on; }
@@ -180,6 +184,21 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::expected<void, Refusal> compose_layers(const LayerJob& /*job*/) override {
     return note("compose_layers");
   }
+  std::expected<void, Refusal> warp_layered(const LayerJob& job, const gpu::Motion& /*motion*/,
+                                            const gpu::Motion* /*previous*/, float /*t*/, bool /*poses*/,
+                                            bool same_sources) override {
+    if (!layered_) return refuse(RefusalCode::FormatUnsupported, "pas de warp avec calques");
+    return note(same_sources ? "warp_layered reprise" : "warp_layered", job.out.handle);
+  }
+  std::expected<void, Refusal> warp_layered_ring(const LayerJob& /*job*/, const gpu::Motion& /*motion*/,
+                                                 const gpu::Motion* /*previous*/, float /*t*/, bool /*poses*/,
+                                                 bool same_sources, const gpu::RingTarget& ring) override {
+    if (!layered_ || !ring_targets_)
+      return refuse(RefusalCode::FormatUnsupported, "pas de warp avec calques dans le ring");
+    if (ring.sync.signal_value <= ring.sync.wait_value)
+      return refuse(RefusalCode::SequenceOrder, "protocole de ring refusé");
+    return note_ring(same_sources ? "warp_layered_ring reprise" : "warp_layered_ring", ring);
+  }
   // La sortie porte l'image de l'entrée, comme SPAN (l'ancre de la reprise, upscale_reuse.h).
   std::expected<void, Refusal> resample(const gpu::Tensor& in, kernels::Filter filter,
                                         const gpu::Tensor& out) override;
@@ -202,6 +221,9 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     if (jobs.size() != 8)
       return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "huit splats attendus"});
     note_t(splat_ts_, t);
+    for (std::size_t i = 0; i < jobs.size(); ++i) {
+      if (auto ok = note(std::format("splat GMFSS source {}", i), jobs[i].source.handle); !ok) return ok;
+    }
     return note("soft_splat_fill");
   }
   std::expected<void, Refusal> gmfss_compose(const ComposeJob& job) override {
@@ -398,6 +420,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   bool ahead_ = true;
   bool rife_pair_ = false;
   bool ring_targets_ = false;
+  bool layered_ = false;
   bool yuv_targets_ = false;
   bool grade_ = false;
   std::atomic<bool> still_scene_{false};

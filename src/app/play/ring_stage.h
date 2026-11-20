@@ -105,6 +105,8 @@ class RingStage : public VideoStage, public FrameSink {
   virtual std::expected<void, Refusal> late(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) {
     return {};
   }
+  // Une sortie jugée Write dont aucun slot n'est libre : une fois au début de l'attente.
+  virtual std::expected<void, Refusal> before_slot_wait(std::uint32_t /*output*/) { return {}; }
   // Une image attend un slot depuis plus de kHealthAfterUs : l'appareil est-il encore là (étape 11.5) ? Un
   // refus (DeviceLost) arrête la vidéo comme un refus de produce, au lieu d'attendre un SlotFree qui ne
   // viendra pas. Par défaut : rien à vérifier.

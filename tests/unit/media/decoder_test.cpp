@@ -131,6 +131,44 @@ TEST_CASE("VideoDecoder : une source non étiquetée reçoit la couleur devinée
   CHECK_FALSE(color.hdr.has_value());
 }
 
+TEST_CASE("VideoDecoder : un PTS négatif permet de retrouver le suivant", "[media][decoder]") {
+  auto demuxer = Demuxer::open(test::require_clip(test::full_clip()));
+  REQUIRE(demuxer);
+  auto decoder = VideoDecoder::open(demuxer->tracks()[0], {.attempts = {HwApi::Software}, .threads = 1});
+  REQUIRE(decoder);
+  std::vector<DecodedFrame> frames;
+  int seen = 0;
+  while (!decoder->drained()) {
+    auto frame = decoder->receive();
+    REQUIRE(frame);
+    if (*frame) {
+      frames.push_back(std::move(**frame));
+    } else if (!decoder->drained()) {
+      auto packet = demuxer->read();
+      REQUIRE(packet);
+      if (!*packet) {
+        REQUIRE(decoder->send_end());
+      } else if ((*packet)->track == 0) {
+        if (seen < 2) {
+          const auto pts = seen == 0 ? -2 * test::kFrameUs : kirari::kNoPts;
+          auto* stamped = av_packet_clone((*packet)->av.get());
+          REQUIRE(stamped != nullptr);
+          stamped->pts = pts;
+          stamped->dts = pts;
+          (*packet)->av = std::shared_ptr<const AVPacket>(stamped, PacketFree{});
+          (*packet)->pts_us = pts;
+          (*packet)->dts_us = pts;
+        }
+        ++seen;
+        REQUIRE(decoder->send(**packet));
+      }
+    }
+  }
+  REQUIRE(frames.size() == 30);
+  CHECK(frames[0].pts_us == -2 * test::kFrameUs);
+  CHECK(frames[1].pts_us == -test::kFrameUs);
+}
+
 TEST_CASE("VideoDecoder : ColorInfo HDR10 depuis les side data, pixels 10 bits", "[media][decoder]") {
   const std::vector<DecodedFrame> frames = decode_all(test::hdr_clip());
   REQUIRE(frames.size() == 5);

@@ -294,8 +294,8 @@ PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts)
   if (!scene_.on() || !previous_ || !facts.same_epoch) return facts;
   gpu::KernelOps& ops = *setup_.backend->kernels();
   // La paire enjambe une coupe : sa carte ne dit rien, la suivante repart sans indices.
-  if (facts.scores && pair_cut(facts)) scene_.cut(previous_->id, frame.id);
-  facts.scene = scene_.for_pair(ops, previous_->id, frame.id);
+  if (facts.scores && pair_cut(facts)) scene_.cut(previous_->id, frame.id, frame.epoch);
+  facts.scene = scene_.for_pair(ops, previous_->id, frame.id, frame.epoch);
   if (setup_.live != nullptr) {
     note_effects(*setup_.live, scene_, previous_->id, previous_->pts_us, frame, facts,
                  setup_.work_width > 0 ? setup_.work_width : setup_.source_width,
@@ -308,7 +308,7 @@ PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts)
   const DecodedFrame* after = looks_ahead() || drba() ? next() : nullptr;
   const bool ahead_due = after != nullptr && after->epoch == frame.epoch &&
                          after->width == setup_.source_width && after->height == setup_.source_height;
-  if (!ahead_due && !scene_.started(previous_->id, frame.id)) {
+  if (!ahead_due && !scene_.started(previous_->id, frame.id, frame.epoch)) {
     scene_.start(ops, rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor(), previous_->id, frame.id,
                  frame.epoch);
   }

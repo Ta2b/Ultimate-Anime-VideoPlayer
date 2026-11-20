@@ -33,11 +33,11 @@ Launch by_tile(int ct) {
 }
 
 // Pas 1 (3 × 3, ou 2 × 2 d'une phase de transposée) : deux lignes par warp, ou une hors f32.
-template <int Kc, int KH, Out O, Acc A, bool Ahead = false>
+template <int Kc, int KH, Out O, Acc A, bool Ahead = false, In I = In::kNhwc>
 Launch by_rows(int rows, int ct) {
-  if (rows == 2) return by_tile<Kc, KH, 1, 2, In::kNhwc, O, A, Ahead>(ct);
+  if (rows == 2) return by_tile<Kc, KH, 1, 2, I, O, A, Ahead>(ct);
   if constexpr (A != Acc::kF32) {
-    if (rows == 1) return by_tile<Kc, KH, 1, 1, In::kNhwc, O, A, Ahead>(ct);
+    if (rows == 1) return by_tile<Kc, KH, 1, 1, I, O, A, Ahead>(ct);
   }
   return nullptr;
 }
@@ -86,6 +86,22 @@ Launch pick(Kind kind, int kc, int ct, int rows, bool ahead) {
   return nullptr;
 }
 
+template <Acc A>
+Launch blocked8(const Config& c) {
+  constexpr auto I = In::kBlocked8;
+  if constexpr (A != Acc::kF32) {
+    if (c.ahead) {
+      if (c.kc == 32) return by_rows<32, 3, Out::kNhwc, A, true, I>(c.rows, c.ct);
+      if (c.kc == 64) return by_rows<64, 3, Out::kNhwc, A, true, I>(c.rows, c.ct);
+      return nullptr;
+    }
+  }
+  if (c.kc == 16) return by_rows<16, 3, Out::kNhwc, A, false, I>(c.rows, c.ct);
+  if (c.kc == 32) return by_rows<32, 3, Out::kNhwc, A, false, I>(c.rows, c.ct);
+  if (c.kc == 64) return by_rows<64, 3, Out::kNhwc, A, false, I>(c.rows, c.ct);
+  return nullptr;
+}
+
 template <int CT, Acc A>
 void launch_stream(dim3 grid, int smem, cudaStream_t stream, const Params& p) {
   conv_stream::stream_kernel<64, CT, 1, A><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p);
@@ -101,6 +117,19 @@ Launch pick_for(RifeNativeSums sums, Kind kind, int kc, int ct, int rows, bool a
       return pick<Acc::kMixed>(kind, kc, ct, rows, ahead);
     case RifeNativeSums::kF32:
       return pick<Acc::kF32>(kind, kc, ct, rows, ahead);
+  }
+  return nullptr;
+}
+
+Launch pick_blocked8(RifeNativeSums sums, const Config& cfg) {
+  if (cfg.bands != 0) return nullptr;
+  switch (sums) {
+    case RifeNativeSums::kF16:
+      return blocked8<Acc::kF16>(cfg);
+    case RifeNativeSums::kMixed:
+      return blocked8<Acc::kMixed>(cfg);
+    case RifeNativeSums::kF32:
+      return blocked8<Acc::kF32>(cfg);
   }
   return nullptr;
 }

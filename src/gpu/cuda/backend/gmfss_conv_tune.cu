@@ -5,6 +5,7 @@
 // la référence est gardée. Une grande couche ne passe au banc que sur une bande de ses lignes. Aux formes du
 // RIFE natif s'ajoutent celles en flux (rn::stream_configs, conv_stream_kernels.cuh), mesurées de même.
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -15,6 +16,7 @@
 
 #include "gpu/cuda/backend/conv_stream.h"
 #include "gpu/cuda/backend/gmfss_conv_plan.cuh"
+#include "gpu/cuda/backend/gmfss_shuffle_reuse.cuh"
 
 namespace kirari::gpu::cuda::gmfss_plan {
 namespace {
@@ -51,8 +53,11 @@ Shape shape_for(const Layer& layer, RifeNativeSums sums, const rn::Config& cfg, 
   Shape s;
   s.cfg = cfg;
   const bool stream = cfg.bands > 0;
-  s.launch = stream ? rn::pick_stream(sums, layer.kind, cfg)
-                    : rn::pick_for(sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
+  if (layer.blocked8)
+    s.launch = rn::pick_blocked8(sums, cfg);
+  else
+    s.launch = stream ? rn::pick_stream(sums, layer.kind, cfg)
+                      : rn::pick_for(sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
   const int th = rn::kWarps * cfg.rows, tiles = (oh + th - 1) / th;
   const int strips =
       stream ? std::min(conv_stream::strips_for((layer.oh + th - 1) / th, cfg.bands), tiles) : tiles;
@@ -77,14 +82,15 @@ const rn::Config* reference_of(const std::vector<rn::Config>& configs, Kind kind
 }
 
 // Un lancement de la forme au banc, sur la bande rows : l'entrée du banc sert aussi de résiduel.
-rn::Bench::Shot shot_of(const Layer& layer, Rows rows, const Shape& shape, RifeNativeSums sums,
-                        const void* w) {
+rn::Bench::Shot shot_of(const Layer& layer, Rows rows, const Shape& shape, RifeNativeSums sums, const void* w,
+                        bool bit_exact = false) {
   const auto [in, out] = bytes_of(layer, rows);
   return rn::Bench::Shot{
       .in_bytes = in,
       .out_bytes = out,
       .partial_bytes = partial_of(layer, shape.cfg, rows.oh),
       .sums = sums,
+      .bit_exact = bit_exact,
       .enqueue = [&layer, rows, &shape, w](cudaStream_t stream, const __half* from, __half* to,
                                            float* partial) {
         enqueue(layer, shape, stream,
@@ -102,6 +108,81 @@ std::string versus(const rn::Config& stream, float streamed, float tiled) {
   return "en flux au mieux " + us(streamed) + " (" + std::to_string(stream.bands) +
          " bandes par bloc, tuile " + std::to_string(stream.ct) + "), en tuile au mieux " + us(tiled) +
          (streamed < tiled ? " : flux retenu" : " : tuile gardée");
+}
+
+template <int RowsPerWarp, int Phases>
+void launch_shuffle(dim3 grid, int smem, cudaStream_t stream, const rn::Params& p) {
+  gmfss_shuffle_reuse::conv_shuffle<RowsPerWarp, Phases, rn::Acc::kF16>
+      <<<grid, rn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
+}
+
+unsigned shuffle_tiles_y(int lines, int rows_per_warp) {
+  const int tile = rn::kWarps * rows_per_warp;
+  return static_cast<unsigned>((lines + tile - 1) / tile);
+}
+
+template <int RowsPerWarp, int Phases>
+Shape shuffle_shape(const Layer& layer, int lines) {
+  constexpr int smem = gmfss_shuffle_reuse::smem_bytes<RowsPerWarp>();
+  if constexpr (smem > 48 * 1024) {
+    const auto result =
+        cudaFuncSetAttribute(gmfss_shuffle_reuse::conv_shuffle<RowsPerWarp, Phases, rn::Acc::kF16>,
+                             cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+    if (result != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());  // la mémoire partagée de cette forme peut être indisponible
+      return {};
+    }
+  }
+  return Shape{
+      .cfg = {.kc = 64, .ct = 64, .rows = RowsPerWarp},
+      .launch = launch_shuffle<RowsPerWarp, Phases>,
+      .grid = {static_cast<unsigned>((layer.ow + rn::kTW - 1) / rn::kTW), shuffle_tiles_y(lines, RowsPerWarp),
+               static_cast<unsigned>(layer.phases / Phases)},
+      .smem = smem,
+      .stream = {},
+  };
+}
+
+// Le halo groupé doit rendre les mêmes bits que la meilleure forme déjà choisie. Comparer à la tuile
+// de référence du réglage général laisserait changer les sommes si la meilleure a découpé K.
+bool tune_shuffle(const Tuner& tuner, const Layer& layer, Rows band, Shape& best, std::string& error) {
+  if (layer.kind != Kind::kShuffle || layer.phases != 4 || layer.cin != 64 || layer.in_ld != 64 ||
+      layer.cout != 64 || layer.out_ld != 64 || best.cfg.ksplit != 1)
+    return true;
+  const std::array candidates{shuffle_shape<1, 2>(layer, band.oh), shuffle_shape<1, 4>(layer, band.oh),
+                              shuffle_shape<2, 2>(layer, band.oh), shuffle_shape<2, 4>(layer, band.oh)};
+  constexpr RifeNativeSums sums = RifeNativeSums::kF16;
+  const Shape direct = shape_for(layer, sums, best.cfg, band.oh);
+  const auto shot = [&](const Shape& shape) {
+    return shot_of(layer, band, shape, sums, layer.packs[pack_index(shape.cfg.ct)].as<const void>(), true);
+  };
+  if (!tuner.bench.reference(shot(direct), error)) return false;
+  Shape grouped;
+  grouped.ms = std::numeric_limits<float>::infinity();
+  for (const Shape& candidate : candidates) {
+    if (candidate.launch == nullptr) continue;
+    const auto timed = tuner.bench.time(shot(candidate), error);
+    if (!timed) return false;
+    ++tuner.tuning.measured;
+    if (timed->differs) {
+      ++best.rejected;
+      ++tuner.tuning.rejected;
+    } else if (timed->ms < grouped.ms) {
+      grouped = candidate;
+      grouped.ms = timed->ms;
+    }
+  }
+  // Une marge, comme à l'essai du réseau entier : le plus rapide des trois rejeux peut varier.
+  if (grouped.ms < 0.98F * best.ms) {
+    const auto us = [](float ms) { return std::to_string(static_cast<long>(ms * 1000.F + 0.5F)); };
+    grouped.grid.y = shuffle_tiles_y(layer.oh, grouped.cfg.rows);
+    grouped.rejected = best.rejected;
+    grouped.stream = "halo partagé retenu, " + std::to_string(layer.phases / grouped.grid.z) + " phases, " +
+                     std::to_string(grouped.cfg.rows) + " lignes par warp : " + us(grouped.ms) +
+                     " µs contre " + us(best.ms) + " µs (sortie exacte)";
+    best = std::move(grouped);
+  }
+  return true;
 }
 
 }  // namespace
@@ -163,7 +244,7 @@ bool ConvNet::tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string&
     error = std::string("aucune forme ne se lance en sommes ") + rn::sums_name(sums);
     return false;
   }
-  return true;
+  return sums != RifeNativeSums::kF16 || tune_shuffle(tuner, layer, band, best, error);
 }
 
 }  // namespace kirari::gpu::cuda::gmfss_plan

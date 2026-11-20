@@ -4,12 +4,14 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "gpu/cuda/backend/gmflow_attention_kernels.cuh"
 #include "gpu/cuda/backend/gmflow_attention_net.h"
+#include "gpu/cuda/backend/gmflow_propagation_net.h"
 
 namespace kirari::gpu::cuda {
 namespace {
@@ -171,7 +173,66 @@ class Net final : public GmflowAttentionNet {
   Buffer workspace_;
 };
 
+// Les poids d'une projection de propagation : même rangement que la GEMM QKV.
+struct Projection {
+  Buffer w, bias;
+
+  bool upload(const prepare::GmflowProjection& p, std::string& error) {
+    if (p.weights.size() != static_cast<std::size_t>(ga::kD) * ga::kD || p.bias.size() != ga::kD) {
+      error = "GMFlow : poids ou biais de propagation";
+      return false;
+    }
+    std::vector<std::uint32_t> packed;
+    pack(p.weights, 0, ga::kD, packed);
+    cudaError_t e = w.upload(packed.data(), packed.size() * sizeof(std::uint32_t));
+    if (e == cudaSuccess) e = bias.upload(p.bias.data(), p.bias.size() * sizeof(float));
+    if (e == cudaSuccess) return true;
+    error = std::string("GMFlow : poids de propagation : ") + cudaGetErrorString(e);
+    return false;
+  }
+
+  cudaError_t project(cudaStream_t stream, const void* input, void* out, long pixels) const {
+    const ga::QkvParams p{.query = static_cast<const __half*>(input),
+                           .out = static_cast<__half*>(out),
+                           .w = w.as<const uint4>(),
+                           .tokens = pixels,
+                           .batch = 2,
+                           .bias = bias.as<const float>()};
+    const dim3 grid(static_cast<unsigned>((pixels + ga::kRows - 1) / ga::kRows), 1, 2);
+    ga::qkv_kernel<ga::Acc::kF32, true><<<grid, ga::kThreads, 0, stream>>>(p);
+    return cudaGetLastError();
+  }
+};
+
+class PropagationNet final : public GmflowPropagationNet {
+ public:
+  bool build(const prepare::GmflowPropagation& weights, std::string& error) {
+    return q_.upload(weights.query, error) && k_.upload(weights.keys, error);
+  }
+
+  cudaError_t project(cudaStream_t stream, const void* features, long pixels, bool global,
+                      void* query, void* keys) const override {
+    if (pixels < 1 || pixels > std::numeric_limits<long>::max() / (2 * ga::kD) ||
+        features == nullptr || query == nullptr || keys == nullptr ||
+        features == query || features == keys || keys == query ||
+        !aligned16(features) || !aligned16(query) || !aligned16(keys))
+      return cudaErrorInvalidValue;
+    if (const auto e = q_.project(stream, features, query, pixels); e != cudaSuccess) return e;
+    return k_.project(stream, global ? query : features, keys, pixels);
+  }
+
+ private:
+  Projection q_, k_;
+};
+
 }  // namespace
+
+std::unique_ptr<GmflowPropagationNet> GmflowPropagationNet::create(
+    const prepare::GmflowPropagation& weights, std::string& error) {
+  auto net = std::make_unique<PropagationNet>();
+  if (!net->build(weights, error)) return nullptr;
+  return net;
+}
 
 std::unique_ptr<GmflowAttentionNet> GmflowAttentionNet::create(const GmflowAttention& attention, int scale,
                                                                int batch, int height, int width,

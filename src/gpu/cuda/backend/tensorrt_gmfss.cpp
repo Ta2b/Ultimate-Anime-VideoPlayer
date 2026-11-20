@@ -2,9 +2,12 @@
 // (gmfss_frames, le noyau de rife_input sans ses plans constants) et softmax splatting entre les deux graphes
 // (soft_splat_fill, gmfss_kernels.cu), l'instant de la fusion rempli au passage ; composition du mélange à la
 // taille de travail (gmfss_compose).
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -12,7 +15,9 @@
 
 #include "core/types.h"
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/gmfss_fused_engine.h"
 #include "gpu/cuda/backend/gmfss_kernels.h"
+#include "gpu/cuda/backend/gmfss_splat_schedule.h"
 #include "gpu/cuda/backend/rife_kernels.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "kernels/spec/gmfss.h"
@@ -46,10 +51,8 @@ int pushed_planes(const KernelOps::SplatJob& job) {
 
 // Les sommes d'un travail, alignées comme cudaMalloc l'aurait fait : les travaux se suivent dans un tampon.
 std::size_t aligned_sums(const KernelOps::SplatJob& job) {
-  constexpr std::size_t kAlign = 256;
-  const std::size_t bytes =
-      soft_splat_sums_bytes(width_of(job.source), height_of(job.source), pushed_planes(job));
-  return (bytes + kAlign - 1) / kAlign * kAlign;
+  return gmfss_splat::aligned_bytes(
+      soft_splat_sums_bytes(width_of(job.source), height_of(job.source), pushed_planes(job)));
 }
 
 // Le mouvement d'un travail ramené à la taille de sa source, FP16, aligné comme ses sommes.
@@ -100,8 +103,6 @@ std::expected<void, Refusal> check_job(const KernelOps::SplatJob& job, const Ten
 struct SplatPlan {
   SoftSplatBatch& batch;
   char* grid_base = nullptr;
-  float* sums = nullptr;
-  std::size_t offset = 0;
   std::size_t grid_offset = 0;
   std::vector<MotionGridParams> regrids;
   std::vector<PullParams> pulls;
@@ -114,8 +115,7 @@ struct SplatPlan {
     return at;
   }
 
-  void add(const KernelOps::SplatJob& job) {
-    const std::size_t first_sum = offset / sizeof(float);  // octets vers floats
+  void add(const KernelOps::SplatJob& job, void* pixels, int pitch) {
     const void* motion = address(job.motion);
     if (!own_grid(job)) {  // le mouvement ramené d'abord à la grille de la source (motion_on_grid)
       void* regridded = take_grid(job);
@@ -151,15 +151,110 @@ struct SplatPlan {
                                                 .height = height_of(job.source),
                                                 .channels = pushed_planes(job),
                                                 .s = job.s,
-                                                .sums = sums + first_sum,
-                                                .out = out,
-                                                .coverage = job.pull || job.coverage ? 1 : 0};
-    offset += aligned_sums(job);
+                                                .out = pixels != nullptr ? pixels : out,
+                                                .coverage = job.pull || job.coverage ? 1 : 0,
+                                                .out_pitch = pitch};
     reads.push_back(job.source.handle);
     reads.push_back(job.motion.handle);
     writes.push_back(job.out.handle);
   }
 };
+
+constexpr std::size_t kMinSplatL2 = 32U * 1024 * 1024;
+
+// Le tampon partage le L2 avec les entrées, les sorties et les autres voies de calcul.
+std::size_t splat_l2_budget() {
+  struct DeviceCache {
+    int ordinal = -1;
+    int l2 = 0;
+  };
+  static thread_local DeviceCache cached;
+  int ordinal = -1;
+  if (cudaGetDevice(&ordinal) != cudaSuccess) return 0;
+  if (ordinal != cached.ordinal) {
+    int l2 = 0;
+    if (cudaDeviceGetAttribute(&l2, cudaDevAttrL2CacheSize, ordinal) != cudaSuccess) return 0;
+    cached = {.ordinal = ordinal, .l2 = l2};
+  }
+  const auto l2 = static_cast<std::size_t>(std::max(0, cached.l2));
+  return l2 >= kMinSplatL2 ? l2 / 2 : 0;
+}
+
+struct SplatStaging {
+  std::array<int, kMaxSplatJobs> channels{};
+  std::size_t bytes = 0;
+};
+
+std::optional<SplatStaging> stage_splats(std::span<const KernelOps::SplatJob> jobs, std::size_t total) {
+  if (total <= kMinSplatL2 / 2) return std::nullopt;
+  const std::size_t budget = splat_l2_budget();
+  if (budget == 0 || total <= budget) return std::nullopt;
+  SplatStaging plan;
+  for (std::size_t i = 0; i < jobs.size(); ++i) {
+    const KernelOps::SplatJob& job = jobs[i];
+    // Le lot intégral lit toutes ses entrées avant d'écrire. Conserver cet ordre si elles se partagent
+    // un tampon avec une sortie, même si leurs tranches sont distinctes.
+    if (std::ranges::any_of(jobs, [&](const KernelOps::SplatJob& other) {
+          return other.source.handle == job.out.handle || other.motion.handle == job.out.handle;
+        }))
+      return std::nullopt;
+    const int width = width_of(job.source);
+    const int height = height_of(job.source);
+    const auto plane = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    const int channels = gmfss_splat::stage_channels(plane, pushed_planes(job), budget);
+    if (channels == 0) return std::nullopt;
+    plan.channels[i] = channels;
+    plan.bytes =
+        std::max(plan.bytes, gmfss_splat::aligned_bytes(soft_splat_sums_bytes(width, height, channels)));
+  }
+  return plan;
+}
+
+cudaError_t launch_splat_batch(SoftSplatBatch& batch, float* sums, std::size_t bytes, cudaStream_t stream) {
+  std::size_t offset = 0;
+  for (int j = 0; j < batch.count; ++j) {
+    SoftSplatParams& p = batch.jobs[j];
+    p.sums = sums + offset / sizeof(float);
+    offset += gmfss_splat::aligned_bytes(soft_splat_sums_bytes(p.width, p.height, p.channels));
+  }
+  return launch_soft_splat_all(batch, sums, bytes, stream);
+}
+
+// Chaque étape applique le même splat FP32. Le premier lot accumule le dénominateur commun à tous les
+// canaux. Les suivants effacent leurs numérateurs seulement. Le dernier écrit aussi la couverture.
+cudaError_t launch_staged_splats(const SoftSplatBatch& batch, const SplatStaging& plan, float* sums,
+                                 cudaStream_t stream) {
+  SoftSplatBatch stage{
+      .count = 1, .fill = batch.fill, .fill_count = batch.fill_count, .fill_value = batch.fill_value};
+  for (int j = 0; j < batch.count; ++j) {
+    const SoftSplatParams& job = batch.jobs[j];
+    const auto plane = static_cast<std::size_t>(job.width) * static_cast<std::size_t>(job.height);
+    const int stage_planes = plan.channels[static_cast<std::size_t>(j)];
+    for (int first = 0; first < job.channels;) {
+      const int count = std::min(job.channels - first, stage_planes);
+      const std::size_t offset = static_cast<std::size_t>(first) * plane * sizeof(std::uint16_t);
+      SoftSplatParams p = job;
+      p.source = static_cast<const std::byte*>(job.source) + offset;
+      if (job.out_pitch >= 0)
+        p.out = static_cast<std::byte*>(job.out) +
+                (job.out_pitch == 0 ? offset : static_cast<std::size_t>(first) * sizeof(std::uint16_t));
+      p.out_first = first;
+      p.sums = sums;
+      p.channels = count;
+      p.weight_planes = stage_planes;
+      p.reuse_weights = first != 0;
+      first += count;
+      p.coverage = first == job.channels ? job.coverage : 0;
+      stage.jobs[0] = p;
+      const auto planes_to_clear = static_cast<std::size_t>(count + (p.reuse_weights ? 0 : 1));
+      const auto bytes = planes_to_clear * plane * sizeof(float);
+      if (const cudaError_t result = launch_soft_splat_all(stage, sums, bytes, stream); result != cudaSuccess)
+        return result;
+      stage.fill = nullptr;
+    }
+  }
+  return cudaSuccess;
+}
 
 }  // namespace
 
@@ -212,6 +307,44 @@ std::expected<void, Refusal> TensorRtBackend::reserve_grid_motion(std::size_t by
 
 std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const KernelOps::SplatJob> jobs,
                                                               const Tensor& time, float t) {
+  return soft_splat(jobs, time, t, {}, nullptr);
+}
+
+std::expected<void, Refusal> TensorRtBackend::gmfss_fuse_splats(Engine& engine,
+                                                               std::span<const SplatJob> jobs,
+                                                               const Tensor& time, float t,
+                                                               std::span<const Tensor> inputs,
+                                                               std::span<Tensor> outputs) {
+  auto* fusion = dynamic_cast<GmfssFusedEngine*>(&engine);
+  const auto targets = fusion != nullptr ? fusion->packed_splats(inputs) : std::nullopt;
+  if (!targets || jobs.size() != static_cast<std::size_t>(kMaxSplatJobs) || outputs.size() != 1)
+    return refuse(RefusalCode::FormatUnsupported, "GMFSS : huit splats et un GridNet CUDA attendus");
+
+  std::array<SplatDestination, kMaxSplatJobs> direct{};
+  std::array<bool, 6> matched{};
+  for (std::size_t i = 0; i < jobs.size(); ++i) {
+    const SplatJob& job = jobs[i];
+    const auto found = std::ranges::find_if(*targets, [&](const auto& target) {
+      const Tensor& plane = target.planar;
+      return job.out.handle == plane.handle && job.out.offset == plane.offset &&
+             job.out.shape == plane.shape && job.out.type == plane.type;
+    });
+    if (found == targets->end()) continue;  // les deux images RVB restent en plans
+    const auto rank = static_cast<std::size_t>(found - targets->begin());
+    if (matched[rank] || job.pull || job.coverage || !own_grid(job))
+      return refuse(RefusalCode::FormatUnsupported, "GMFSS : une tranche de GridNet par splat poussé");
+    matched[rank] = true;
+    direct[i] = {.pixels = found->pixels, .pitch = found->pitch};
+  }
+  if (!std::ranges::all_of(matched, [](bool ok) { return ok; }))
+    return refuse(RefusalCode::FormatUnsupported, "GMFSS : caractéristiques à pousser incomplètes");
+  if (auto ok = soft_splat(jobs, time, t, direct, fusion); !ok) return ok;
+  return enqueue_gmfss_fused(*fusion, inputs, outputs, true);
+}
+
+std::expected<void, Refusal> TensorRtBackend::soft_splat(std::span<const SplatJob> jobs, const Tensor& time,
+                                                        float t, std::span<const SplatDestination> direct,
+                                                        const GmfssFusedEngine* fusion) {
   if (time.handle != 0 && !fp16_planes(time, 0))
     return refuse(RefusalCode::ShapeInvalid, "soft_splat_fill : instant FP16 1 × c × h × w attendu");
   if (!(t >= 0.0F && t <= 1.0F))
@@ -231,20 +364,23 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
   }
   if (auto ok = bind(); !ok) return ok;
   if (auto ok = reserve_grid_motion(grids); !ok) return ok;
-  if (total > splat_bytes_) {
+  const auto staging = stage_splats(jobs, total);
+  const std::size_t bytes = staging ? staging->bytes : total;
+  if (bytes > splat_bytes_) {
     // Les splats en cours peuvent encore lire l'ancien tampon : rendu derrière toutes les voies (11.4).
     if (splat_sums_ != nullptr) free_after_lanes(splat_sums_);
     splat_sums_ = nullptr;
     splat_bytes_ = 0;
-    if (auto ok = cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&splat_sums_), total, stream_),
+    if (auto ok = cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&splat_sums_), bytes, stream_),
                              "cudaMallocAsync");
         !ok)
       return ok;
-    splat_bytes_ = total;
+    splat_bytes_ = bytes;
   }
   SoftSplatBatch batch{};
   // Les sommes sous une clé fixe : elles changent d'adresse en grandissant.
   std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(&splat_sums_)};
+  if (fusion != nullptr) writes.push_back(reinterpret_cast<std::uintptr_t>(fusion));
   if (time.handle != 0) {
     batch.fill = address(time);
     batch.fill_count = 1;
@@ -254,14 +390,18 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
   }
   std::vector<std::uintptr_t> reads;
   if (grids > 0) writes.push_back(reinterpret_cast<std::uintptr_t>(&grid_motion_));
-  SplatPlan plan{.batch = batch, .grid_base = static_cast<char*>(grid_motion_), .sums = splat_sums_};
-  for (const KernelOps::SplatJob& job : jobs) plan.add(job);
+  SplatPlan plan{.batch = batch, .grid_base = static_cast<char*>(grid_motion_)};
+  for (std::size_t i = 0; i < jobs.size(); ++i) {
+    const SplatDestination out = direct.empty() ? SplatDestination{} : direct[i];
+    plan.add(jobs[i], out.pixels, out.pitch);
+  }
   const std::vector<MotionGridParams>& regrids = plan.regrids;
   const std::vector<PullParams>& pulls = plan.pulls;
   reads = std::move(plan.reads);
   writes.insert(writes.end(), plan.writes.begin(), plan.writes.end());
   if (auto ok = order(reads, writes); !ok) return ok;
-  GpuTiming& timing = stage("splatting de GMFSS");
+  // La composition de clé pousse aussi des splats, mais ne pose pas l'instant du GridNet.
+  GpuTiming& timing = stage(time.handle != 0 ? "splatting de GMFSS" : "splats de composition GMFSS");
   timing.begin(stream_);
   for (const MotionGridParams& regrid : regrids) {
     if (auto ok = cuda_check(launch_motion_on_grid(regrid, stream_), "motion_on_grid<<<>>>"); !ok) {
@@ -269,7 +409,10 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
       return ok;
     }
   }
-  auto launched = cuda_check(launch_soft_splat_all(batch, splat_sums_, total, stream_), "soft_splat<<<>>>");
+  auto launched = cuda_check(
+      staging ? launch_staged_splats(batch, *staging, splat_sums_, stream_)
+              : launch_splat_batch(batch, splat_sums_, bytes, stream_),
+      "soft_splat<<<>>>");
   for (const PullParams& pull : pulls) {
     if (!launched) break;
     launched = cuda_check(launch_soft_pull(pull, stream_), "soft_pull<<<>>>");

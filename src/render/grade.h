@@ -24,8 +24,9 @@ namespace kirari::render {
 class Grade {
  public:
   // VendorCallFailed : un hook ne se lit pas ; FieldMissing : un //!PARAM attendu manque.
-  // Le grade HDR du lecteur, en trois passes sur OUTPUT (anime-hdr-anime), puis le look et le vrai noir.
-  static std::expected<Grade, Refusal> create(pl_gpu gpu);
+  // La sortie vidéo appelle le grade avant le codage des composantes YCbCr, tandis que l'écran garde OUTPUT.
+  enum class Target { Display, Yuv };
+  static std::expected<Grade, Refusal> create(pl_gpu gpu, Target target = Target::Display);
 
   Grade(Grade&&) noexcept;
   Grade& operator=(Grade&&) noexcept;

@@ -94,6 +94,16 @@ le même résultat ; (B) garde le plus simple, et la seule chose à écrire pour
 | `tools/span/derive_span_fp8.py` | calibration, paquet, reçu |
 | `third_party/cutlass/` | CUTLASS 4.8.1, BSD-3-Clause, en-têtes seulement (259 fichiers, avec `LICENSE.txt`) |
 
+### Convolutions ReLU natives C48
+
+`--debug --span-fp8-native-blocks` essaie `c1` et `c2` des blocs sur Ada. Le noyau lit le même K à plat et
+maintient le même ordre de groupes MMA que CUTLASS. Sur la mire saturée, l'ordre continu de départ tombait
+à 35,3 dB sur la bande la plus difficile. Le regroupement reproduit bit à bit la sortie du réseau sur la mire
+et sur l'image d'anime vérifiée, en sommes FP32 et FP16. Le test `[fp8_staged]` détecte l'ancien ordre pour
+les deux types de sommes. Le chargement exige au moins 50 dB sur chacune de trois bandes et garde le candidat
+seulement s'il est plus rapide. À 1920×1080, le lecteur a retenu 5,73 ms contre 7,70 ms en sommes FP32.
+Le banc en graphe CUDA donne 4,92 contre 6,19 ms en sommes FP16. Le bloc `c3` utilise le même chemin CUTLASS.
+
 ### Accumulateur f16 (variante acc16)
 
 La dérivation juge deux variantes et ne garde la seconde que si elle passe la porte, perd au plus

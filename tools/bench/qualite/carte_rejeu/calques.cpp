@@ -185,8 +185,8 @@ std::optional<PlaneF> composed(const LayerParams& p, const PlaneF& under, const 
 
 }  // namespace
 
-LayerReplay::LayerReplay(int divisor, std::string views, int every)
-    : divisor_(divisor), views_(std::move(views)), every_(every) {}
+LayerReplay::LayerReplay(int divisor, std::string views, int every, bool dump_grid)
+    : divisor_(divisor), views_(std::move(views)), every_(every), dump_grid_(dump_grid) {}
 
 bool LayerReplay::pair(const kirari::kernels::Plane<std::uint8_t>& a8,
                        const kirari::kernels::Plane<std::uint8_t>& b8,
@@ -210,6 +210,13 @@ bool LayerReplay::pair(const kirari::kernels::Plane<std::uint8_t>& a8,
   double speed = -1.0;
   if (planned) {
     const auto& c = planned->camera;
+    if (dump_grid_) {
+      std::cout << std::format("grille {} {} {} {}", index_, planned->cols, planned->rows, planned->tile_px);
+      for (const auto value : c) std::cout << std::format(" {:.10f}", value);
+      std::cout << ' ';
+      for (const auto decor : planned->decor) std::cout << (decor != 0 ? '1' : '0');
+      std::cout << '\n';
+    }
     const double cx = (static_cast<double>(planned->work_width) - 1.0) / 2.0;
     const double cy = (static_cast<double>(planned->work_height) - 1.0) / 2.0;
     speed = std::hypot(c[0] + c[1] * cx + c[2] * cy - cx, c[3] + c[4] * cx + c[5] * cy - cy);

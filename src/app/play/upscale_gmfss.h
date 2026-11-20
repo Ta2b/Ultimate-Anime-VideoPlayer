@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -14,6 +15,7 @@
 #include "core/cadence.h"
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
+#include "kernels/spec/gmfss.h"
 
 namespace kirari::app::play {
 
@@ -53,6 +55,15 @@ struct GmfssKey {
 };
 
 struct GmfssBuffers {
+  struct FeatureViews {
+    using Planes = std::array<gpu::Tensor, kernels::kGmfssLevels>;
+    std::array<Planes, 4> banks;
+    std::array<std::array<std::size_t, kernels::kGmfssLevels>, 2> outputs{};
+    std::array<std::array<std::size_t, 2>, 2> bound{{{0, 1}, {2, 3}}};
+    bool present = false;
+    bool moved = false;
+  };
+
   // Un splat du lot : le côté (0 depuis a, 1 depuis b), sa source, son mouvement et sa tranche de warped.
   struct Splat {
     int side = 0;
@@ -68,6 +79,7 @@ struct GmfssBuffers {
   std::array<std::vector<gpu::Tensor>, 2> pair_outputs;  // ordre du moteur, par jeu
   std::array<std::vector<gpu::Tensor>, 2> fusion_inputs;
   std::array<std::vector<Splat>, 2> splats;
+  FeatureViews features;  // quatre banques existantes, liées par côté pour éviter la copie de A
   std::uint32_t set = 0;
   std::vector<gpu::KernelOps::SplatJob> jobs;
   gpu::Tensor time;                        // l'entrée « time » de la fusion
@@ -86,10 +98,11 @@ struct GmfssBuffers {
   std::array<std::uint64_t, 2> in_images{};
   bool in_pair = false;  // input tient la demi-paire in_images
   float in_t = 0.0F;
-  std::uint64_t pairs = 0;     // passes du graphe « paire »
-  std::uint64_t fusions = 0;   // passes de la fusion
-  std::uint64_t halves = 0;    // passes de RIFE sur une demi-paire
-  std::uint64_t composed = 0;  // M composées à la taille de travail
+  std::uint64_t pairs = 0;            // passes du graphe « paire »
+  std::uint64_t last_pair_right = 0;  // numéro de B à la dernière passe, zéro tant qu'elle est en avance
+  std::uint64_t fusions = 0;          // passes de la fusion
+  std::uint64_t halves = 0;           // passes de RIFE sur une demi-paire
+  std::uint64_t composed = 0;         // M composées à la taille de travail
   // Le mélange sans le temps de GMFSS (upscale_late.cpp, plan_gaps) : la paire forte dont le premier instant
   // serait passé reste à RIFE, en quelques ms, au lieu de figer l'image derrière une paire GMFSS de 50 ms.
   bool behind = false;
@@ -125,6 +138,8 @@ struct GmfssBuffers {
   std::uint64_t fusions_seen = 0;
   bool ahead_cool = false;
   std::uint64_t ahead_wasted = 0;
+  std::uint64_t ahead_adopted_all_late = 0;  // avance reprise, puis tous les intermédiaires en retard
+  std::uint64_t ahead_declined_expired = 0;  // avance évitée, source droite déjà derrière l'horloge
   // Passes à l'arrivée (GMFSS seul, upscale_early.cpp) : la fusion de chaque instant de la paire, enfilée dès
   // outputs() dans son tampon (1 × 3 × ph × pw) au lieu d'une au slot, recadrée au slot. early_t[k] < 0 :
   // rien d'enfilé pour la sortie k.

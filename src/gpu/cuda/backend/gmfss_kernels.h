@@ -21,6 +21,10 @@ struct SoftSplatParams {
   void* out = nullptr;    // 1 × channels × height × width, FP16 (un plan de plus avec coverage)
   int pairs = 0;          // rempli par launch_soft_splat_all : normalisation en half2
   int coverage = 0;       // 1 : le plan channels de out reçoit la couverture
+  int weight_planes = 0;  // 0 : les poids suivent channels plans ; sinon après weight_planes
+  bool reuse_weights = false;  // le premier lot du même travail les a déjà accumulés
+  int out_pitch = 0;  // 0 : plans ; > 0 : HWC ; < 0 : groupes C8, out pointe le début du côté
+  int out_first = 0;  // C8 : canal de la première somme de cette étape dans le côté
 };
 
 inline constexpr int kMaxSplatJobs = 8;

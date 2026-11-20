@@ -65,6 +65,8 @@ struct Params {
   // Tuiles qui bougent (kernels/spec/span_tiles.h) : un bit par tuile kTH × kTW de la grille du lancement,
   // ligne par ligne ; un bloc dont le bit est nul sort sans rien lire ni écrire. Nul : toutes les tuiles.
   // Seulement sur l'image entière (y0 = 0, y1 = 0) : la grille d'une bande n'est pas celle des tuiles.
+  int input_row_mask[4] = {-1, -1, -1, -1};  // tampons pleins : -1
+  int output_row_mask = -1, skip_row_mask = -1;
   const std::uint32_t* mask = nullptr;
 };
 
@@ -205,18 +207,19 @@ __device__ __forceinline__ float tanh_approx(float x) {
   return y;
 }
 
-// La tuile NHWC de src en mémoire partagée, rangée selon Tile : (kTH + 2h) × (kTW + 2h) pixels dont
+// La tuile NHWC de src en mémoire partagée, rangée selon Tile : (Height + 2h) × (kTW + 2h) pixels dont
 // l'origine est (ty0 - h, tx0 - h) ; zéros hors de l'image.
-template <int Cin, int Halo, bool Shared = false>
+template <int Cin, int Halo, bool Shared = false, int Height = kTH, bool Rolling = false>
 __device__ __forceinline__ void load_nhwc(__half* s, const __half* src, int ld, int fh, int fw, int ty0,
-                                          int tx0) {
-  constexpr int kChunks = Cin / 8, kSW = kTW + 2 * Halo, kPix = (kTH + 2 * Halo) * kSW;
+                                          int tx0, int row_mask = -1) {
+  constexpr int kChunks = Cin / 8, kSW = kTW + 2 * Halo, kPix = (Height + 2 * Halo) * kSW;
   const std::uint32_t base = smem_u32(s);
   for (int i = static_cast<int>(threadIdx.x); i < kPix * kChunks; i += kThreads) {
     const int p = i / kChunks, c = i - p * kChunks;
     const int y = ty0 - Halo + p / kSW, x = tx0 - Halo + p % kSW;
     const bool ok = y >= 0 && y < fh && x >= 0 && x < fw;
-    const __half* from = ok ? src + (static_cast<long>(y) * fw + x) * ld + c * 8 : src;
+    const int row = Rolling ? y & row_mask : y;
+    const __half* from = ok ? src + (static_cast<long>(row) * fw + x) * ld + c * 8 : src;
     cp_async16(base + static_cast<std::uint32_t>(Tile<Cin, Shared>::at(p, c)), from, ok);
   }
 }
@@ -288,15 +291,16 @@ __device__ __forceinline__ void accumulate(Frag<A> (&acc)[kMF][Cout / 8], const 
 
 // La sortie NHWC (Cout canaux) de la tuile, depuis la mémoire partagée au pas Cout + 8, en lignes entières.
 // Et, si p.out8, la même en E4M3 à l'échelle p.inv_s8.
-template <int Cout>
+template <int Cout, int Rows = kTH, bool Rolling = false>
 __device__ __forceinline__ void store_nhwc(const __half* o, const Params& p, int ty0, int tx0) {
   constexpr int kChunks = Cout / 8, kLdo = Cout + 8;
   const int ld = p.out_ld != 0 ? p.out_ld : Cout, ye = row_end(p);
-  for (int i = static_cast<int>(threadIdx.x); i < kTH * kTW * kChunks; i += kThreads) {
+  for (int i = static_cast<int>(threadIdx.x); i < Rows * kTW * kChunks; i += kThreads) {
     const int q = i / kChunks, c = i - q * kChunks;
     const int y = ty0 + q / kTW, x = tx0 + q % kTW;
     if (y < p.y0 || y >= ye || x >= p.fw) continue;  // y0 : wino_kernel commence à la ligne paire d'avant
-    const long pixel = static_cast<long>(y) * p.fw + x;
+    const int row = Rolling ? y & p.output_row_mask : y;
+    const long pixel = static_cast<long>(row) * p.fw + x;
     const uint4 v = *reinterpret_cast<const uint4*>(o + q * kLdo + c * 8);
     if (p.out != nullptr) *reinterpret_cast<uint4*>(p.out + pixel * ld + c * 8) = v;
     if (p.out8 != nullptr) {
@@ -356,7 +360,7 @@ __device__ __forceinline__ void store_pixel(const __half* o, const Params& p, in
 // opérande A (deux tuiles n8 voisines de l'accumulateur font un fragment m16k16) ; o reçoit la sortie.
 // w1s : la 1×1 rangée, en mémoire partagée (lue par lds128 : en __ldg, ptxas sortait ses 64 registres de la
 // boucle des fragments, et la variante f32 débordait).
-template <int C, Acc A>
+template <int C, Acc A, bool CacheV = false>
 __device__ __forceinline__ void gate(const Frag<A> (&acc)[kMF][C / 8], __half* o, std::uint32_t w1s,
                                      const Params& p, int warp, int lane, bool& hit) {
   constexpr int kKC = C / 16, kNP = C / 16, kLdo = C + 8;
@@ -371,6 +375,7 @@ __device__ __forceinline__ void gate(const Frag<A> (&acc)[kMF][C / 8], __half* o
       return make_float2(s.x + b.x, s.y + b.y);
     };
     std::uint32_t a[kKC][4];
+    float2 cached[C / 8][2];
 #pragma unroll
     for (int kc = 0; kc < kKC; ++kc) {
 #pragma unroll
@@ -379,6 +384,7 @@ __device__ __forceinline__ void gate(const Frag<A> (&acc)[kMF][C / 8], __half* o
         for (int h = 0; h < 2; ++h) {
           const float2 v = value(2 * kc + j, h);
           a[kc][2 * j + h] = pack_half2(v.x, v.y);
+          if constexpr (CacheV) cached[2 * kc + j][h] = v;
         }
     }
     const int q0 = (warp * kRows + (f >> 1)) * kTW + 16 * (f & 1) + g;
@@ -401,7 +407,7 @@ __device__ __forceinline__ void gate(const Frag<A> (&acc)[kMF][C / 8], __half* o
         for (int h = 0; h < 2; ++h) {
           __half2* at = reinterpret_cast<__half2*>(o + (q0 + 8 * h) * kLdo + ch);
           const float2 x = __half22float2(*at);
-          const float2 dd = sums(d[j], h, hit), v = value(nt, h);
+          const float2 dd = sums(d[j], h, hit), v = CacheV ? cached[nt][h] : value(nt, h);
           *at = to_half2((v.x + x.x) * tanh_approx(dd.x + b1.x), (v.y + x.y) * tanh_approx(dd.y + b1.y));
         }
       }

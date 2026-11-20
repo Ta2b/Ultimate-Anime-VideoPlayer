@@ -8,6 +8,7 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
 
+#include "app/play/chain.h"
 #include "core/charconv.h"
 #include "core/log.h"
 #include "export/encoder_choice.h"
@@ -123,9 +124,10 @@ std::optional<ExportJob> scripted_export(std::string_view name, const PlaySettin
   if (lossless) job.codec = exporter::Codec::Lossless;
   const ExportSize size = export_size(chain_output(job.chain, video.width, video.height),
                                       {.width = video.width, .height = video.height}, job.height);
+  const Factor factor = export_factor(job.chain, fps_of(video.frame_rate));
   job.output = name.size() > key.size() + 1
                    ? prepare::path_from_utf8(name.substr(key.size() + 1))
-                   : default_export_path(source, size, export_rate(video.frame_rate, factor_of(job.chain)));
+                   : default_export_path(source, size, export_rate(video.frame_rate, factor));
   log_channel("app")->info("--keys : export vers {}", prepare::utf8_path(job.output.filename()));
   return job;
 }

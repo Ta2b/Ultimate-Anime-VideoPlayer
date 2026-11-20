@@ -1,11 +1,14 @@
 // GMFSS Fortuna Union dans l'étage gpu (upscale_gmfss.cpp) : le mélange (M au milieu des paires fortes, RIFE
 // sur les demi-paires) et GMFSS seul, sur le backend factice.
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -144,6 +147,124 @@ TEST_CASE("Étage gpu : GMFSS seul, la fusion à chaque instant, la paire une fo
   REQUIRE(splats.size() == 6);
   for (std::size_t i = 0; i < splats.size(); ++i)
     CHECK(splats[i] == (i % 2 == 0 ? 1.0F / 3.0F : 2.0F / 3.0F));
+}
+
+TEST_CASE("Étage gpu : GMFSS seul n'anticipe pas derrière l'horloge et reprend à la demande",
+          "[app][stage][gmfss]") {
+  const bool relock = GENERATE(false, true);
+  Rig rig;
+  GmfssEngines gmfss;
+  struct ClockOnFusion final : MasterClock {
+    ClockOnFusion(const test::FakeBackend& gpu, bool relocks) : backend(gpu), relock(relocks) {}
+    const test::FakeBackend& backend;
+    bool relock;
+    mutable bool advanced = false;
+    ClockSnapshot snapshot() const override {
+      const bool expired =
+          backend.count("engine gmfss_fusion") >= 2 && (!relock || !std::exchange(advanced, true));
+      return {.media_us = expired ? 5 * kPeriodUs : 0,
+              .host_us = host_now_us(),
+              .rate = 1.0,
+              .epoch = 0,
+              .valid = true};
+    }
+  } clock{rig.backend, relock};
+  UpscaleSetup s = rig.setup(true, Factor{.num = 2, .den = 1}, 1);
+  s.rife = nullptr;
+  s.clock = &clock;
+  s.gmfss = gmfss.setup(GmfssUse::Only);
+  rig.start(std::move(s), &clock);
+  rig.feed(1, 1);
+  REQUIRE(rig.collect(1, false));  // Le slot retenu garantit que la 4 attend déjà derrière la 3.
+  rig.feed(2, 2);
+  REQUIRE(logged(rig, "engine gmfss_fusion"));
+  rig.feed(3, 4);
+  rig.release_all();
+  REQUIRE(rig.collect(relock ? 7 : 6));
+  rig.stage.reset();
+
+  const std::vector<std::string> expected =
+      relock ? std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "3-4", "4"}
+             : std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "4"};
+  CHECK(shape_of(rig.sink.frames()) == expected);
+  CHECK(rig.backend.count("engine gmfss_pair") == (relock ? 3 : 2));
+  CHECK(rig.backend.count("engine gmfss_fusion") == (relock ? 3 : 2));
+  CHECK(rig.reported().empty());
+}
+
+TEST_CASE("Étage gpu : GMFSS seul en Instantané attend le verdict avant de lancer la fusion",
+          "[app][stage][gmfss][free]") {
+  using namespace std::chrono_literals;
+  const bool expires = GENERATE(false, true);
+  Rig rig;
+  HeldClock clock;
+  GmfssEngines gmfss;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 2, .den = 1}, 1);
+  s.rife = nullptr;
+  s.clock = &clock;
+  s.late_fate = true;
+  s.gmfss = gmfss.setup(GmfssUse::Only);
+  rig.live->set_free(true, kPeriodUs / 2, host_now_us());
+  rig.start(std::move(s), &clock);
+  rig.feed(1, 1);
+  REQUIRE(rig.collect(1, false));
+  rig.feed(2, 2);
+  REQUIRE(logged(rig, "scores_now 1 2"));
+  if (expires) clock.hold(10 * kPeriodUs);
+  rig.release_all();
+  if (!expires) REQUIRE(rig.collect(3));
+  const auto deadline = std::chrono::steady_clock::now() + 2s;
+  while (!rig.stage->idle() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(1ms);
+  REQUIRE(rig.stage->idle());
+  rig.stage.reset();
+
+  const std::vector<std::string> expected =
+      expires ? std::vector<std::string>{"1"} : std::vector<std::string>{"1", "1-2", "2"};
+  CHECK(shape_of(rig.sink.frames()) == expected);
+  CHECK(rig.backend.count("engine gmfss_pair") == (expires ? 0 : 1));
+  CHECK(rig.backend.count("engine gmfss_fusion") == (expires ? 0 : 1));
+  CHECK(rig.reported().empty());
+}
+
+TEST_CASE("Étage gpu : GMFSS reprend les trois banques de B sans recopier leurs caractéristiques",
+          "[app][stage][gmfss]") {
+  const bool seek = GENERATE(false, true);
+  Rig rig;
+  GmfssEngines gmfss;
+  gmfss.pair.offer_gmfss_reuse();
+  UpscaleSetup s = rig.setup(true, Factor{.num = 2, .den = 1});
+  s.rife = nullptr;
+  s.gmfss = gmfss.setup(GmfssUse::Only);
+  rig.start(std::move(s));
+  rig.feed(1, 5);
+  REQUIRE(rig.collect(9));
+  if (seek) {
+    REQUIRE(rig.stage->post(Flush{.epoch = 1}));
+    rig.feed(1, 3, 1);
+    REQUIRE(rig.collect(14));
+  }
+  rig.stage.reset();
+  CHECK(rig.reported().empty());
+
+  for (int level = 1; level <= 3; ++level) {
+    const char* prefix = level == 1 ? "feature" : "source";
+    const auto a = rig.backend.targets(std::format("paire GMFSS {}0_{}", prefix, level));
+    const auto b = rig.backend.targets(std::format("paire GMFSS {}1_{}", prefix, level));
+    REQUIRE(a.size() == (seek ? 6 : 4));
+    REQUIRE(a.size() == b.size());
+    CHECK(rig.backend.targets(std::format("splat GMFSS source {}", level)) == a);
+    CHECK(rig.backend.targets(std::format("splat GMFSS source {}", 4 + level)) == b);
+    for (std::size_t pair = 1; pair < a.size(); ++pair) {
+      if (seek && pair == 4) {
+        CHECK(a[pair] != b[pair - 1]);  // autre époque, même identifiant d'image
+        CHECK(a[pair] != a[pair - 1]);
+      } else {
+        CHECK(a[pair] == b[pair - 1]);
+      }
+      CHECK(b[pair] != a[pair - 1]);
+      CHECK(b[pair] != b[pair - 1]);
+    }
+  }
 }
 
 TEST_CASE("Étage gpu : GMFSS refusé sans ses graphes, ou seul à côté de RIFE", "[app][stage][gmfss]") {

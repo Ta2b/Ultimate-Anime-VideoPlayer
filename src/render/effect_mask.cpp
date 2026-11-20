@@ -98,15 +98,24 @@ void EffectMask::update(const EffectTiles& tiles) {
     return;
   }
   // Une autre grille (autre taille de travail) : on repart du neutre.
-  if (tiles.cols != cols_ || tiles.rows != rows_) {
+  const bool resized = tiles.cols != cols_ || tiles.rows != rows_;
+  if (resized) {
     cols_ = tiles.cols;
     rows_ = tiles.rows;
     level_.assign(count, 1.0F);
     sure_level_.assign(count, 0.0F);
   }
-  cover_x_ = std::max(tiles.cover_x, 1.0);
-  cover_y_ = std::max(tiles.cover_y, 1.0);
-  if (tiles.hold && !tiles.cut) return;  // rien à apprendre : le masque reste tel quel
+  const double cover_x = std::max(tiles.cover_x, 1.0);
+  const double cover_y = std::max(tiles.cover_y, 1.0);
+  const bool moved = cover_x != cover_x_ || cover_y != cover_y_;
+  cover_x_ = cover_x;
+  cover_y_ = cover_y;
+  if (tiles.hold && !tiles.cut) {
+    // Une tenue ne change pas les niveaux. Une nouvelle grille n'a pas d'historique à afficher.
+    if (resized) publish();
+    else if (moved) ++serial_;
+    return;
+  }
   const float rise = effect_step(tiles.span_us, kEffectRiseUs);
   const float fall = effect_step(tiles.span_us, kEffectFallUs);
   for (int row = 0; row < rows_; ++row) {

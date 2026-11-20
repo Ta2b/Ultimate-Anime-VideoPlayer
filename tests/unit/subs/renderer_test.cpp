@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <variant>
 #include <vector>
@@ -161,6 +162,16 @@ TEST_CASE("Rendu : le décalage lit l'instant pts − délai (P3.72)", "[render]
   const SubtitleFrame& frame = std::get<SubtitleFrame>(*outcome);
   CHECK(frame.pts_us == 6'000'000);
   CHECK_FALSE(frame.rects.empty());
+}
+
+TEST_CASE("Rendu : un délai extrême est refusé avant le calcul de l'instant", "[render]") {
+  Bench bench(kirari::subs::test::reference_script());
+  const RenderRequest request{.pts_us = 500'000,
+                              .delay_us = std::numeric_limits<std::int64_t>::min(),
+                              .target = {.width = kScriptWidth, .height = kScriptHeight}};
+  const auto result = bench.renderer.render(bench.track, request, bench.pool);
+  REQUIRE_FALSE(result);
+  CHECK(result.error().code == RefusalCode::FieldOutOfRange);
 }
 
 TEST_CASE("Rendu : un contenu inchangé réutilise l'atlas sans nouveau téléversement", "[render]") {

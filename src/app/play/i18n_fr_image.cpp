@@ -36,6 +36,9 @@ constexpr std::array kImageTabs{
     Entry{"FPS limit", "Limite d'i/s"},
     Entry{"Here interpolation goes up to ×{} ({:.0f} fps limit).",
           "Ici, l'interpolation va jusqu'à ×{} (limite de {:.0f} i/s)."},
+    Entry{"GMFSS frame rate limit: {:.0f} fps.", "GMFSS est limité à {:.0f} i/s."},
+    Entry{"GMFSS could not load for this video. RIFE is running instead.",
+          "GMFSS n’a pas pu se charger pour cette vidéo. RIFE est utilisé à la place."},
     Entry{"Very low", "Très bas"},
     Entry{"Anime4K, shaders without a network: runs on any graphics card, even integrated. Quality impact:"
           " modest gain over plain scaling.",
@@ -80,7 +83,7 @@ constexpr std::array kImageTabs{
     Entry{"Auto", "Auto"},
     Entry{"DistilDRBA model not found in {} ({}); RIFE is used instead.",
           "Modèle DistilDRBA introuvable dans {} ({}) ; RIFE prend la place."},
-    Entry{"Double the frames (NVIDIA driver)", "Doubler les images (pilote NVIDIA)"},
+    Entry{"Frame generation (NVIDIA driver)", "Génération d’images (pilote NVIDIA)"},
     Entry{"Downscaler", "Réduction"},
     Entry{"Export skips no frames: each created frame costs a pass.",
           "L'export ne saute aucune image : chaque image créée coûte une passe."},
@@ -90,23 +93,17 @@ constexpr std::array kImageTabs{
     Entry{"Steady slow pans", "Panoramiques lents stables"},
     Entry{
         "On slow pans, the motion of the whole picture, measured to a hundredth of a pixel, replaces small "
-        "uneven motion: backgrounds stop rippling and juddering. Speed: no noticeable loss. Quality impact: "
-        "clear gain on slow pans. Recommended: on. RIFE and DistilDRBA.",
+        "uneven motion. Available for DistilDRBA Motion and for RIFE frames that use the regular warp. "
+        "RIFE frames using Keep poses keep their own warp.",
         "Sur les panoramiques lents, le mouvement de l'image entière, mesuré au centième de pixel, remplace "
-        "les petits mouvements irréguliers : les décors n'ondulent plus et ne saccadent plus. Vitesse : pas "
-        "de perte sensible. Effet sur la qualité : gain net sur les panoramiques lents. Conseillé : activé. "
-        "RIFE et DistilDRBA."},
+        "les petits mouvements irréguliers. Disponible avec DistilDRBA Mouvement et avec le warp standard "
+        "de RIFE. Les images qui utilisent Garder les poses gardent leur propre warp."},
     Entry{"Estimate motion at 720p", "Estimer le mouvement en 720p"},
-    Entry{
-        "Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, but slow "
-        "pans can ripple instead of moving in even steps. Speed: "
-        "about 15 % more frames in Auto (RIFE pass about 2× faster). Quality impact: moderate loss on slow "
-        "pans. Recommended: off. RIFE only.",
-        "Au-delà de 720p de résolution de travail, RIFE mesure le mouvement sur une copie 720p plus "
-        "légère. Plus rapide, mais les panoramiques lents peuvent onduler au lieu d'avancer à pas réguliers. "
-        "Vitesse : environ 15 % d'images en plus en Auto (passe RIFE "
-        "environ 2× plus rapide). Impact sur la qualité : perte modérée sur "
-        "les panoramiques lents. Recommandé : désactivé. RIFE seulement."},
+    Entry{"RIFE and the DistilDRBA Motion variant can estimate motion on a 720p copy. This saves GPU time "
+          "above 720p, with less precise fine motion. The warp keeps the working image size.",
+          "RIFE et la variante DistilDRBA Mouvement peuvent estimer le mouvement sur une copie 720p. "
+          "Au-delà de 720p, cela économise du temps GPU au prix d'un mouvement fin moins précis. "
+          "Le warp conserve la résolution de travail."},
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
     Entry{"Fewer RIFE passes on fast motion", "Moins de passes RIFE sur les mouvements rapides"},
     Entry{"Long pans are made faster by reusing the middle in-between frame for its neighbors, which are "
@@ -116,13 +113,11 @@ constexpr std::array kImageTabs{
           "voisines, alors un peu moins justes. Un essai. Vitesse : jusqu'à +30 % sur les longs "
           "panoramiques. Impact sur la qualité : perte mineure. Recommandé : désactivé. RIFE avec Garder les "
           "poses seulement."},
-    Entry{"Fast action is made faster by estimating motion at half size; fast motion can look less precise. "
-          "A trial, for cards at their limit. Speed: up to +50 % on fast motion. Quality impact: moderate "
-          "loss. Recommended: off. RIFE only.",
-          "Les scènes d'action vont plus vite en estimant le mouvement à demi-taille ; les mouvements "
-          "rapides peuvent paraître moins précis. Un essai, pour les cartes à leur limite. Vitesse : jusqu'à "
-          "+50 % sur les mouvements rapides. Impact sur la qualité : perte modérée. Recommandé : désactivé. "
-          "RIFE seulement."},
+    Entry{"On fast pairs, some RIFE passes estimate motion at half size. This saves time at the cost of less "
+          "precise motion. It does not speed up calm pairs. Recommended: off.",
+          "Sur les paires rapides, certaines passes RIFE estiment le mouvement à demi-taille. Cela économise "
+          "du temps avec un mouvement moins précis. Les paires calmes gardent leur coût. Recommandé : "
+          "désactivé."},
     Entry{"System (macOS)", "Système (macOS)"},
     Entry{
         "Keeps the rhythm of the animation: characters drawn on twos hold their poses while the background "
@@ -144,11 +139,10 @@ constexpr std::array kImageTabs{
           "mieux "
           "les panoramiques et les rotations rapides. Plus lourd que RIFE. NVIDIA RTX (TensorRT) seulement ; "
           "un essai."},
-    Entry{
-        "GMFSS union for every frame: the steadiest on fast pans and rotations, and the heaviest. NVIDIA "
-        "RTX (TensorRT) only; a trial.",
-        "GMFSS union pour chaque image : le plus stable sur les panoramiques et les rotations rapides, et le "
-        "plus lourd. NVIDIA RTX (TensorRT) seulement ; un essai."},
+    Entry{"Prioritizes GMFSS keys on every moving pair, with RIFE when time is short. The GMFSS options "
+          "also offer a mode without RIFE. NVIDIA RTX (TensorRT) only.",
+          "Privilégie une clé GMFSS sur chaque paire en mouvement et utilise RIFE quand le temps manque. "
+          "Les options GMFSS proposent aussi un mode sans RIFE. NVIDIA RTX (TensorRT) seulement."},
     Entry{
         "Adds frames between the video's own frames for smoother motion, as many as the display and the "
         "graphics card allow. DistilDRBA v2 lite keeps the rhythm of the animation; RIFE 4.22 lite is the "
@@ -165,14 +159,12 @@ constexpr std::array kImageTabs{
     Entry{" + GMFSS union on every pair", " + GMFSS union sur chaque paire"},
     Entry{"GMFSS (pair)", "GMFSS (paire)"},
     Entry{"GMFSS (fusion)", "GMFSS (fusion)"},
-    Entry{"Greyed out: above the display ({:.0f} Hz for {:.3f} fps).",
-          "Grisé : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s)."},
-    Entry{"Greyed out: the NVIDIA driver is older than 580.82.07, update it.",
-          "Grisé : le pilote NVIDIA est antérieur à 580.82.07, mettez-le à jour."},
+    Entry{"Update the NVIDIA driver to use Smooth Motion on this GPU.",
+          "Mettez à jour le pilote NVIDIA pour utiliser Smooth Motion sur cette carte."},
     Entry{"Greyed out: this graphics card is not an RTX 40 or 50.",
           "Grisé : cette carte graphique n'est pas une RTX 40 ou 50."},
-    Entry{"Greyed out: turn on RIFE at ×2 or more, or playback stalls.",
-          "Grisé : activez RIFE à ×2 ou plus, sans quoi la lecture cale."},
+    Entry{"Smooth Motion needs RIFE at ×2 or more in Kirari.",
+          "Dans Kirari, Smooth Motion demande RIFE à ×2 ou plus."},
     Entry{"Keep poses (DRBA) with RIFE", "Garder les poses (DRBA) avec RIFE"},
     Entry{"Multiplier", "Multiplicateur"},
     Entry{"No interpolation model found: put a RIFE model in the models folder.",
@@ -214,25 +206,20 @@ constexpr std::array kImageTabs{
     Entry{"Resolution", "Résolution"},
     Entry{"SPAN precision", "Précision de SPAN"},
     Entry{"Smooth held drawings", "Lisser les dessins tenus"},
-    Entry{"A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. Speed: no "
-          "loss. Quality impact: changes the look of the animation (a matter of taste). Recommended: off. "
-          "RIFE only; replaces Keep poses.",
-          "Un dessin tenu 2 à 6 images glisse vers le suivant au lieu de se figer, puis de sauter. Vitesse : "
-          "aucune perte. Impact sur la qualité : change le rendu de l'animation (affaire de goût). "
-          "Recommandé : désactivé. RIFE seulement ; remplace Garder les poses."},
+    Entry{"RIFE can make a drawing held for 2 to 6 frames glide into the next one. This changes the timing "
+          "of the animation and needs more frames read ahead. It replaces Keep poses.",
+          "RIFE peut faire glisser un dessin tenu de 2 à 6 images vers le dessin suivant. Cela change "
+          "le rythme de l'animation et demande de lire plus d'images en avance. Remplace Garder les poses."},
     Entry{"Smooth Motion (NVIDIA driver)", "Smooth Motion (pilote NVIDIA)"},
     Entry{"Source (no downscale)", "Source (sans réduction)"},
     Entry{"Source, no downscale ({})", "Source, sans réduction ({})"},
     Entry{"Stable", "Stable"},
-    Entry{"Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made for the "
-          "exact moment it is shown, for more frames and smoother motion; it can stutter slightly at the "
-          "card's limit. Speed: Instant about +50 to +85 % frames. Quality impact: minor (Instant can "
-          "stutter slightly at the card's limit). Recommended: Instant.",
-          "Stable : des paliers fixes (×1 à ×8), le mouvement le plus régulier. Instantané : chaque image "
-          "est faite pour l'instant exact où elle s'affiche, pour plus d'images et un mouvement plus fluide "
-          "; il peut saccader un peu à la limite de la carte. Vitesse : Instantané environ +50 à +85 % "
-          "d'images. Impact sur la qualité : mineur (Instantané peut saccader un peu à la limite de la "
-          "carte). Recommandé : Instantané."},
+    Entry{"Fixed ({})", "Fixe ({})"},
+    Entry{"Stable chooses a sustainable cadence from fixed steps. Instant renders at the intended "
+          "presentation times and may repeat a frame when the GPU falls behind. Recommended: Instant.",
+          "Stable choisit une cadence que la carte peut tenir parmi plusieurs paliers. Instantané calcule "
+          "chaque image pour son instant de présentation et peut répéter une image si la carte prend du "
+          "retard. Instantané est le mode recommandé."},
     Entry{"VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync).",
           "VRR coupé par le système : activez la synchronisation adaptative (KDE : Affichage > "
           "Synchronisation adaptative)."},

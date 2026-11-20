@@ -10,6 +10,7 @@
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/fused_graphs.h"
+#include "gpu/cuda/backend/gmflow_pair_flow_net.h"
 
 namespace kirari::gpu::cuda {
 namespace {
@@ -66,13 +67,14 @@ GmfssPairEngine::~GmfssPairEngine() {
 
 std::expected<std::unique_ptr<GmfssPairEngine>, Refusal> GmfssPairEngine::load(
     nvinfer1::IRuntime& runtime, const std::filesystem::path& cache_dir, const GmfssFusedKey& key,
-    const prepare::GmfssPairCut& cut, const std::shared_ptr<SharedActivations>& shared) {
+    const prepare::GmfssPairCut& cut, const std::shared_ptr<SharedActivations>& shared, bool feature_reuse) {
   if (key.engines.size() != 2) return refuse(RefusalCode::GraphInvalid, "GMFSS natif : clé invalide");
   std::unique_ptr<GmfssPairEngine> engine(new GmfssPairEngine());
   const int h = key.height;
   const int w = key.width;
   engine->height_ = h;
   engine->width_ = w;
+  engine->feature_reuse_ = feature_reuse;
   auto full = TrtEngine::load(runtime, cache_dir / core::path_from_utf8(key.engines[0]), shared);
   if (!full) return std::unexpected(std::move(full.error()));
   auto flow = TrtEngine::load(runtime, cache_dir / core::path_from_utf8(key.engines[1]), shared);
@@ -119,23 +121,47 @@ std::expected<std::unique_ptr<GmfssPairEngine>, Refusal> GmfssPairEngine::load(
   return engine;
 }
 
+std::span<const Tensor> GmfssPairEngine::take_right_features() {
+  if (!std::exchange(reuse_next_, false) || right_features_.front().handle == 0) return {};
+  return right_features_;
+}
+
+bool GmfssPairEngine::feature_already_bound(std::size_t output, const Tensor& tensor,
+                                            std::span<const Tensor> reuse) const {
+  for (std::size_t level = 0; level < reuse.size(); ++level) {
+    if (output != at_[kFeature0 + level]) continue;
+    const Tensor& from = reuse[level];
+    return from.handle == tensor.handle && from.offset == tensor.offset && from.shape == tensor.shape &&
+           from.type == tensor.type;
+  }
+  return false;
+}
+
 std::expected<void, Refusal> GmfssPairEngine::enqueue(cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& shared,
                                                       std::span<const Tensor> inputs,
-                                                      std::span<const Tensor> outputs) {
+                                                      std::span<const Tensor> outputs,
+                                                      std::span<const Tensor> reuse) {
   if (inputs.size() != 1 || outputs.size() != kOutputs)
     return refuse(RefusalCode::ShapeInvalid, "GMFSS natif : une entrée et quatorze sorties attendues");
   if (!native_on_) {
     KIRARI_TRACE("gmfss.paire.tensorrt");
     return full_->enqueue(stream, shared, inputs, outputs);
   }
-  return enqueue_native(stream, shared, inputs[0], outputs);
+  auto result = enqueue_native(stream, shared, inputs[0], outputs, gmflow_.get(), reuse);
+  if (feature_reuse_) {
+    right_features_ = {};
+    if (result) {
+      for (std::size_t level = 0; level < right_features_.size(); ++level)
+        right_features_[level] = outputs[at_[kFeature1 + level]];
+    }
+  }
+  return result;
 }
 
-std::expected<void, Refusal> GmfssPairEngine::enqueue_native(cudaStream_t stream,
-                                                             const std::shared_ptr<SharedActivations>& shared,
-                                                             const Tensor& frames,
-                                                             std::span<const Tensor> outputs) {
+std::expected<void, Refusal> GmfssPairEngine::enqueue_native(
+    cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& frames,
+    std::span<const Tensor> outputs, const GmflowPairFlowNet* gmflow, std::span<const Tensor> reuse) {
   // Les noyaux lisent et écrivent les plans sans autre garde : chaque tenseur à la forme de la paire entière.
   const auto matches = [](const Tensor& t, const Shape& shape) {
     return t.type == TensorType::F16 && t.shape == shape && t.handle != 0;
@@ -143,7 +169,27 @@ std::expected<void, Refusal> GmfssPairEngine::enqueue_native(cudaStream_t stream
   bool good = matches(frames, full_->input_shape(0));
   for (std::size_t i = 0; i < outputs.size(); ++i) good = good && matches(outputs[i], full_->output_shape(i));
   if (!good) return refuse(RefusalCode::ShapeInvalid, "GMFSS natif : forme d'entrée ou de sortie");
+  if (auto ok = enqueue_flow(stream, shared, frames, outputs, gmflow, !reuse.empty()); !ok) return ok;
+  {
+    KIRARI_TRACE("gmfss.paire.featurenet");
+    if (auto ok = enqueue_piece(stream, GmfssPairNativeNet::kFeatureNet, frames, outputs, reuse); !ok)
+      return ok;
+  }
+  KIRARI_TRACE("gmfss.paire.metricnet");
+  return enqueue_piece(stream, GmfssPairNativeNet::kMetricNet, frames, outputs);
+}
+
+std::expected<void, Refusal> GmfssPairEngine::enqueue_flow(
+    cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& frames,
+    std::span<const Tensor> outputs, const GmflowPairFlowNet* gmflow, bool follows) const {
+  KIRARI_TRACE("gmfss.paire.gmflow");
   const auto out = [&](std::size_t o) -> const Tensor& { return outputs[at_[o]]; };
+  if (gmflow != nullptr) {
+    GmflowPairOutput views{
+        .half = {fused_address(out(kHalf0)), fused_address(out(kHalf1))}, .flow = {}, .metric = metric_in_};
+    for (std::size_t i = 0; i < views.flow.size(); ++i) views.flow[i] = fused_address(out(kMotion + i));
+    return cuda_check(gmflow->run(stream, fused_address(frames), views, follows), "GMFlow natif");
+  }
   // Le flot écrit l'entrée du MetricNet, les deux premiers plans de chaque mouvement, half0 et half1.
   std::array<Tensor, kFlowOutputs> flow_out;
   flow_out[flow_at_[0]] = fused_tensor(reinterpret_cast<std::uintptr_t>(metric_in_), 0,
@@ -158,23 +204,13 @@ std::expected<void, Refusal> GmfssPairEngine::enqueue_native(cudaStream_t stream
   }
   flow_out[flow_at_[kFlowOutputs - 2]] = out(kHalf0);
   flow_out[flow_at_[kFlowOutputs - 1]] = out(kHalf1);
-  // Les plages de Nsight Systems entourent l'envoi de chaque morceau (docs/gmfss-natif.md).
-  const Tensor flow_in[]{frames};
-  {
-    KIRARI_TRACE("gmfss.paire.gmflow");
-    if (auto ok = flow_->enqueue(stream, shared, flow_in, flow_out); !ok) return ok;
-  }
-  {
-    KIRARI_TRACE("gmfss.paire.featurenet");
-    if (auto ok = enqueue_piece(stream, GmfssPairNativeNet::kFeatureNet, frames, outputs); !ok) return ok;
-  }
-  KIRARI_TRACE("gmfss.paire.metricnet");
-  return enqueue_piece(stream, GmfssPairNativeNet::kMetricNet, frames, outputs);
+  return flow_->enqueue(stream, shared, std::span(&frames, 1), flow_out);
 }
 
 std::expected<void, Refusal> GmfssPairEngine::enqueue_piece(cudaStream_t stream, int piece,
                                                             const Tensor& frames,
-                                                            std::span<const Tensor> outputs) const {
+                                                            std::span<const Tensor> outputs,
+                                                            std::span<const Tensor> reuse) const {
   const auto out = [&](std::size_t o) -> const Tensor& { return outputs[at_[o]]; };
   if (piece == GmfssPairNativeNet::kMetricNet) {
     // Le MetricNet, qui écrit le troisième plan des mouvements.
@@ -186,7 +222,22 @@ std::expected<void, Refusal> GmfssPairEngine::enqueue_piece(cudaStream_t stream,
   const auto* images = static_cast<const std::uint8_t*>(fused_address(frames));
   const auto image_bytes = static_cast<std::size_t>(kImagePlanes) * 4U * static_cast<std::size_t>(height_) *
                            static_cast<std::size_t>(width_) * 2U;
-  for (std::size_t side = 0; side < 2; ++side) {
+  if (!reuse.empty()) {
+    KIRARI_TRACE("gmfss.paire.featurenet.reprise");
+    for (std::size_t level = 0; level < reuse.size(); ++level) {
+      if (feature_already_bound(at_[kFeature0 + level], out(kFeature0 + level), reuse)) continue;
+      const auto channels = static_cast<std::size_t>(kFeaturePlanes[level]);
+      const auto size = channels * static_cast<std::size_t>(height_ >> level) *
+                        static_cast<std::size_t>(width_ >> level) * sizeof(std::uint16_t);
+      if (auto ok =
+              cuda_check(cudaMemcpyAsync(fused_address(out(kFeature0 + level)), fused_address(reuse[level]),
+                                         size, cudaMemcpyDeviceToDevice, stream),
+                         "GMFSS natif : caractéristiques de la paire précédente");
+          !ok)
+        return ok;
+    }
+  }
+  for (std::size_t side = reuse.empty() ? 0 : 1; side < 2; ++side) {
     GmfssPairFeatures levels;
     for (std::size_t j = 0; j < levels.levels.size(); ++j)
       levels.levels[j] = fused_address(out(kFeature0 + 3 * side + j));

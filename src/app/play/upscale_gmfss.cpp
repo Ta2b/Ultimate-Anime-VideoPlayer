@@ -16,11 +16,13 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <format>
 #include <span>
 #include <string>
 #include <string_view>
 
+#include "app/play/frame_latency.h"
 #include "app/play/links.h"
 #include "app/play/upscale_stage.h"
 #include "core/log.h"
@@ -161,6 +163,54 @@ void list_splats(GmfssBuffers& gmfss, std::uint32_t set) {
   }
 }
 
+void record_feature_views(GmfssBuffers& gmfss, std::span<const std::string> names) {
+  auto& views = gmfss.features;
+  for (std::size_t side = 0; side < 2; ++side) {
+    for (std::size_t level = 0; level < kernels::kGmfssLevels; ++level) {
+      const std::string name = std::format("{}{}_{}", level == 0 ? "feature" : "source", side, level + 1);
+      const auto found = std::ranges::find(names, name);
+      if (found == names.end()) return;
+      const auto index = static_cast<std::size_t>(found - names.begin());
+      views.outputs[side][level] = index;
+      for (std::size_t set = 0; set < 2; ++set)
+        views.banks[views.bound[set][side]][level] = gmfss.pair_outputs[set][index];
+    }
+  }
+  views.present = true;
+}
+
+void bind_feature_views(GmfssBuffers& gmfss, std::uint32_t set, bool reuse) {
+  auto& views = gmfss.features;
+  if (!views.present || (!views.moved && !reuse)) return;
+  views.moved = true;
+  const auto previous = views.bound[set ^ 1U];
+  std::array<std::size_t, 2> free{};
+  std::size_t count = 0;
+  // La paire précédente peut encore servir sur la voie d'interpolation. Sa B ne devient qu'une lecture
+  // de A. Les nouvelles sorties s'écrivent dans les deux banques que cette paire ne lit pas.
+  for (std::size_t bank = 0; bank < views.banks.size(); ++bank) {
+    if (bank != previous[0] && bank != previous[1]) free[count++] = bank;
+  }
+  views.bound[set] = {reuse ? previous[1] : free[0], free[1]};
+  for (std::size_t side = 0; side < 2; ++side) {
+    const auto& planes = views.banks[views.bound[set][side]];
+    for (std::size_t level = 0; level < planes.size(); ++level) {
+      gmfss.pair_outputs[set][views.outputs[side][level]] = planes[level];
+      // list_splats range l'image avant les trois niveaux de caractéristiques, pour chaque côté.
+      gmfss.splats[set][side * (planes.size() + 1) + level + 1].source = planes[level];
+    }
+  }
+}
+
+std::expected<void, Refusal> enqueue_pair(const UpscaleSetup& setup, GmfssBuffers& gmfss, std::uint32_t set,
+                                          std::uint64_t left) {
+  const bool reuse = setup.gmfss.pair->next_gmfss_pair(left != 0 && left == gmfss.last_pair_right);
+  bind_feature_views(gmfss, set, reuse);
+  const std::array inputs{gmfss.frames->tensor()};
+  return blame_stage(setup.backend->enqueue(*setup.gmfss.pair, inputs, gmfss.pair_outputs[set]),
+                     kMotionRefusalKey);
+}
+
 // Tri des paires de GMFSS seul (rife_triage.h) : une paire impossible ou un panoramique pur se fait par le
 // warp de la caméra (kernels/spec/motion_camera.h), sans la paire ni la fusion. Faux : la fusion tourne
 // (paire ordinaire, sans --pair-triage, ou backend sans motion_camera, dit une fois au journal).
@@ -221,6 +271,7 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
       return ok;
     list_splats(gmfss_, set);
   }
+  record_feature_views(gmfss_, setup.pair->output_names());
   if (setup.use == GmfssUse::Only) {
     if (!setup_.pair_triage) return {};
     // Le tri des paires : le mouvement de la caméra, à la taille de travail (celle de GMFSS seul).
@@ -364,12 +415,9 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_pair() {
   gmfss_.set ^= 1U;
   use_lane(gpu::Lane::Pair);
   auto ok = ops.gmfss_frames(rife_source(current_ ^ 1U), rife_source(current_), gmfss_.frames->tensor());
-  if (ok) {
-    const std::array inputs{gmfss_.frames->tensor()};
-    ok = blame_stage(setup_.backend->enqueue(*setup_.gmfss.pair, inputs, gmfss_.pair_outputs[gmfss_.set]),
-                     kMotionRefusalKey);
-  }
+  if (ok) ok = enqueue_pair(setup_, gmfss_, gmfss_.set, source_serial_[current_ ^ 1U]);
   use_lane(back);
+  gmfss_.last_pair_right = ok ? source_serial_[current_] : 0;
   if (!ok) return ok;
   gmfss_.pair_ready = true;
   ++gmfss_.pairs;
@@ -390,8 +438,44 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_ahead() {
   }
   gmfss_.fusions_seen = gmfss_.fusions;
   gmfss_.ahead_adopted = false;
+  if (gmfss_only() && late_fate_now_) return {};
   if (!gmfss_.pair_ready || gmfss_.ahead_queued || gmfss_.ahead_cool) return {};
   if ((!gmfss_only() && !gmfss_strong()) || smooth_first_ || smooth_second_ || !ahead_.id) return {};
+  if (gmfss_only() && setup_.clock != nullptr && !(setup_.live && setup_.live->free_active())) {
+    const DecodedFrame* after = next();
+    if (after != nullptr && ahead_.id == after->id && after->pts_us != kNoPts) {
+      const ClockSnapshot clock = setup_.clock->snapshot();
+      // Les intermédiaires de la grille fixe précèdent tous la source droite. Si elle est déjà passée,
+      // ne pas spéculer. À l'arrivée le calcul normal reste possible si l'horloge s'est recalée.
+      if (clock.valid && clock.epoch == after->epoch && clock.rate > 0.0) {
+        const auto host = host_now_us();
+        bool expired = after->pts_us < clock.media_at(host);
+        static const bool predict_deadline = [] {
+          const char* value = std::getenv("KIRARI_AB_GMFSS_AHEAD_DEADLINE");  // env: banc
+          return value != nullptr && std::string_view(value) == "1";
+        }();
+        if (!expired && predict_deadline && cadence_ && !(setup_.live && setup_.live->auto_active())) {
+          // Rejouer la grille à facteur fixe sans la modifier. La voie à la demande reste disponible
+          // si la lecture reprend de l'avance ou que la latence mesurée change.
+          auto projected = *cadence_;
+          const auto future = projected.push(core::stamp_of(*after));
+          if (future.event == core::GridEvent::Pair) {
+            const auto factor = projected.factor();
+            const auto period =
+                std::max<std::int64_t>(pts_gap_us(head_.pts_us, after->pts_us), 0) * factor.den / factor.num;
+            const auto ready = ready_media_us(clock, host, period, latency_us());
+            expired = std::ranges::none_of(future.instants(), [ready](const core::OutputInstant& at) {
+              return !at.is_source() && (!at.pts_us || *at.pts_us >= ready);
+            });
+          }
+        }
+        if (expired) {
+          ++gmfss_.ahead_declined_expired;
+          return {};
+        }
+      }
+    }
+  }
   // Le mélange sans le crédit d'une M à l'image d'après : la paire suivante ira à RIFE, rien à préparer.
   if (!gmfss_only() && gmfss_.credit_us + gmfss_.credit_step_us < setup_.gmfss.cost_us) return {};
   gpu::KernelOps& ops = *setup_.backend->kernels();
@@ -400,12 +484,9 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_ahead() {
   const gpu::Lane back = lane_;
   use_lane(gpu::Lane::Pair);
   auto ok = ops.gmfss_frames(rife_source(current_), next, gmfss_.frames->tensor());
-  if (ok) {
-    const std::array inputs{gmfss_.frames->tensor()};
-    ok = blame_stage(setup_.backend->enqueue(*setup_.gmfss.pair, inputs, gmfss_.pair_outputs[set]),
-                     kMotionRefusalKey);
-  }
+  if (ok) ok = enqueue_pair(setup_, gmfss_, set, source_serial_[current_]);
   use_lane(back);
+  gmfss_.last_pair_right = 0;
   if (!ok) return ok;
   gmfss_.ahead_queued = true;
   gmfss_.ahead_frame = ahead_.id->value;
@@ -423,6 +504,7 @@ void UpscaleStage::adopt_gmfss_ahead(const DecodedFrame& frame, bool taken) {
   gmfss_.ahead_queued = false;
   if (!same) return;
   gmfss_.set ^= 1U;
+  gmfss_.last_pair_right = source_serial_[current_];
   gmfss_.pair_ready = true;
   gmfss_.ahead_adopted = true;
   ++gmfss_.ahead_used;
@@ -440,14 +522,27 @@ std::expected<void, Refusal> UpscaleStage::fuse_gmfss(float t, const gpu::Tensor
                            .s = kernels::gmfss_side_time(splat.side, t),
                            .out = splat.warped});
   }
+  std::array results{padded};
+  const std::vector<gpu::Tensor>& inputs = gmfss_.fusion_inputs[gmfss_.set];
+  static const bool packed = [] {
+    const char* value = std::getenv("KIRARI_AB_GMFSS_PACKED_SPLATS");  // env: banc
+    return value != nullptr && (std::string_view(value) == "1" || std::string_view(value) == "2");
+  }();
+  if (packed) {
+    auto fused = ops.gmfss_fuse_splats(*setup_.gmfss.fusion, gmfss_.jobs, gmfss_.time, t, inputs, results);
+    if (fused) {
+      ++gmfss_.fusions;
+      return {};
+    }
+    if (fused.error().code != RefusalCode::FormatUnsupported)
+      return blame_stage(std::move(fused), kMotionRefusalKey);
+  }
   {
     KIRARI_TRACE("gmfss.splats");  // Nsight Systems : l'envoi des huit splats et de l'instant
     if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gmfss_.time, t); !ok) return ok;
   }
-  std::array results{padded};
-  if (auto ok = blame_stage(
-          setup_.backend->enqueue(*setup_.gmfss.fusion, gmfss_.fusion_inputs[gmfss_.set], results),
-          kMotionRefusalKey);
+  if (auto ok =
+          blame_stage(setup_.backend->enqueue(*setup_.gmfss.fusion, inputs, results), kMotionRefusalKey);
       !ok)
     return ok;
   ++gmfss_.fusions;
@@ -460,6 +555,9 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_early() {
   // voie d'interpolation, dans l'ordre : warped et time servent à tour de rôle sans se marcher dessus. Le
   // mélange y fait M ; les demi-paires de RIFE restent au slot.
   gmfss_.early_t.fill(-1.0F);
+  // En Instantané, fate peut abandonner l'instant pendant l'attente du slot. La fusion à la demande
+  // garde le même instant et les mêmes entrées, et ne lance rien avant le verdict.
+  if (gmfss_only() && late_fate_now_) return {};
   if (!early_possible()) return {};  // early_.runs et gmfss_.early ont kMaxInstantsPerPair places
   const gpu::Lane back = lane_;
   use_lane(gpu::Lane::Interpolate);

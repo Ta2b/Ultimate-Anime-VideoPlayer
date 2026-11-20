@@ -28,7 +28,8 @@ struct DrbaPreParams {
   void* x0 = nullptr;
   void* x1 = nullptr;
   void* x2 = nullptr;
-  bool times_only = false;  // les plans du temps seuls (D6 : mêmes images, autre instant)
+  bool times_only = false;   // les plans du temps seuls (D6 : mêmes images, autre instant)
+  bool scalar_time = false;  // rife_time n'a réécrit que le premier demi-flottant du plan
 };
 
 // Les encodages réduits de X_1 (canaux 9-56, moyenne des pixels 2o, 2o+1) et de X_0 (4o+1, 4o+2) depuis la
@@ -62,6 +63,7 @@ struct DrbaFinishParams {
   void* out = nullptr;   // 3 plans ; nullptr : variante mouvement (flow et mask)
   void* flow = nullptr;  // variante mouvement : 4 plans, le flot pleine résolution du warp final
   void* mask = nullptr;  // 1 plan : le masque après sigmoïde, poids de l'image du centre
+  bool shared_resize = false;  // la tuile partagée du recalage final, mesurée à 1080p sur Ada
 };
 
 cudaError_t launch_drba_pre(const DrbaPreParams& params, cudaStream_t stream);

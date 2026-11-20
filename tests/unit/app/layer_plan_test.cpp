@@ -79,6 +79,35 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   CHECK(layers->decor[2 * 8 + 5] == 1);
   CHECK(layers->decor[0] == 1);
   CHECK_THAT(layers->share, WithinAbs(31.0 / 40.0, 1e-12));
+  scene.roundtrip.emplace();
+  scene.roundtrip->tiles.resize(scene.tiles.size());
+  scene.roundtrip->tiles[2 * 8 + 5].photo_b = 2;  // à côté du bord que la carte protège déjà
+  scene.roundtrip->tiles[0].photo_b = 16;         // loin du dessin, le doute seul ne suffit pas
+  const auto measured = plan_layers(scene, 64, 36);
+  REQUIRE(measured);
+  CHECK(measured->roundtrip_edges == 1);
+  CHECK(measured->roundtrip_camera_edges == 0);
+  scene.camera[0] = 8.0;  // le centre de la tuile b revient dans la précédente en a
+  scene.roundtrip_photo_edge_a.resize(scene.tiles.size());
+  scene.roundtrip_photo_edge_a[2 * 8 + 5] = 1;
+  // Le contrôle sous la caméra est ancré en a, pas dans la tuile b qui porte le retour.
+  CHECK(plan_layers(scene, 64, 36)->roundtrip_camera_edges == 0);
+  scene.roundtrip_photo_edge_a[2 * 8 + 4] = 1;
+  scene.roundtrip_photo_edge_a[0] = 1;
+  const auto corroborated = plan_layers(scene, 64, 36);
+  REQUIRE(corroborated);
+  CHECK(corroborated->roundtrip_camera_edges == 1);
+  CHECK(corroborated->decor == layers->decor);
+  const auto guarded = plan_layers(scene, 64, 36, true);
+  REQUIRE(guarded);
+  auto expected_tiles = layers->decor;
+  expected_tiles[2 * 8 + 5] = 0;
+  CHECK(guarded->decor == expected_tiles);
+  CHECK(guarded->roundtrip_protected == 1);
+  scene.roundtrip_photo_edge_a.pop_back();
+  CHECK(plan_layers(scene, 64, 36)->roundtrip_camera_edges == 0);
+  CHECK(plan_layers(scene, 64, 36, true)->decor == layers->decor);
+  CHECK(measured->decor == layers->decor);  // ici, le retour mesure les candidats uniquement
 
   // Un personnage rapide : cinq tuiles vers la droite d'une image à l'autre, tout son chemin garde RIFE.
   SceneMotion fast = pan(4.0);
@@ -238,6 +267,62 @@ TEST_CASE("calques : la plaque ne réécrit la sortie de SPAN que pour y reprend
   // Une paire sans caméra : plus de plaque, rien de réécrit.
   stage.arrive(PairFacts{.same_epoch = true}, setup, false, false);
   CHECK_FALSE(stage.rewrites(setup));
+}
+
+TEST_CASE("calques : le warp fusionné consomme une seule fois le slot et conserve sa paire",
+          "[layers][app][stage]") {
+  const bool direct = GENERATE(false, true);
+  test::FakeBackend backend;
+  backend.offer_layered(true);
+  backend.offer_ring_targets(direct);
+  const LayerSetup setup{.layers = true, .fused = true};
+  const gpu::Shape work{.dims = {1, 3, 36, 64}};
+  const gpu::Shape out{.dims = {1, 3, 72, 128}};
+  LayerStage stage;
+  REQUIRE(stage.allocate(backend, setup, work, out, true));
+  auto a = backend.alloc_tensor(gpu::TensorType::F16, out);
+  auto b = backend.alloc_tensor(gpu::TensorType::F16, out);
+  auto middle = backend.alloc_tensor(gpu::TensorType::F16, out);
+  REQUIRE(a);
+  REQUIRE(b);
+  REQUIRE(middle);
+  const PairFacts facts{.same_epoch = true, .scene = pan(2.0)};
+  stage.arrive(facts, setup, false, false);
+  const RingSlotDesc slot{.width = 128, .height = 72};
+  const gpu::Tensor& dst = (*middle)->tensor();
+  const auto warp = [&](float t, LayerRingOutput& into) {
+    return stage.warp_pair(backend, (*a)->tensor(), (*b)->tensor(), dst, gpu::Motion{}, nullptr, t, true,
+                           true, &into);
+  };
+  for (std::uint64_t i = 0; i < 2; ++i) {
+    const gpu::RingTarget ring{.slot = &slot, .sync = {.wait_value = 2 * i, .signal_value = 2 * i + 1}};
+    LayerRingOutput into{.target = ring};
+    const auto fused = warp(i == 0 ? 0.25F : 0.75F, into);
+    REQUIRE(fused);
+    CHECK(*fused);
+    CHECK(into.written == direct);
+    if (!into.written) REQUIRE(backend.write_ring(dst, slot, ring.sync));
+  }
+  const auto written = backend.written();
+  REQUIRE(written.size() == 2);
+  CHECK(written[0].wait_value == 0);
+  CHECK(written[0].signal_value == 1);
+  CHECK(written[1].wait_value == 2);
+  CHECK(written[1].signal_value == 3);
+  CHECK(backend.count("warp_layered_ring") == (direct ? 1 : 0));
+  CHECK(backend.count("warp_layered_ring reprise") == (direct ? 1 : 0));
+  CHECK(backend.count("warp_layered") == (direct ? 0 : 1));
+  CHECK(backend.count("warp_layered reprise") == (direct ? 0 : 1));
+  if (direct) {
+    const gpu::RingTarget bad{.slot = &slot, .sync = {.wait_value = 4, .signal_value = 3}};
+    LayerRingOutput into{.target = bad};
+    const auto failed = warp(0.5F, into);
+    REQUIRE_FALSE(failed);
+    CHECK(failed.error().code == RefusalCode::SequenceOrder);
+    CHECK_FALSE(into.written);
+    CHECK(backend.count("warp_layered reprise") == 0);
+    CHECK(backend.written().size() == 2);
+  }
 }
 
 // La règle absolue : calques et plaque allumés sans carte de la scène (AMD, Intel, NVOF refusé) donnent les

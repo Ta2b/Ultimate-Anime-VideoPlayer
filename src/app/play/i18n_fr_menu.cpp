@@ -157,44 +157,29 @@ constexpr std::array kMenuTexts{
         "Les images intermédiaires gardent des traits plus fins, pour quelques pour cent de vitesse. Vitesse "
         ": environ −3 %. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE seulement."},
     Entry{"GMFSS", "GMFSS"},
-    Entry{"GMFSS runs much faster; very small movements can be slightly less precise. Speed: GMFSS about "
-          "1.7× faster. Quality impact: minor loss on small motion. Recommended: on.",
-          "GMFSS va beaucoup plus vite ; les très petits mouvements peuvent être un peu moins précis. "
-          "Vitesse : GMFSS environ 1,7× plus rapide. Impact sur la qualité : perte mineure sur les petits "
-          "mouvements. Recommandé : activé."},
-    Entry{"Every in-between frame comes from GMFSS, the cleanest on hard motion, but the card works far more "
-          "and frames drop when it can't keep up. Speed: about −70 % vs Very high. Quality impact: minor "
-          "change. Recommended: off.",
-          "Chaque image intermédiaire vient de GMFSS, le plus propre sur les mouvements difficiles, mais la "
-          "carte travaille bien plus et des images tombent quand elle ne suit pas. Vitesse : environ −70 % "
-          "face à Très élevé. Impact sur la qualité : changement mineur. Recommandé : désactivé."},
-    Entry{"GMFSS and RIFE work on a smaller picture, with slightly less precise motion. The time saved does "
-          "not add frames per second: it lets GMFSS draw more of the in-between frames (about +60 %). Turn "
-          "it on if the card can't keep up at High or Very high. Speed: same frames per second, about +60 % "
-          "frames drawn by GMFSS. Quality impact: minor loss.",
-          "GMFSS et RIFE travaillent sur une image plus petite, avec un mouvement un peu moins précis. Le "
-          "temps gagné n'ajoute pas d'images par seconde : il laisse GMFSS dessiner plus d'images "
-          "intermédiaires (environ +60 %). À activer si la carte ne suit pas en Élevé ou Très élevé. Vitesse "
-          ": autant d'images par seconde, environ +60 % d'images dessinées par GMFSS. Impact sur la qualité "
-          ": perte mineure."},
-    Entry{"Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: about −5 to −15 "
-          "%. Quality impact: minor gain, not yet judged. Recommended: off.",
-          "Des images GMFSS plus fines au-dessus de 720p de résolution de travail, pour un peu de vitesse. "
-          "Vitesse : environ −5 à −15 %. Impact sur la qualité : gain mineur, pas encore jugé. Recommandé : "
-          "désactivé."},
-    Entry{"The NVIDIA driver (RTX 40 and 50) adds a frame between each displayed frame, for even smoother "
-          "motion on a high-refresh display. Its frames are rougher than the player's. Quality impact: "
-          "moderate loss (driver frames are rougher). Recommended: off.",
-          "Le pilote NVIDIA (RTX 40 et 50) ajoute une image entre chaque image affichée, pour un mouvement "
-          "encore plus fluide sur un écran à haute fréquence. Ses images sont plus grossières que celles du "
-          "lecteur. Impact sur la qualité : perte modérée (images du pilote plus grossières). Recommandé : "
+    Entry{"GMFlow measures motion at half size to save GPU time. Very small movements can be less precise.",
+          "GMFlow estime le mouvement à demi-taille pour économiser du temps GPU. Les très petits "
+          "mouvements peuvent être moins précis."},
+    Entry{"Every interpolated instant uses GMFSS. It costs more than sharing the work with RIFE, and "
+          "playback can miss instants when the GPU falls behind.",
+          "Chaque instant interpolé utilise GMFSS. Cela coûte plus cher que le mélange avec RIFE et la "
+          "lecture peut sauter des instants si le GPU prend du retard."},
+    Entry{"Limits the working size of the hybrid motion models to 540p. Saves GPU time, which can allow "
+          "more GMFSS keys, with less precise motion and softer keys.",
+          "Limite les modèles de mouvement du mélange à 540p. Le temps GPU gagné peut permettre plus "
+          "de clés GMFSS, avec un mouvement moins précis et des clés plus douces."},
+    Entry{"When the hybrid models work below the working image size, add source detail to the GMFSS keys. "
+          "This costs two extra splats per input image.",
+          "Quand le mélange travaille sur une taille inférieure à la résolution de travail, ajoute du "
+          "détail des sources aux clés GMFSS. Cela coûte deux projections supplémentaires par image "
+          "source."},
+    Entry{"The NVIDIA driver can add intermediate frames on compatible GPUs. The gain depends on the "
+          "display refresh rate and frames can look rougher. Recommended: off.",
+          "Le pilote NVIDIA peut ajouter des images intermédiaires sur les cartes compatibles. Le gain "
+          "dépend de la fréquence de l'écran et les images peuvent être moins fines. Recommandé : "
           "désactivé."},
     Entry{"How many frames per source frame the export makes.",
           "Combien d'images l'export fait pour chaque image de la source."},
-    Entry{"Auto: as many frames as the display and the graphics card allow. Off: no interpolation. "
-          "Recommended: Auto.",
-          "Auto : autant d'images que l'écran et la carte graphique le permettent. Désactivé : pas "
-          "d'interpolation. Recommandé : Auto."},
     Entry{"Trials", "Essais"},
     Entry{"Characters animated on twos keep their rhythm while the background moves. Speed: slightly faster "
           "(held poses skip a pass). Quality impact: minor gain. Recommended: on. RIFE only; Smooth held "

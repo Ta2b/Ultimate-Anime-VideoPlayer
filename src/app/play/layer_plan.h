@@ -53,8 +53,11 @@ struct PairLayers {
   int tile_px = 0;
   int cols = 0;
   int rows = 0;
-  std::vector<std::uint8_t> decor;  // cols × rows, 1 : décor sûr
-  double share = 0.0;               // part des tuiles décor
+  std::vector<std::uint8_t> decor;           // cols × rows, 1 : décor sûr
+  double share = 0.0;                        // part des tuiles décor
+  std::uint32_t roundtrip_edges = 0;         // tuiles de bord du décor avec désaccord du retour, pour le banc
+  std::uint32_t roundtrip_camera_edges = 0;  // aussi des bords nets après la caméra affinée de la paire
+  std::uint32_t roundtrip_protected = 0;     // tuiles écartées du décor par l'essai
 };
 
 // Les tuiles décor sûres : Background à confiance suffisante, ou Uncertain sans changement (un aplat que la
@@ -62,7 +65,7 @@ struct PairLayers {
 // tuile dans a à sa tuile dans b, élargi d'une tuile) est retiré, pour qu'aucun bout de personnage ne passe
 // par la caméra.
 std::expected<PairLayers, LayerSkip> plan_layers(const std::optional<kernels::SceneMotion>& scene,
-                                                 int work_width, int work_height);
+                                                 int work_width, int work_height, bool protect_edges = false);
 
 // La caméra lk (Lucas-Kanade) d'une paire voisine du même plan, pixels de travail, repère de la carte
 // (SceneMotion::camera), et son résidu (SceneMotion::residual).
@@ -111,7 +114,8 @@ class NeighbourCameras {
 // (with_neighbour), borrowed vrai alors.
 std::expected<PairLayers, LayerSkip> plan_with_neighbour(const std::optional<kernels::SceneMotion>& scene,
                                                          const std::optional<NeighbourCamera>& neighbour,
-                                                         int work_width, int work_height, bool& borrowed);
+                                                         int work_width, int work_height, bool& borrowed,
+                                                         bool protect_edges = false);
 
 // La caméra lk de la paire, si sa carte en tient une sûre (ni coupe ni fondu).
 std::optional<NeighbourCamera> refined_camera(const std::optional<kernels::SceneMotion>& scene);

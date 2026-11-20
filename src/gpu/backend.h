@@ -124,7 +124,9 @@ namespace kirari::gpu {
 // ignorerait le bit sans le dire.
 // 59 : SceneTileCheck gagne error, moving, brighter, sharp et settled (l'écart après la caméra), vérification
 // sur toutes les tuiles.
-inline constexpr int kBackendAbi = 59;
+// 60 : KernelOps::scene_roundtrip_take, la grille de désaccord de la paire, sans attente.
+// 61 : warp et calques fusionnés, reprise du côté gauche de GMFSS et splats pour le GridNet.
+inline constexpr int kBackendAbi = 61;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -173,6 +175,12 @@ inline constexpr std::uint32_t kTrialGmfssNative = 1U << 7U;
 // l'essai au chargement ; la colle écrit et lit alors X, Y et la tête par pixel. Lu par le backend TensorRT ;
 // sans effet ailleurs.
 inline constexpr std::uint32_t kTrialTfixNative = 1U << 8U;
+// --nvof-roundtrip : mesure le retour B → A dans une session à part, pour le journal, sans modifier la carte.
+inline constexpr std::uint32_t kTrialNvofRoundtrip = 1U << 9U;
+// --span-fp8-native-blocks : essaie les deux convolutions ReLU E4M3 natives par bloc de SPAN C48.
+inline constexpr std::uint32_t kTrialSpanFp8NativeBlocks = 1U << 10U;
+// --gmfss-feature-reuse : reprend les trois sorties de FeatureNet de B lorsqu'elle devient A.
+inline constexpr std::uint32_t kTrialGmfssFeatureReuse = 1U << 11U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le
@@ -375,6 +383,9 @@ class Engine {
   // inchangées (la paire suivante d'un même plan) : un moteur qui garde l'encodage de B le reprend pour A et
   // n'encode que la nouvelle B. Sans effet sur les autres.
   virtual void next_pair_follows() {}
+  // A est la B de la dernière passe GMFSS et le lecteur garde encore ses tenseurs de sortie.
+  // Vrai : le moteur réemploie les caractéristiques, que le lecteur peut lier aux mêmes tenseurs.
+  virtual bool next_gmfss_pair(bool /*follows*/) { return false; }
   // P6.15 : l'appel suivant peut reprendre les blocs grossiers de RIFE de l'appel précédent (même moteur,
   // paire voisine, même instant) au lieu de les recalculer. Vrai si le moteur le fera ; faux : calcul entier.
   virtual bool next_warm() { return false; }
@@ -521,7 +532,8 @@ inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
     // Ce que KernelOps rend au lecteur (A21-01) : les statistiques du grade et la mémoire de l'appareil.
     shape_fingerprint<kernels::FrameStats, std::optional<kernels::FrameStats>,
                       std::expected<std::optional<kernels::FrameStats>, Refusal>, KernelOps::DeviceMemory,
-                      GpuStageSummary, std::vector<GpuStageSummary>>(),
+                      GpuStageSummary, std::vector<GpuStageSummary>, kernels::SceneRoundtripTiles,
+                      std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal>>(),
 });
 
 // Ce que le chargeur vérifie avant kirari_backend_create, avec kirari_backend_abi() et

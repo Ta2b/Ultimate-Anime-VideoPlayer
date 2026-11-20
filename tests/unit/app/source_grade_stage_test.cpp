@@ -3,14 +3,17 @@
 // tuiles de SPAN (upscale_tiles.h) qui partent de la sortie d'avant le grade, ou sur place sans lui.
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "app/play/links.h"
 #include "app/play/source_grade.h"
 #include "core/clock.h"
 #include "kernels/spec/span_tiles.h"
@@ -40,14 +43,16 @@ class CountingGrader final : public SourceGrader {
  public:
   explicit CountingGrader(Answer answer) : answer_(answer) {}
   std::expected<bool, Refusal> grade(gpu::KernelOps& /*ops*/, const gpu::Tensor& rgb, bool /*debanded*/,
-                                     const GradedSource& /*source*/) override {
+                                     const GradedSource& source) override {
     ++calls;
+    grade_pts.push_back(source.pts_us);
     graded.push_back(rgb.handle);  // lu par le test une fois l'étage arrêté
     if (answer_ == Answer::Refused)
       return std::unexpected(Refusal{.code = RefusalCode::FeatureUnavailable, .detail = "essai"});
     return answer_ == Answer::Graded;
   }
   std::atomic<int> calls{0};
+  std::vector<std::int64_t> grade_pts;
   std::vector<std::uintptr_t> graded;  // les tenseurs gradés sur place
 
  private:
@@ -107,6 +112,91 @@ TEST_CASE("Étage gpu : grade avant le warp, un grade par SPAN et toutes les ima
   CHECK(grader->calls == static_cast<int>(rig.backend.count("engine span")));
   CHECK(grader->calls == 5);  // le dessin tenu reprend le tampon gradé de 2
   for (const RingFrame& frame : frames) CHECK(frame.graded);
+}
+
+TEST_CASE("Étage gpu : Smooth grade le futur dessin à son propre pts", "[app][stage][smooth]") {
+  const std::uint32_t hold = GENERATE(2U, 4U);
+  Rig rig;
+  rig.live->set_keep_poses(false);
+  for (std::uint32_t k = 1; k < hold; ++k) rig.backend.score(SourceId{k}, SourceId{k + 1}, 0.0, 10);
+  for (std::uint32_t k = 3; k <= hold; ++k) rig.backend.score(SourceId{2}, SourceId{k}, 0.0, 10);
+  auto grader = std::make_shared<CountingGrader>(Answer::Graded);
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.warp_after_span = true;
+  s.smooth_drawings = true;
+  s.grader = grader;
+  rig.start(std::move(s));
+  rig.feed(1, hold + 2);
+  REQUIRE(rig.stage->post(StreamEnd{.epoch = 0}));
+  REQUIRE(rig.collect(1 + 2 * (hold - 1) + 2 + 2));
+  rig.stage.reset();
+  CHECK(grader->grade_pts ==
+        std::vector<std::int64_t>{kPeriodUs, (hold + 1) * kPeriodUs, (hold + 2) * kPeriodUs});
+}
+
+TEST_CASE("Étage gpu : SPAN de B sans slot, le grade et les passes RIFE gardent leur place", "[app][stage]") {
+  const bool ahead = GENERATE(false, true);
+  INFO("SPAN de B en avance : " << ahead);
+  Rig rig;
+  rig.live->set_keep_poses(false);
+  rig.backend.motion_max(40.0F);
+  auto grader = std::make_shared<CountingGrader>(Answer::Graded);
+  UpscaleSetup s = rig.setup(true, Factor{.num = 4, .den = 1}, 1);
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.rife_at_slot = true;
+  s.span_b_ahead = ahead;
+  s.warp_after_span = true;
+  s.grader = grader;
+  rig.start(std::move(s));
+
+  rig.feed(1, 2);
+  REQUIRE(rig.collect(1, false));  // le seul slot est pris par A
+  REQUIRE(logged(rig, "rife_input"));
+  if (ahead) {
+    REQUIRE(logged(rig, "engine span", 2));
+  } else {
+    CHECK(rig.backend.count("engine span") == 1);
+  }
+  CHECK(rig.backend.count("engine rife_motion") == 0);
+  CHECK(grader->calls == 1);  // B sera gradée à l'endroit habituel
+  REQUIRE(rig.collect(5));    // rend le slot de A, laisse sortir B et les trois instants intermédiaires
+  rig.stage.reset();
+  CHECK(pts_of(rig.sink.frames()) == std::vector<std::int64_t>{40'000, 50'000, 60'000, 70'000, 80'000});
+  using Pair = std::pair<std::uint32_t, std::uint32_t>;
+  CHECK(rig.backend.warp_pairs() == std::vector<Pair>{{1, 2}, {1, 2}, {1, 2}});
+  CHECK(rig.backend.count("engine span") == 2);
+  CHECK(rig.backend.count("engine rife_motion") == 3);
+  CHECK(rig.backend.rife_ts() == std::vector<float>{0.5F, 0.25F, 0.75F});
+  CHECK(grader->calls == 2);
+  for (const RingFrame& frame : rig.sink.frames()) CHECK(frame.graded);
+}
+
+TEST_CASE("Étage gpu : un refus du SPAN de B sans slot est attribué à SPAN", "[app][stage]") {
+  using namespace std::chrono_literals;
+  Rig rig;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 2, .den = 1}, 1);
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.rife_at_slot = true;
+  s.span_b_ahead = true;
+  s.warp_after_span = true;
+  rig.start(std::move(s));
+  rig.feed(1, 1);
+  REQUIRE(rig.collect(1, false));
+  rig.backend.refuse_engine("span");
+  rig.feed(2, 2);
+  const auto deadline = std::chrono::steady_clock::now() + 2s;
+  while (rig.reported().empty() && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::sleep_for(1ms);
+  rig.stage.reset();
+  const auto reported = rig.reported();
+  REQUIRE(reported.size() == 1);
+  CHECK(blamed_stage_key(reported[0].key) == kSpanRefusalKey);
+  CHECK(rig.sink.frames().size() == 1);  // aucun slot de plus n'a été promis
+  CHECK(rig.backend.count("engine rife_motion") == 0);
 }
 
 TEST_CASE("Étage gpu : grade avant le warp, rien à grader, l'écran garde le grade", "[app][stage]") {

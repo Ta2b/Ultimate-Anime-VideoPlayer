@@ -22,12 +22,13 @@ ModelChoice choose_in(const std::filesystem::path& found, std::string_view prefi
   std::error_code error;
   for (const auto& entry : core::dir_entries(found.parent_path(), error)) {
     const std::string name = core::to_utf8(entry.path().filename());
-    if (name.starts_with(prefix) && name.ends_with(".onnx")) choice.available.push_back(name);
+    if (name.starts_with(prefix) && name.ends_with(".onnx") && entry.is_regular_file(error))
+      choice.available.push_back(name);
   }
   std::ranges::sort(choice.available);
   if (!option_given && !chosen_name.empty()) {
     const std::filesystem::path chosen = found.parent_path() / chosen_name;
-    if (std::filesystem::exists(chosen, error)) {
+    if (std::filesystem::is_regular_file(chosen, error)) {
       choice.path = chosen;
     } else {
       log_channel("app")->warn("modèle {} introuvable : {}", chosen_name, choice.default_name);

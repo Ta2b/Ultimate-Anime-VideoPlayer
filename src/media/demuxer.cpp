@@ -276,8 +276,8 @@ Demuxer::~Demuxer() = default;
 // ne joue pas (chapitres d'un autre fichier) est dit au journal.
 void Demuxer::State::note_chapter_layout(std::string_view shown) {
   for (ChapterPart& part : chapter_layout.parts) {
-    part.start_us = std::max<std::int64_t>(part.start_us - start_us, 0);
-    if (part.end_us != ChapterPart::kToEnd) part.end_us -= start_us;
+    part.start_us = std::max<std::int64_t>(add_saturated(part.start_us, -start_us), 0);
+    if (part.end_us != ChapterPart::kToEnd) part.end_us = add_saturated(part.end_us, -start_us);
   }
   if (!chapter_layout.parts.empty())
     log->info("{} : édition ordonnée, {} parties jouées dans son ordre", shown, chapter_layout.parts.size());
@@ -569,7 +569,7 @@ std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() {
   raw->duration = duration_to_us(raw->duration, time_base);
   raw->time_base = kMicroseconds;
   if (raw->pts != AV_NOPTS_VALUE)
-    last_end_us = std::max(last_end_us, raw->pts + std::max<std::int64_t>(raw->duration, 0));
+    last_end_us = std::max(last_end_us, add_saturated(raw->pts, std::max<std::int64_t>(raw->duration, 0)));
 
   Packet packet{
       .track = raw->stream_index,
@@ -640,7 +640,9 @@ std::expected<std::int64_t, Refusal> Demuxer::State::seek_before(std::int64_t ta
     last_key_us = key_pts;
     landed_us = aim_us;
     const std::int64_t key_us = (*key)->dts_us != kNoPts ? (*key)->dts_us : key_pts;
-    aim_us = std::min(aim_us, key_us) - 1;
+    aim_us = std::min(aim_us, key_us);
+    if (aim_us <= kNoPts + 1) return key_pts;
+    --aim_us;
     log->debug("seek à {} µs : point clé affiché à {} µs, recul à {} µs", target_us, key_pts, aim_us);
   }
   return last_key_us;
@@ -711,11 +713,14 @@ std::expected<void, Refusal> Demuxer::seek(std::int64_t target_us, int reference
   // reste sur celui d'après quand il est le plus proche.
   if (*after) {
     const std::int64_t indexed = state_->indexed_before(target_us, reference);
-    if (indexed != kNoPts && indexed <= target_us && **after - target_us < target_us - indexed) return {};
+    if (indexed != kNoPts && indexed <= target_us &&
+        time_distance(**after, target_us) < time_distance(indexed, target_us))
+      return {};
   }
   auto before = state_->seek_before(target_us, reference);
   if (!before) return std::unexpected(before.error());
-  if (!*after || *before == kNoPts || **after - target_us >= target_us - *before) return {};
+  if (!*after || *before == kNoPts || time_distance(**after, target_us) >= time_distance(*before, target_us))
+    return {};
   auto again = state_->seek_after(target_us, reference);
   if (!again) return std::unexpected(again.error());
   return {};

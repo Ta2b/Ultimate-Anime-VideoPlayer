@@ -282,6 +282,7 @@ bool read_count(std::string_view value, int& out) {
 int main(int argc, char** argv) {
   int divisor = 1;
   bool layers = false;
+  bool dump_grid = false;
   bool late = false;
   std::string views;
   int every = 20;
@@ -291,6 +292,9 @@ int main(int argc, char** argv) {
     bool ok = true;
     if (arg == "--calques") {
       layers = true;
+    } else if (arg == "--grille-calques") {
+      layers = true;
+      dump_grid = true;
     } else if (arg == "--sans-affinage") {
       late = true;
     } else if (arg == "--diviseur") {
@@ -306,14 +310,13 @@ int main(int argc, char** argv) {
       ok = false;
     }
     if (!ok) {
-      std::cerr
-          << "usage : carte_rejeu [--diviseur D] [--calques [--sans-affinage] [--vues DOSSIER] [--pas N]] < "
-             "tâches\n";
+      std::cerr << "usage : carte_rejeu [--diviseur D] [--calques|--grille-calques] [--sans-affinage] "
+                   "[--vues DOSSIER] [--pas N] < tâches\n";
       return 2;
     }
   }
   std::optional<carte_rejeu::LayerReplay> replay;
-  if (layers) replay.emplace(divisor, views, every);
+  if (layers) replay.emplace(divisor, views, every, dump_grid);
   ref::SceneHistory history;
   std::optional<ref::SceneCamera> previous;
   std::string line;

@@ -81,15 +81,7 @@ inline constexpr std::int64_t kMaxRepeatRun = 36'000;
 // que l'écart, partagé en parts égales, approche la période 10⁶ × fps_den / fps_num µs. Arrondi au
 // plus proche : un écart de moins d'une période et demie ne répète rien. La k-ième répétition
 // tombe à previous_us + k × (next_us − previous_us) / (n + 1).
-constexpr std::int64_t repeats_between(std::int64_t previous_us, std::int64_t next_us, int fps_num,
-                                       int fps_den) {
-  if (fps_num <= 0 || fps_den <= 0 || next_us <= previous_us) return 0;
-  constexpr std::int64_t kUs = 1'000'000;
-  const std::int64_t gap = next_us - previous_us;
-  const std::int64_t periods = (2 * gap * fps_num + kUs * fps_den) / (2 * kUs * fps_den);
-  const std::int64_t repeats = periods - 1;
-  return repeats > 0 && repeats <= kMaxRepeatRun ? repeats : 0;
-}
+std::int64_t repeats_between(std::int64_t previous_us, std::int64_t next_us, int fps_num, int fps_den);
 
 // Une image convertie, dans la disposition de l'encodeur ouvert (layout()). La mémoire reste à
 // l'appelant jusqu'à release, appelé une fois quand l'encodeur ne la lit plus, depuis n'importe

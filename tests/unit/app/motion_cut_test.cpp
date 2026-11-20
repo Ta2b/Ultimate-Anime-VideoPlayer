@@ -95,6 +95,12 @@ TEST_CASE("motion cut : le choix d'interpolation qui garde la coupure", "[app][m
   changed = s;
   changed.auto_free = false;  // Stable choisi à la main
   CHECK_FALSE(interpolation_choice(changed) == cut);
+  changed = s;
+  changed.auto_cap = 60;  // une cadence plus basse peut tenir avec la même carte
+  CHECK_FALSE(interpolation_choice(changed) == cut);
+  changed = s;
+  changed.strong_middle = true;
+  CHECK_FALSE(interpolation_choice(changed) == cut);
 }
 
 // L'option se garde dans play.toml ; un fichier d'avant elle se lit, cochée (le défaut).

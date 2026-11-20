@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <iterator>
 
+extern "C" {
+#include <libavutil/common.h>
+}
+
 #include "audio/pcm.h"
 
 namespace kirari::audio {
@@ -18,8 +22,8 @@ std::optional<std::int64_t> Timeline::pts_at(std::int64_t index) const {
   const auto after = std::ranges::upper_bound(segments_, index, {}, &Segment::start);
   const Segment& segment = *std::prev(after);
   if (!segment.pts_us) return std::nullopt;
-  const std::int64_t offset = std::min(index - segment.start, segment.frames);
-  return *segment.pts_us + frames_to_us(offset, sample_rate_);
+  const std::int64_t offset = std::min(av_sat_sub64(index, segment.start), segment.frames);
+  return av_sat_add64(*segment.pts_us, frames_to_us(offset, sample_rate_));
 }
 
 void Timeline::forget_before(std::int64_t index) {

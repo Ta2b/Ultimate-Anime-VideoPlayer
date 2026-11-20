@@ -50,8 +50,8 @@ void UpscaleStage::smooth_advance(const DecodedFrame& frame, PairFacts& facts, b
   // Une paire de tête se fait sur la grille, sans coupe ; la dernière arrive avec b. Sinon (seek, image
   // sautée en retard, interpolation coupée en cours de tenue) la tenue s'arrête : la paire reprend son
   // rythme.
-  const bool kept = facts.same_epoch && (last ? frame.id == smooth_b_id_
-                                              : frame.id != smooth_b_id_ && on_grid && !pair_cut(facts));
+  const bool kept = facts.same_epoch && (last ? frame.id == smooth_b_.id
+                                              : frame.id != smooth_b_.id && on_grid && !pair_cut(facts));
   if (!kept) {
     smooth_stop();
     return;
@@ -94,7 +94,8 @@ std::expected<void, Refusal> UpscaleStage::smooth_decide(const DecodedFrame& fra
   smooth_hold_ = hold;
   smooth_far_ = hold > 2;
   smooth_spanned_ = false;
-  smooth_b_id_ = smooth_far_ ? next(hold - 1)->id : *ahead_.id;
+  const DecodedFrame& target = *next(hold - 1);
+  smooth_b_ = Previous{.pts_us = target.pts_us, .id = target.id, .epoch = target.epoch};
   ++smoothed_holds_[hold];
   return {};
 }
@@ -115,8 +116,10 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::smooth_find_b(const DecodedF
     if (smooth_far_small_) {
       if (auto ok = ops.ingest(*candidate, gpu::IngestSpec{}, smooth_far_small_->tensor()); !ok)
         return std::unexpected(std::move(ok.error()));
-    } else if (auto debanded = ingest_source(*candidate, spec, smooth_far_rgb_->tensor()); !debanded) {
-      return std::unexpected(std::move(debanded.error()));
+    } else {
+      auto debanded = ingest_source(*candidate, spec, smooth_far_rgb_->tensor());
+      if (!debanded) return std::unexpected(std::move(debanded.error()));
+      smooth_far_debanded_ = *debanded;
     }
     const gpu::Tensor& far = smooth_far_small_ ? smooth_far_small_->tensor() : smooth_far_rgb_->tensor();
     auto scores = ops.scores_now(rife_source(current_), far);
@@ -124,8 +127,9 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::smooth_find_b(const DecodedF
     if (cut_measured(*scores, frame.pts_us, candidate->pts_us)) return 0U;
     if (!kernels::is_held(scores->worst_block)) {  // b : le dessin nouveau
       if (smooth_far_small_) {
-        if (auto debanded = ingest_source(*candidate, spec, smooth_far_rgb_->tensor()); !debanded)
-          return std::unexpected(std::move(debanded.error()));
+        auto debanded = ingest_source(*candidate, spec, smooth_far_rgb_->tensor());
+        if (!debanded) return std::unexpected(std::move(debanded.error()));
+        smooth_far_debanded_ = *debanded;
       }
       return hold;
     }
@@ -139,14 +143,15 @@ std::expected<void, Refusal> UpscaleStage::span_smooth_b() {
   // Le tampon que les copies ne prennent pas (elles reprennent celui de a) : celui où SPAN de b irait de
   // toute façon.
   span_ahead_buf_ = span_of_[current_ ^ 1U] ^ 1U;
-  span_ahead_ = smooth_b_id_;
+  span_ahead_ = smooth_b_.id;
   const gpu::Lane back = lane_;
   use_lane(gpu::Lane::Upscale);
   const std::array inputs{smooth_b_rgb()};
   std::array results{spanned_[span_ahead_buf_]->tensor()};
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
   reuse_.plated[span_ahead_buf_] = false;  // SPAN seul, sans la plaque
-  if (ok) ok = grade_spanned(span_ahead_buf_);
+  if (ok)
+    ok = grade_spanned(span_ahead_buf_, smooth_b_, smooth_far_ ? smooth_far_debanded_ : ahead_.debanded);
   use_lane(back);
   return ok;
 }

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -407,7 +408,12 @@ namespace {
 // demander.
 void request_smooth_motion(spdlog::logger& log) {
 #if defined(__linux__)
-  SDL_setenv_unsafe("NVPRESENT_ENABLE_SMOOTH_MOTION", "1", 1);
+  // Le pilote lit l'environnement C. En garder la copie SDL telle que reçue pour la relance.
+  if (SDL_GetEnvironment() == nullptr ||
+      ::setenv("NVPRESENT_ENABLE_SMOOTH_MOTION", "1", 1) != 0) {  // env: pilote NVIDIA
+    log.warn("Smooth Motion : impossible de demander la couche du pilote NVIDIA");
+    return;
+  }
   log.info("Smooth Motion : couche du pilote NVIDIA demandée (NVPRESENT_ENABLE_SMOOTH_MOTION=1)");
 #else
   log.info("Smooth Motion : réglé par l'application NVIDIA sous Windows, rien n'est demandé ici");
@@ -637,6 +643,15 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   sw_params.present_mode = vk_present_mode(options.swap_mode, *impl->channel);
   sw_params.swapchain_depth = shape.depth > 0 ? shape.depth : kSwapchainDepth;
   sw_params.min_images = shape.min_images;
+  // Banc A/B : fixe le minimum d'images pour comparer uniquement les deux profondeurs.
+  if (const char* setting = std::getenv("KIRARI_AB_SWAP_DEPTH"); setting != nullptr) {  // env: banc
+    if (const std::string_view depth(setting); depth == "2" || depth == "3") {
+      sw_params.swapchain_depth = depth == "3" ? 3 : 2;
+      sw_params.min_images = std::max(sw_params.min_images, 4);
+      impl->channel->info("banc swapchain : profondeur {}, {} images minimum",
+                          sw_params.swapchain_depth, sw_params.min_images);
+    }
+  }
   sw_params.present_flags = present_flags(impl->present_level, impl->present_caps);
   impl->swapchain = pl_vulkan_create_swapchain(impl->vk, &sw_params);
   if (impl->swapchain == nullptr)
@@ -708,6 +723,11 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   }
 #endif
   return std::unique_ptr<PlaceboScreen>(new PlaceboScreen(std::move(impl)));
+}
+
+int PlaceboScreen::swapchain_depth() const {
+  const int depth = impl_->swapchain != nullptr ? pl_swapchain_latency(impl_->swapchain) : 0;
+  return depth > 0 ? depth : kSwapchainDepth;
 }
 
 std::vector<std::string> PlaceboScreen::device_names() const {

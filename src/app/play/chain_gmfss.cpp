@@ -44,12 +44,11 @@ GmfssCost gmfss_cost(WorkSize size, bool half) {
 }
 
 int gmfss_auto_cap(const ChainEngines& c, int cap, double source_fps) {
-  // GMFSS à chaque instant : ×2, ×2,5 avec le demi-flot ou le mélange léger (mesuré sur une RTX 4070 Ti).
+  // GMFSS à chaque instant : ×2, ×2,5 avec le demi-flot chargé (mesuré sur une RTX 4070 Ti).
   // Le mélange (Élevé, Très élevé) vise l'écran : les clés GMFSS servent de sources à RIFE, qui fait
   // toutes les autres images ; le crédit de temps décide des clés, une paire sans crédit reste à RIFE seul.
   if (c.gmfss_use != GmfssUse::Only || source_fps <= 0.0) return cap;
-  const bool half = c.played.gmfss_half_flow || c.played.gmfss_light;
-  const int most = static_cast<int>(std::ceil(source_fps * (half ? 2.5 : 2.0)));
+  const int most = gmfss_frame_limit(source_fps, c.gmfss_half_loaded);
   return cap > 0 ? std::min(cap, most) : most;
 }
 
@@ -80,23 +79,15 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
               without);
     return true;
   }
-  const std::optional<GmfssModels> found = find_gmfss(c.model_places);
-  if (!found) {
-    log->warn(
-        "GMFSS union : {} et {} introuvables (--gmfss-dir, dossiers de RIFE et leurs voisins gmfss), {}",
-        kGmfssPairFile, kGmfssFusionFile, without);
-    return true;
-  }
-  if (settings.gmfss_half_flow && found->half_pair.empty())
-    log->warn("GMFSS union : {} introuvable, la paire au flot entier", kGmfssHalfPairFile);
-  // Une paire d'avant le format 2 (sans feature0_1) cède la place à l'autre paire du dossier ; sans paire au
-  // format 2, GMFSS est écarté avant toute construction (le moteur, construit, la refuserait au chargement).
+  // Un ancien export peut rester dans un dossier personnel devant les modèles neufs du paquet.
   std::string dropped;
-  const std::expected<GmfssModels, Refusal> usable = gmfss_usable(*found, settings.gmfss_half_flow, dropped);
+  const auto usable = find_usable_gmfss(c.model_places, settings.gmfss_half_flow, dropped);
   if (!usable) {
     log->warn("GMFSS union refusé ({}) : {}", usable.error().detail, without);
     return true;
   }
+  if (settings.gmfss_half_flow && usable->half_pair.empty())
+    log->warn("GMFSS union : {} introuvable, la paire au flot entier", kGmfssHalfPairFile);
   if (!dropped.empty())
     log->warn("GMFSS union : {} ; {} à sa place", dropped, core::to_utf8(usable->pair.filename()));
   const GmfssModels& chosen = *usable;
@@ -159,8 +150,14 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
   // Très élevé par le mélange : chaque paire qui bouge (seuil 0).
   c.gmfss_px =
       settings.motion_engine == MotionEngine::Gmfss ? 0.0F : static_cast<float>(settings.gmfss_motion);
-  const bool half = !chosen.half_pair.empty() && chosen.pair == chosen.half_pair;
-  const GmfssCost cost = gmfss_cost(size, half);
+  c.gmfss_half_loaded = !chosen.half_pair.empty() && chosen.pair == chosen.half_pair;
+  GmfssCost cost = gmfss_cost(size, c.gmfss_half_loaded);
+  if (const auto& budget = p.options.gmfss_budget) {
+    cost = {.total_us = budget->pair_us + budget->key_us, .pair_us = budget->pair_us};
+    log->info("GMFSS : budget d'essai paire {:.2f} ms et clé {:.2f} ms ({}×{})",
+              static_cast<double>(budget->pair_us) / 1000.0, static_cast<double>(budget->key_us) / 1000.0,
+              size.width, size.height);
+  }
   c.gmfss_cost_us = cost.total_us;
   c.gmfss_pair_us = cost.pair_us;
   log->info("GMFSS union : {} en {}x{}",

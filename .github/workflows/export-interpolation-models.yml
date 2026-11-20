@@ -1,4 +1,4 @@
-# Exporte les graphes ONNX de DistilDRBA (flot entier et demi-flot) avec les scripts du dépôt, convertit RIFE 4.25 lite en
+# Exporte les graphes ONNX de DistilDRBA et GMFSS Fortuna Union (flot entier et demi-flot), convertit RIFE 4.25 lite en
 # FP16 (tools/rife/convert_rife_fp16.py, depuis l'export FP32 de vs-mlrt), et les range en artefact. Avec
 # « publier », les joint aussi à la release models-interp-1 du dépôt de releases, d'où
 # tools/release/fetch-models.sh les prend pour les paquets.
@@ -8,7 +8,6 @@
 # doit avoir l'empreinte épinglée dans tools/release/fetch-models.sh. Un autre graphe (nouvelle version d'un outil,
 # voulue) ne se publie qu'avec « nouvelle-empreinte » coché ; mettre alors à jour fetch-models.sh dans le même
 # changement, sinon les paquets le refusent.
-# GMFSS Fortuna n'est plus exporté : retiré du lecteur (0.10.0).
 name: Exporter les modèles d'interpolation
 
 on:
@@ -29,6 +28,8 @@ permissions:
 env:
   DISTIL_DRBA_COMMIT: db51bdeb452685cba9aee227c6dba42e67753b55
   DISTIL_DRBA_WEIGHTS_SHA256: 9de2437c40928d13c48fff0d5e1021b78c8446d544143a964d56c8a2b387c3ed
+  GMFSS_WHEEL: vsgmfss_fortuna-1.0.0-py3-none-any.whl
+  GMFSS_WHEEL_SHA256: b46909bc313bf569e106c791abf040bcdd8c1a9d5127b334caf3dd6ed9e86237
   # RIFE 4.25 lite : l'export ONNX officiel de vs-mlrt (release external-models, 11 plans, FP32), absent de l'archive
   # d'animejanai-inference d'où viennent les autres RIFE (docs/rife-candidats.md).
   RIFE_LITE_URL: https://github.com/AmusementClub/vs-mlrt/releases/download/external-models/rife_v4.25_lite.7z
@@ -68,6 +69,30 @@ jobs:
           7z x -y -bso0 -o"$RUNNER_TEMP/vs-mlrt" "$RUNNER_TEMP/rife_v4.25_lite.7z" rife/rife_v4.25_lite.onnx
           echo "$RIFE_LITE_FP32_SHA256  $RUNNER_TEMP/vs-mlrt/rife/rife_v4.25_lite.onnx" | sha256sum -c -
           python -I tools/rife/convert_rife_fp16.py "$RUNNER_TEMP/vs-mlrt/rife" out rife_v4.25_lite.onnx
+      - name: GMFSS Fortuna Union en FP16
+        env:
+          OMP_NUM_THREADS: "4"
+          MKL_NUM_THREADS: "4"
+        run: |
+          python -m pip download --no-deps --dest "$RUNNER_TEMP" vsgmfss_fortuna==1.0.0
+          echo "$GMFSS_WHEEL_SHA256  $RUNNER_TEMP/$GMFSS_WHEEL" | sha256sum -c -
+          python -m zipfile -e "$RUNNER_TEMP/$GMFSS_WHEEL" "$RUNNER_TEMP/gmfss"
+          package="$RUNNER_TEMP/gmfss/vsgmfss_fortuna"
+          python -I tools/gmfss/export_gmfss.py "$package" --model union --out out
+          python -I tools/gmfss/export_gmfss.py "$package" --model union --scale 0.5 \
+            --width 256 --height 256 --out "$RUNNER_TEMP/gmfss-s05"
+          cmp out/gmfss_fortuna_union_fusion.onnx "$RUNNER_TEMP/gmfss-s05/gmfss_fortuna_union_s05_fusion.onnx"
+          cp "$RUNNER_TEMP/gmfss-s05/gmfss_fortuna_union_s05_pair.onnx" out/
+          licences=tools/gmfss/licenses
+          {
+            cat "$licences/ORIGINES.txt"
+            printf '\nEmpreintes SHA-256 des graphes\n\n'
+            (cd out && sha256sum gmfss_fortuna_union*.onnx)
+            for licence in GMFSS-Fortuna-MIT.txt vs-gmfss-fortuna-MIT.txt GMFlow-Apache-2.0.txt IFNet-RIFE-MIT.txt; do
+              printf '\n%s\n\n' "$licence"
+              cat "$licences/$licence"
+            done
+          } > out/gmfss-fortuna-union-notices.txt
       - name: Empreintes
         env:
           NOUVELLE: ${{ inputs.nouvelle-empreinte }}
@@ -99,6 +124,6 @@ jobs:
         run: |
           gh release view models-interp-1 -R "$KIRARI_RELEASE_REPO" >/dev/null 2>&1 \
             || gh release create models-interp-1 -R "$KIRARI_RELEASE_REPO" --latest=false \
-                 --title "Modèles d'interpolation (DistilDRBA, RIFE 4.25 lite)" \
-                 --notes "Graphes ONNX exportés par .github/workflows/export-interpolation-models.yml. DistilDRBA (routineLife1, MIT), RIFE 4.25 lite (hzwer, MIT ; export ONNX de vs-mlrt)."
+                 --title "Modèles d'interpolation (DistilDRBA, RIFE 4.25 lite, GMFSS Fortuna Union)" \
+                 --notes "Graphes ONNX exportés par .github/workflows/export-interpolation-models.yml. DistilDRBA (routineLife1, MIT), RIFE 4.25 lite (hzwer, MIT ; export ONNX de vs-mlrt), GMFSS Fortuna Union (98mxr et HolyWu, MIT ; GMFlow, Apache 2.0)."
           gh release upload models-interp-1 out/* -R "$KIRARI_RELEASE_REPO" --clobber

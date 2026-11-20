@@ -144,11 +144,15 @@ struct ChainEngines {
   bool rife_warm = false;               // --rife-warm (UpscaleSetup::rife_warm)
   bool rife_encode_all = false;         // --rife-encode-all (UpscaleSetup::rife_encode_all)
   bool rife_at_slot = false;            // --rife-at-slot (UpscaleSetup::rife_at_slot)
+  bool span_b_ahead = false;            // --span-b-ahead (UpscaleSetup::span_b_ahead)
   bool scene_map = false;               // --scene-map (UpscaleSetup::scene_map)
+  bool nvof_roundtrip = false;
   bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
   bool temporal_fix_whole = false;      // --no-tfix-cache (chain_temporal.cpp)
   bool pair_triage = false;             // --pair-triage (UpscaleSetup::pair_triage)
   bool layers = false;                  // calques (UpscaleSetup::layers, layer_stage.h)
+  bool fused_layers = false;            // --fused-layers
+  bool nvof_layer_guard = false;
   bool plate = false;                   // plaque de décor (UpscaleSetup::layers, chain_layers.cpp)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   // La stabilisation temporelle avant SPAN (chain_temporal.cpp), à la taille de travail : la fenêtre et
@@ -169,6 +173,7 @@ struct ChainEngines {
   std::unique_ptr<gpu::Engine> gmfss_pair;
   std::unique_ptr<gpu::Engine> gmfss_fusion;
   GmfssUse gmfss_use = GmfssUse::Off;
+  bool gmfss_half_loaded = false;
   float gmfss_px = 15.0F;
   std::int64_t gmfss_cost_us = 0;  // GmfssSetup::cost_us et pair_us
   std::int64_t gmfss_pair_us = 0;
@@ -197,7 +202,8 @@ struct ChainEngines {
   // « DistilDRBA », « Apple » ou « RIFE », pour les compteurs.
   std::string_view motion_name() const;
   HeldExtras held_extras() const {
-    return {.smooth_drawings = smooth_drawings, .temporal_fix = temporal_fix != nullptr};
+    return {.smooth_drawings = smooth_drawings && rife_motion != nullptr && gmfss_use != GmfssUse::Only,
+            .temporal_fix = temporal_fix != nullptr};
   }
   // C08-08 : le moteur dans la clé de la mémoire de l'Auto (core/auto_memory.h) : l'interpolation, son
   // modèle, fusionné ou entier, image ou mouvement, et le SPAN chargé (span_variant : FP16, FP8, INT8). Un

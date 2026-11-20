@@ -142,6 +142,13 @@ std::expected<void, Refusal> FakeBackend::enqueue(gpu::Engine& engine, std::span
       ingested_.erase(outputs[0].handle);
     }
   }
+  if (name == "gmfss_pair") {
+    const auto names = engine.output_names();
+    for (std::size_t i = 0; i < names.size(); ++i) {
+      if (!names[i].starts_with("feature") && !names[i].starts_with("source")) continue;
+      if (auto ok = note(std::format("paire GMFSS {}", names[i]), outputs[i].handle); !ok) return ok;
+    }
+  }
   return note(std::format("engine {}", name));
 }
 

@@ -108,11 +108,12 @@ std::expected<std::optional<double>, Refusal> check_native(SpanFp8Net& net, cons
   if (cudaError_t e = cudaMalloc(&buffers.input, in_bytes); e != cudaSuccess) return failed(e, "cudaMalloc");
   if (cudaError_t e = cudaMalloc(&buffers.output, out_bytes); e != cudaSuccess)
     return failed(e, "cudaMalloc");
-  if (cudaError_t e = cudaMemcpy(buffers.input, image.data(), in_bytes, cudaMemcpyHostToDevice);
-      e != cudaSuccess)
-    return failed(e, "cudaMemcpy");
   if (cudaError_t e = cudaStreamCreateWithFlags(&buffers.stream, cudaStreamNonBlocking); e != cudaSuccess)
     return failed(e, "cudaStreamCreate");
+  if (const auto e =
+          cudaMemcpyAsync(buffers.input, image.data(), in_bytes, cudaMemcpyHostToDevice, buffers.stream);
+      e != cudaSuccess)
+    return failed(e, "cudaMemcpyAsync");
   if (std::string why; !net.launch(buffers.stream, buffers.input, buffers.output, why))
     return refuse(RefusalCode::VendorCallFailed, "SPAN FP16 natif : essai au chargement : " + why);
   if (cudaError_t e = cudaStreamSynchronize(buffers.stream); e != cudaSuccess) return failed(e, "exécution");

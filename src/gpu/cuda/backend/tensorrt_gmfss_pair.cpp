@@ -3,6 +3,8 @@
 // trtexec sur la paire entière (le même moteur que sans le natif, repris du cache) et sur son flot ;
 // « charger » les charge ensemble et, sous --gmfss-native, essaie les réseaux natifs contre la paire entière.
 // Tout refus du natif laisse la paire à TensorRT.
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <format>
 #include <fstream>
@@ -57,7 +59,8 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_pair
   if (!key) return refuse(RefusalCode::GraphInvalid, "GMFSS natif : clé d'artefact illisible");
   auto manifest = read_manifest(artifact.path);
   if (!manifest) return std::unexpected(std::move(manifest.error()));
-  auto engine = GmfssPairEngine::load(*runtime_, cache_dir_, *key, manifest->cut, arena());
+  auto engine =
+      GmfssPairEngine::load(*runtime_, cache_dir_, *key, manifest->cut, arena(), gmfss_feature_reuse_);
   if (!engine) return std::unexpected(std::move(engine.error()));
   if (gmfss_native_) {
     // Les poids du FeatureNet et du MetricNet, lus dans la paire FP16 que nomme le manifeste.
@@ -67,7 +70,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_pair
         bytes ? prepare::gmfss_pair_nets(*bytes)
               : std::expected<prepare::GmfssPairNets, Refusal>(std::unexpected(std::move(bytes.error())));
     auto kept =
-        nets ? (*engine)->try_native(*nets, arena(), kGmfssNativeMinDb)
+        nets ? (*engine)->try_native(*nets, *bytes, arena(), kGmfssNativeMinDb)
              : std::expected<std::vector<std::string>, Refusal>(std::unexpected(std::move(nets.error())));
     // Comme pour la fusion : un contexte perdu fait échouer le chargement, tout autre refus garde TensorRT.
     if (!kept && kept.error().code == RefusalCode::DeviceLost)
@@ -85,15 +88,35 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_pair
 std::expected<void, Refusal> TensorRtBackend::enqueue_gmfss_pair(GmfssPairEngine& engine,
                                                                  std::span<const Tensor> inputs,
                                                                  std::span<Tensor> outputs) {
+  const std::span<const Tensor> reuse = engine.take_right_features();
   if (auto ok = bind(); !ok) return ok;
   const std::shared_ptr<SharedActivations>& zone = arena();
-  if (auto ok = order_engine(&engine, inputs, outputs, false); !ok) return ok;
+  std::array<Tensor, 1 + prepare::kGmfssFeatureLevels> reads;
+  std::array<Tensor, GmfssPairEngine::kOutputs> writes;
+  std::span<const Tensor> ordered = inputs;
+  std::span<const Tensor> written = outputs;
+  bool aliased = false;
+  if (inputs.size() == 1 && !reuse.empty()) {
+    reads[0] = inputs.front();
+    std::ranges::copy(reuse, reads.begin() + 1);
+    ordered = reads;
+  }
+  if (!reuse.empty() && outputs.size() == writes.size()) {
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < outputs.size(); ++i) {
+      if (!engine.feature_already_bound(i, outputs[i], reuse)) writes[count++] = outputs[i];
+    }
+    aliased = count < outputs.size();
+    written = std::span(writes).first(count);
+  }
+  if (auto ok = order_engine(&engine, ordered, written, false); !ok) return ok;
   const Shape shape = inputs.empty() ? Shape{} : inputs[0].shape;
-  GpuTiming& timing = stage_named("GMFSS paire {} {}×{}", engine.native() ? "native" : "TensorRT",
-                                  shape.dims[3], shape.dims[2]);
+  const char* mode = !engine.native() ? "TensorRT" : (reuse.empty() ? "native" : "native, A reprise");
+  const char* access = aliased ? " sans copie" : "";
+  GpuTiming& timing = stage_named("GMFSS paire {}{} {}×{}", mode, access, shape.dims[3], shape.dims[2]);
   role(Role::Interpolation).begin(stream_);
   timing.begin(stream_);
-  auto queued = engine.enqueue(stream_, zone, inputs, outputs);
+  auto queued = engine.enqueue(stream_, zone, inputs, outputs, reuse);
   timing.end(stream_);
   role(Role::Interpolation).end(stream_);
   return queued;

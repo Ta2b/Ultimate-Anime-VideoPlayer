@@ -187,8 +187,9 @@ std::expected<void, Refusal> PlaceboScreen::set_looks(
 void PlaceboScreen::Impl::follow_effects(const ShowRequest& request) {
   if (!grade) return;
   const std::int64_t pts = request.frame != nullptr ? request.frame->pts_us : kNoPts;
-  const bool changed = effects.show(request.effects, pts);
-  if (changed || effects_on) {  // neutre et resté neutre : rien à poser
+  const auto epoch = request.frame != nullptr ? std::optional(request.frame->epoch) : std::nullopt;
+  const bool changed = effects.show(request.effects, pts, epoch);
+  if (changed) {  // le même masque sert à toutes les présentations de la paire
     const bool on = grade->set_effect_mask(&effects.mask());
     if (const auto& refused = grade->effect_mask_refusal(); refused && !effects_refusal_noted) {
       effects_refusal_noted = true;
@@ -196,7 +197,7 @@ void PlaceboScreen::Impl::follow_effects(const ShowRequest& request) {
           "éclats sur les effets : passe du masque refusée ({}), marge des éclats sur toute lumière",
           refused->detail);
     }
-    if (changed || on != effects_on) ++grade_serial;  // la composition gardée ne vaut plus
+    ++grade_serial;  // la composition gardée ne vaut plus
     effects_on = on;
   }
   // Les images que l'écran grade lui-même (pas celles gradées avant le warp), une fois chacune.

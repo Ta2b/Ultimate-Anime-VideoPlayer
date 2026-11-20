@@ -4,13 +4,12 @@
 // (chaque tuile 4×4 d'entrée). Seize produits par sortie 2×2 au lieu de trente-six : 2,25 fois moins de
 // mma. À 64 canaux, sommes f16 seulement : le cran Qualité (f32) garde la convolution directe.
 //
-// Un bloc garde la tuile kTH × kTW de conv_kernel (mêmes bandes, même masque, même épilogue : finish), soit
-// 4 × 16 tuiles Winograd ; ses 64 tuiles passent en deux moitiés de 32 (une ligne de fragments m16 chacune),
-// faute de place pour V entier à côté de la tuile d'entrée sous 48 Ko. Pour chaque moitié et chacun des 16
-// points ξ = (p, q) : tous les fils calculent V_ξ en mémoire partagée (sommes f32, un arrondi f16 : celui de
-// tools/bench/span_native/winograd_db.py), puis le warp w multiplie V_ξ par U_ξ pour les sorties 16w à
-// 16w + 15 (mma f16, 4 pas k) et ajoute M_ξ aux sorties 2×2 en f32 selon Aᵀ. Au bout, Y passe en f16 par la
-// mémoire partagée et revient dans la disposition des accumulateurs de conv_kernel.
+// Un bloc garde la tuile kTH × kTW de conv_kernel (mêmes bandes, même masque, même épilogue : finish).
+// Il charge une moitié de la tuile à la fois pour loger quatre points de V en mémoire partagée en plus du
+// halo. Pour chaque ligne p de V = Bᵀ d B, les quatre colonnes q partagent les lectures des deux lignes
+// de d. Les additions gardent le même ordre (f32 puis un arrondi en f16). Le warp w multiplie ces quatre
+// V_ξ par U_ξ pour les sorties 16w à 16w + 15, puis accumule chaque contribution en f32 selon Aᵀ.
+// Au bout, Y passe en f16 et revient dans la disposition des accumulateurs de conv_kernel.
 #include <array>
 #include <cuda_fp16.h>
 
@@ -18,16 +17,18 @@
 
 namespace kirari::gpu::cuda::span_native {
 
-inline constexpr int kWinoC = 64;                      // canaux du chemin Winograd
-inline constexpr int kWinoPoints = 16;                 // points ξ = 4p + q de F(2×2, 3×3)
-inline constexpr int kWinoCols = kTW / 2;              // tuiles 2×2 par ligne de la tuile de bloc
-inline constexpr int kWinoHalf = kTH / 4 * kWinoCols;  // tuiles 2×2 par moitié
-inline constexpr int kWinoTile = (kTH + 2) * (kTW + 2) * kWinoC * 2;  // la tuile d'entrée, Tile<64, true>
+inline constexpr int kWinoC = 64;
+inline constexpr int kWinoTaps = 4;  // côté de d et de V
+inline constexpr int kWinoPoints = kWinoTaps * kWinoTaps;
+inline constexpr int kWinoCols = kTW / 2;  // tuiles 2×2 par ligne
+inline constexpr int kWinoRows = kTH / 2;  // lignes de sortie par moitié
+inline constexpr int kWinoHalf = kWinoRows / 2 * kWinoCols;
+inline constexpr int kWinoPoint = kWinoHalf * (kWinoC + 8);  // un V_ξ, en demi-flottants
+inline constexpr int kWinoTile = (kWinoRows + 2) * (kTW + 2) * kWinoC * 2;
 
-// Octets de mémoire partagée de wino_kernel : la tuile d'entrée et V d'une moitié (pas C + 8), ou la sortie
-// et la 1×1 de la porte.
+// La moitié de la tuile et une ligne de V, ou la sortie entière et la 1×1 de la porte.
 constexpr int wino_smem_bytes() {
-  const int in = kWinoTile + kWinoHalf * (kWinoC + 8) * 2;
+  const int in = kWinoTile + kWinoTaps * kWinoPoint * 2;
   const int out = kTH * kTW * (kWinoC + 8) * 2 + kWinoC * kWinoC * 2;
   return in > out ? in : out;
 }
@@ -54,35 +55,47 @@ __device__ __forceinline__ float at_coef(int i, int p) {
   return p == 0 ? 0.F : p == 1 ? 1.F : -1.F;
 }
 
-// V_ξ d'une moitié vers v (32 tuiles au pas C + 8) : 32 tuiles × 8 morceaux de 8 canaux, deux par fil. Le
-// morceau d'une tuile se lit en quatre lds128 (les quatre termes non nuls de Bᵀ d B) ; huit fils de suite
-// lisent les huit morceaux d'un pixel et écrivent ceux d'une tuile : pas de conflit de banques.
-__device__ __forceinline__ void wino_input(std::uint32_t tile, __half* v, int half, int point) {
+using WinoRow = std::array<std::array<std::uint32_t, 4>, kWinoTaps>;
+
+__device__ __forceinline__ WinoRow wino_row(std::uint32_t tile, int offset, int c) {
   using T = Tile<kWinoC, true>;
-  constexpr int kSW = kTW + 2, kChunks = kWinoC / 8, kLdv = kWinoC + 8;
-  const int pp = point >> 2, qq = point & 3;
-  const int r0 = bt_first(pp), r1 = bt_second(pp), c0 = bt_first(qq), c1 = bt_second(qq);
-  const float sr = bt_sign(pp), sc = bt_sign(qq);
+  WinoRow row;
 #pragma unroll
+  for (int x = 0; x < kWinoTaps; ++x) {
+    const uint4 d = lds128(tile + static_cast<std::uint32_t>(T::at(offset + x, c)));
+    row[x] = {d.x, d.y, d.z, d.w};
+  }
+  return row;
+}
+
+// Les deux lignes de d sont lues une seule fois pour les quatre colonnes de V. Huit fils consécutifs
+// prennent huit morceaux d'un pixel et les rangent par tuile (pas C + 8) pour ldmatrix.
+__device__ __forceinline__ void wino_input(std::uint32_t tile, __half* v, int p) {
+  constexpr int kSW = kTW + 2, kChunks = kWinoC / 8, kLdv = kWinoC + 8;
+  const int r0 = bt_first(p), r1 = bt_second(p);
+  const float sr = bt_sign(p);
+#pragma unroll 1
   for (int k = 0; k < kWinoHalf * kChunks / kThreads; ++k) {
     const int item = static_cast<int>(threadIdx.x) + k * kThreads;
     const int tl = item / kChunks, c = item - tl * kChunks;
-    const int y = 2 * (2 * half + tl / kWinoCols), x = 2 * (tl % kWinoCols);
-    const auto load = [&](int r, int col) {
-      const uint4 d = lds128(tile + static_cast<std::uint32_t>(T::at((y + r) * kSW + x + col, c)));
-      return std::array<std::uint32_t, 4>{d.x, d.y, d.z, d.w};
-    };
-    const std::array<std::uint32_t, 4> d00 = load(r0, c0), d01 = load(r0, c1), d10 = load(r1, c0),
-                                       d11 = load(r1, c1);
-    std::uint32_t out[4];
+    const int y = 2 * (tl / kWinoCols), x = 2 * (tl % kWinoCols);
+    const WinoRow top = wino_row(tile, (y + r0) * kSW + x, c);
+    const WinoRow bottom = wino_row(tile, (y + r1) * kSW + x, c);
 #pragma unroll
-    for (int j = 0; j < 4; ++j) {
-      const float2 e00 = unpack_half2(d00[j]), e01 = unpack_half2(d01[j]);
-      const float2 e10 = unpack_half2(d10[j]), e11 = unpack_half2(d11[j]);
-      out[j] = pack_half2((e00.x + sc * e01.x) + sr * (e10.x + sc * e11.x),
-                          (e00.y + sc * e01.y) + sr * (e10.y + sc * e11.y));
+    for (int q = 0; q < kWinoTaps; ++q) {
+      const int c0 = bt_first(q), c1 = bt_second(q);
+      const float sc = bt_sign(q);
+      std::uint32_t out[4];
+#pragma unroll
+      for (int j = 0; j < 4; ++j) {
+        const float2 e00 = unpack_half2(top[c0][j]), e01 = unpack_half2(top[c1][j]);
+        const float2 e10 = unpack_half2(bottom[c0][j]), e11 = unpack_half2(bottom[c1][j]);
+        out[j] = pack_half2((e00.x + sc * e01.x) + sr * (e10.x + sc * e11.x),
+                            (e00.y + sc * e01.y) + sr * (e10.y + sc * e11.y));
+      }
+      *reinterpret_cast<uint4*>(v + q * kWinoPoint + tl * kLdv + c * 8) =
+          make_uint4(out[0], out[1], out[2], out[3]);
     }
-    *reinterpret_cast<uint4*>(v + tl * kLdv + c * 8) = make_uint4(out[0], out[1], out[2], out[3]);
   }
 }
 
@@ -129,9 +142,9 @@ __device__ __forceinline__ void wino_point(YAcc& ya, std::uint32_t abase, const 
       }
 }
 
-// Y d'une moitié, les 16 points.
+// Y d'une moitié, une seule préparation et deux barrières par ligne de V.
 __device__ __forceinline__ void wino_half(YAcc& ya, std::uint32_t tile, __half* v, std::uint32_t abase,
-                                          const uint4* wl, int half) {
+                                          const uint4* wl) {
 #pragma unroll
   for (int m = 0; m < 2; ++m)
 #pragma unroll
@@ -141,11 +154,13 @@ __device__ __forceinline__ void wino_half(YAcc& ya, std::uint32_t tile, __half* 
 #pragma unroll
         for (int r = 0; r < 4; ++r) ya[m][ij][nt][r] = 0.F;
 #pragma unroll 1
-  for (int point = 0; point < kWinoPoints; ++point) {
-    __syncthreads();  // la tuile est là (premier tour) ; V du point d'avant n'est plus lu
-    wino_input(tile, v, half, point);
+  for (int p = 0; p < kWinoTaps; ++p) {
+    __syncthreads();  // la tuile est là (premier tour) ; la ligne précédente de V n'est plus lue
+    wino_input(tile, v, p);
     __syncthreads();
-    wino_point(ya, abase, wl, point);
+#pragma unroll 1
+    for (int q = 0; q < kWinoTaps; ++q)
+      wino_point(ya, abase + static_cast<std::uint32_t>(q * kWinoPoint * 2), wl, p * kWinoTaps + q);
   }
 }
 
@@ -180,6 +195,35 @@ __device__ __forceinline__ void wino_store(const YHalf& yh, __half* o, int half,
           const int ch = warp * 16 + nt * 8 + 2 * t;
           *reinterpret_cast<std::uint32_t*>(o + pixel * kLdo + ch) = yh[m][ij][nt][h];
         }
+}
+
+// Sans porte, applique le biais et le ReLU dans la disposition du Winograd.
+template <bool Relu>
+__device__ __forceinline__ void wino_plain(const YAcc& ya, __half* o, const float* bias, int warp,
+                                           int lane) {
+  constexpr int kLdo = kWinoC + 8;
+  const int g = lane >> 2, t = lane & 3;
+#pragma unroll
+  for (int nt = 0; nt < 2; ++nt) {
+    const int ch = warp * 16 + nt * 8 + 2 * t;
+    const float2 b = __ldg(reinterpret_cast<const float2*>(bias + ch));
+#pragma unroll
+    for (int m = 0; m < 2; ++m)
+#pragma unroll
+      for (int ij = 0; ij < 4; ++ij)
+#pragma unroll
+        for (int h = 0; h < 2; ++h) {
+          const int pixel = (2 * m + (ij >> 1)) * kTW + 2 * (g + 8 * h) + (ij & 1);
+          const float2 y =
+              __half22float2(to_half2(ya[m][ij][nt][2 * h], ya[m][ij][nt][2 * h + 1]));
+          float a = y.x + b.x, z = y.y + b.y;
+          if constexpr (Relu) {
+            a = fmaxf(a, 0.F);
+            z = fmaxf(z, 0.F);
+          }
+          *reinterpret_cast<__half2*>(o + pixel * kLdo + ch) = to_half2(a, z);
+        }
+  }
 }
 
 // Y (o, au pas C + 8) dans la disposition des accumulateurs de conv_kernel (accumulate), pour finish.
@@ -218,8 +262,6 @@ __global__ void __launch_bounds__(kThreads) wino_kernel(Params p) {
     const unsigned tile = blockIdx.y * gridDim.x + blockIdx.x;
     if (((__ldg(p.mask + (tile >> 5U)) >> (tile & 31U)) & 1U) == 0U) return;
   }
-  load_nhwc<C, 1, true>(s, p.in[0], p.in_ld != 0 ? p.in_ld : C, p.fh, p.fw, ty0, tx0);
-  cp_async_wait_all();
   const std::uint32_t tile = smem_u32(s);
   // ldmatrix.x4 sur V : la lane l donne la tuile l % 16 du fragment, demi-K l / 16.
   const std::uint32_t abase =
@@ -229,18 +271,31 @@ __global__ void __launch_bounds__(kThreads) wino_kernel(Params p) {
   YHalf first, second;  // les deux moitiés en f16
 #pragma unroll 1
   for (int half = 0; half < 2; ++half) {  // une boucle : le corps n'est pas copié deux fois
-    wino_half(ya, tile, v, abase, wl, half);
-    if (half == 0) wino_pack(ya, first);
+    load_nhwc<C, 1, true, kWinoRows>(s, p.in[0], p.in_ld != 0 ? p.in_ld : C,
+                                    p.fh, p.fw, ty0 + half * kWinoRows, tx0);
+    cp_async_wait_all();
+    wino_half(ya, tile, v, abase, wl);
+    if constexpr (M == Mode::kPlain) {
+      __syncthreads();
+      wino_plain<Relu>(ya, s, p.bias, warp, lane);
+      __syncthreads();
+      store_nhwc<C, kWinoRows>(s, p, ty0 + half * kWinoRows, tx0);
+      __syncthreads();
+    } else if (half == 0) {
+      wino_pack(ya, first);
+    }
   }
-  wino_pack(ya, second);
-  __syncthreads();  // la tuile et V ne sont plus lus : la mémoire partagée reçoit Y
-  wino_store(first, s, 0, warp, lane);
-  wino_store(second, s, 1, warp, lane);
-  __syncthreads();
-  Frag<Acc::kF16> acc[kMF][C / 8];
-  wino_gather(acc, s, warp, lane);
-  __syncthreads();  // Y est lu : la porte peut charger x à sa place
-  finish<C, M, Relu, Acc::kF16>(acc, s, p, ty0, tx0, warp, lane);
+  if constexpr (M == Mode::kGate) {
+    wino_pack(ya, second);
+    __syncthreads();  // la tuile et V ne sont plus lus : la mémoire partagée reçoit Y
+    wino_store(first, s, 0, warp, lane);
+    wino_store(second, s, 1, warp, lane);
+    __syncthreads();
+    Frag<Acc::kF16> acc[kMF][C / 8];
+    wino_gather(acc, s, warp, lane);
+    __syncthreads();  // Y est lu : la porte peut charger x à sa place
+    finish<C, M, Relu, Acc::kF16>(acc, s, p, ty0, tx0, warp, lane);
+  }
 }
 
 // Les poids d'une 3×3 carrée ([sortie][position][entrée] en FP16) pour wino_kernel : U_ξ = G g Gᵀ, calculé

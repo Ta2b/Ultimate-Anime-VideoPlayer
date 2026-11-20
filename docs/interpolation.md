@@ -23,9 +23,36 @@ inconnue (0) ne change rien.
 
 ## Ce que montre le menu
 
+### Audit de la page Vidéo > Interpolation, 20 novembre 2026
+
+| Réglage | Effet sur le rendu et la charge |
+| --- | --- |
+| Désactivée, RIFE 4.22 lite, RIFE 4.25 | Désactivée conserve les images source. Les deux versions de RIFE font un compromis différent sur les traits et le mouvement. Le modèle effectif dépend des fichiers présents. |
+| DistilDRBA v2 lite | Une autre façon de respecter le rythme des dessins. La variante mouvement est distincte du réseau qui produit l'image entière. Le panneau indique celle qui tourne et le repli éventuel du fusionné. |
+| RIFE 4.25 + GMFSS union, GMFSS union | Le premier réserve des clés GMFSS aux paires admises. Le second privilégie une clé par paire et conserve RIFE lorsque le débit manque. « À chaque instant » tourne sans RIFE. |
+| Système macOS | Option de plateforme. Les résultats GPU de cette séance concernent Linux et la RTX 4070 Ti. |
+| Stable, Instantané, limite d'i/s | Stable choisit une cadence parmi des paliers. Instantané vise les instants de présentation, avec répétition possible sous charge. La limite agit en Auto. Une lecture explicitement à facteur fixe affiche ce facteur, puis choisir un mode réactive l'Auto. |
+| Couper si la carte ne suit pas | Garde d'Instantané. Après une coupure, un changement de plafond ou d'un réglage direct qui change le nombre de passes permet un nouvel essai. Les coupes de scène et dessins tenus sont exclus du compte. |
+| Garder les poses, lisser les dessins tenus | Choix de rythme. Le lissage des tenues remplace la conservation des poses et lit plusieurs images en avance. |
+| Catmull-Rom | Choix de rendu des traits et coût du warp. La variante CUDA qui partage les prises se juge à mêmes valeurs FP16. |
+| Panoramiques lents stables | Correction des petits déplacements avec le warp standard RIFE ou DistilDRBA Mouvement. Le warp RIFE qui conserve les poses reste indépendant. La case recharge les deux moteurs concernés. |
+| Estimer le mouvement en 720p | Compromis sur la grille du mouvement, pour RIFE et DistilDRBA Mouvement. Disponible quand la résolution de travail dépasse 720p. Le warp conserve la résolution de travail. |
+| RIFE rapide à demi-taille | Certaines passes de paires fortes utilisent le deuxième moteur. Le milieu que le lecteur calcule pour mesurer la paire garde sa taille normale. |
+| Moins de passes sur les mouvements rapides | Réutilise le flot du milieu sur certains instants voisins. Demande Garder les poses. |
+| GMFSS à demi-flot, GMFSS et RIFE en 540p | Le premier réduit le travail de GMFlow. Le second réduit la grille du mélange. Le budget et le plafond d'Auto suivent le modèle de paire retenu. |
+| GMFSS garde le détail de la source | Compose les clés à partir de détails de travail en plus de la fusion. Les splats de cette composition ont leur propre ligne de profil. |
+| Smooth Motion | Couche de présentation du pilote NVIDIA sous Linux. Le réglage demande une relance et Kirari affiche le débit de ses propres présentations. Le profil Windows relève de l'application NVIDIA. |
+| Multiplicateur d'export | Le fichier emploie le facteur fixe affiché. Un profil de lecture Auto se traduit par ×2 à l'export. La fréquence de l'écran ne borne pas le fichier. |
+
+Trois contrôles méritent un essai produit. Un indicateur du mode effectif permettrait de lire côte à côte le
+modèle choisi, le modèle chargé, la résolution du flot et la part des clés GMFSS. Un budget de clés par seconde
+permettrait de régler le coût du mélange directement. Une résolution de flot adaptative pourrait utiliser la
+cohérence aller-retour de NVOF pour réserver l'estimation pleine taille aux bords fins, mouvements ambigus et
+occlusions, après vérification sur les paires de référence. Le réseau garderait ses poids.
+
 Depuis novembre 2026 (choix de Tatoub après le vote à l'aveugle et Kill Blue 4:08), le menu ne propose plus de
-niveaux : il liste trois modèles par leur nom (`kInterpLevels`, `settings.h`), chacun avec une infobulle courte.
-Plus rien n'est caché en mode avancé.
+niveaux. Il liste les modèles disponibles par leur nom (`kInterpLevels`, `settings.h`). Le mode avancé
+regroupe les essais de RIFE, les options de GMFSS et Smooth Motion.
 
 | Modèle | Ce qu'il fait de mieux, son coût |
 |---|---|
@@ -422,7 +449,13 @@ tourne vite, et encore de 0,025 sur un flot dix fois plus lent, même en laissan
 eux-mêmes là où le mouvement varie trop entre les points (instant, tx, ty, poids). L'essai, son noyau et ses
 tests sont retirés ; le bit `1U << 2U` des essais du backend reste libre.
 
-## GMFSS Fortuna Union : les niveaux Élevé et Très élevé
+## GMFSS Fortuna Union
+
+Les paquets Linux et Windows installent ses trois graphes FP16 dans `models/rife/`, avec RIFE et
+DistilDRBA. Sur NVIDIA RTX avec TensorRT actif, ouvrir Vidéo > Interpolation et sélectionner
+« GMFSS Fortuna Union » ou « RIFE 4.25 + GMFSS Fortuna Union ». La case « GMFSS à chaque instant, sans
+RIFE » choisit la variante seule. Le lecteur construit et met en cache les moteurs à la première utilisation.
+Un ancien export local dont les deux paires sont périmées cède la place aux modèles du paquet.
 
 Retiré en 0.10.0, GMFSS revient en novembre 2026 à la demande de Tatoub, après la mesure de qualité
 ([relevé du 14 novembre](reports/gmfss-union-qualite-2026-11-14.md)) : RIFE 4.26 égale ou bat union en PSNR et en

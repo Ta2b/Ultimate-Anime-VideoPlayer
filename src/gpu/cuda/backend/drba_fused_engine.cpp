@@ -29,6 +29,14 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   const int h = key.height;
   const int w = key.width;
   const int t = key.plan.tail;
+  if (h == 1088 && w == 1920) {
+    int device = 0, major = 0, minor = 0;
+    engine->shared_finish_ =
+        cudaGetDevice(&device) == cudaSuccess &&
+        cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, device) == cudaSuccess &&
+        cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, device) == cudaSuccess &&
+        major == 8 && minor == 9;
+  }
   std::int64_t activation = 0;
 
   auto encode = TrtEngine::load(runtime, cache_dir / core::path_from_utf8(key.engines[0]), shared);
@@ -150,7 +158,8 @@ std::expected<void, Refusal> DrbaFusedEngine::use_zone(const std::shared_ptr<Sha
 std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                                                   const std::shared_ptr<SharedActivations>& arena,
                                                   std::span<const Tensor> inputs,
-                                                  std::span<const Tensor> outputs, bool times_only) {
+                                                  std::span<const Tensor> outputs, bool times_only,
+                                                  bool scalar_time) {
   const int h = height_;
   const int w = width_;
   const int t = plan_.tail;
@@ -170,7 +179,8 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                                             .x0 = at_ptr(layout_.x[0]),
                                             .x1 = at_ptr(layout_.x[1]),
                                             .x2 = at_ptr(layout_.x[2]),
-                                            .times_only = times_only},
+                                            .times_only = times_only,
+                                            .scalar_time = scalar_time},
                                            stream),
                            "drba_pre<<<>>>");
       !ok)
@@ -227,6 +237,7 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                             .out = outputs.size() == 1 ? fused_address(outputs[0]) : nullptr,
                             .flow = outputs.size() == 2 ? fused_address(outputs[0]) : nullptr,
                             .mask = outputs.size() == 2 ? fused_address(outputs[1]) : nullptr,
+                            .shared_resize = shared_finish_,
                         },
                         stream),
                     "drba_finish<<<>>>");
@@ -235,7 +246,7 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
 std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& arena,
                                                       std::span<const Tensor> inputs,
-                                                      std::span<const Tensor> outputs) {
+                                                      std::span<const Tensor> outputs, bool scalar_time) {
   // L'annonce ne vaut que pour cet appel, refusé ou non (C03-05) : un refus de forme ne la laisse pas à la
   // paire suivante, qui réécrit les mêmes tampons.
   const bool announced = std::exchange(times_only_next_, false);
@@ -272,7 +283,7 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
                           kept_->generation == arena->generation() && kept_->offset == scratch_offset_ &&
                           kept_->pair01 == pair01 && kept_->pair12 == pair12;
   kept_.reset();
-  auto queued = enqueue_chain(stream, arena, inputs, outputs, times_only);
+  auto queued = enqueue_chain(stream, arena, inputs, outputs, times_only, scalar_time);
   // Ses tampons, au-dessus des activations de ses morceaux (qui se sont déclarés).
   arena->wrote(this, static_cast<std::int64_t>(scratch_offset_),
                static_cast<std::int64_t>(scratch_offset_ + layout_.bytes));
@@ -291,8 +302,8 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
 std::expected<void, Refusal> DrbaFusedEngine::enqueue_chain(cudaStream_t stream,
                                                             const std::shared_ptr<SharedActivations>& arena,
                                                             std::span<const Tensor> inputs,
-                                                            std::span<const Tensor> outputs,
-                                                            bool times_only) {
+                                                            std::span<const Tensor> outputs, bool times_only,
+                                                            bool scalar_time) {
   const bool motion = outputs.size() == 2;
   const FusedGraphs::Key key{inputs[0].handle + inputs[0].offset,
                              inputs[1].handle + inputs[1].offset,
@@ -300,8 +311,9 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue_chain(cudaStream_t stream,
                              motion ? outputs[1].handle + outputs[1].offset : 0,
                              reinterpret_cast<std::uintptr_t>(arena->data()),
                              static_cast<std::uintptr_t>(arena->generation()),
-                             times_only ? 1U : 0U};
-  return graphs_.launch(stream, key, [&] { return run(stream, arena, inputs, outputs, times_only); });
+                             (times_only ? 1U : 0U) | (scalar_time ? 2U : 0U)};
+  return graphs_.launch(stream, key,
+                        [&] { return run(stream, arena, inputs, outputs, times_only, scalar_time); });
 }
 
 }  // namespace kirari::gpu::cuda

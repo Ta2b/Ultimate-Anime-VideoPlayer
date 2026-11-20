@@ -35,7 +35,7 @@ class LayerReplay {
  public:
   // divisor : le diviseur du travail au flux ; views : dossier des vues (vide : aucune), une toutes les every
   // paires.
-  LayerReplay(int divisor, std::string views, int every);
+  LayerReplay(int divisor, std::string views, int every, bool dump_grid);
 
   // La paire suivante du plan : sa ligne, et ses vues s'il y a lieu. late : sa caméra lk relue après la
   // décision (--sans-affinage), pour les paires suivantes. Faux si une vue ne s'écrit pas.
@@ -47,6 +47,7 @@ class LayerReplay {
   int divisor_;
   std::string views_;
   int every_;
+  bool dump_grid_;
   int index_ = 0;
   kirari::app::play::PlateTrack plate_;
   kirari::app::play::NeighbourCameras neighbours_;

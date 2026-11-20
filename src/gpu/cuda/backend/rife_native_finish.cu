@@ -74,9 +74,66 @@ FinishLaunch by_slice(int kc) {
   return nullptr;
 }
 
+// RIFE Lite en 1080p : les quatre phases partagent l’entrée, gardée jusqu’au dernier warp.
+__global__ void __launch_bounds__(kThreads, 2) finish_four(Params p, FusedFinishParams f) {
+  constexpr int kK = 32, kLd = kK + 8;
+  constexpr int kRowsIn = kWarps + 2;
+  constexpr int kColsIn = kTW + 2;
+  extern __shared__ __align__(16) unsigned char raw[];
+  auto* input = reinterpret_cast<__half*>(raw);
+  auto* output = input + kRowsIn * kColsIn * kLd;
+  const int warp = static_cast<int>(threadIdx.x) / 32, lane = static_cast<int>(threadIdx.x) % 32;
+  const int y = static_cast<int>(blockIdx.y) * kWarps;
+  const int x = static_cast<int>(blockIdx.x) * kTW;
+  load_nhwc<kK, 1, kRowsIn, kColsIn>(input, p, 0, y - 1, x - 1);
+  cp_async_wait_all();
+  __syncthreads();
+  const auto base = smem_u32(input) + static_cast<std::uint32_t>(((lane & 15) * kLd + (lane >> 4) * 8) * 2);
+#pragma unroll 1
+  for (int phase = 0; phase < 4; ++phase) {
+    const int z = phase * p.tiles;
+    const auto* weights = p.w + static_cast<long>(z) * 4 * 2 * 2 * 32 + lane;
+    Frag<Acc::kF16> acc[2][4];
+#pragma unroll
+    for (int frag = 0; frag < 2; ++frag)
+#pragma unroll
+      for (int n = 0; n < 4; ++n) acc[frag][n].clear();
+#pragma unroll 1
+    for (int tap = 0; tap < 4; ++tap) {
+      const int row = warp + (phase >> 1) + (tap >> 1);
+      const int col = (phase & 1) + (tap & 1);
+#pragma unroll
+      for (int sub = 0; sub < 2; ++sub) {
+        const auto* at = weights + (tap * 2 + sub) * 64;
+        const uint4 lo = __ldg(at), hi = __ldg(at + 32);
+#pragma unroll
+        for (int frag = 0; frag < 2; ++frag) {
+          std::uint32_t a[4];
+          ldmatrix4(a, base + static_cast<std::uint32_t>(((row * kColsIn + col + 16 * frag) * kLd + sub * 16) * 2));
+          acc[frag][0].mma(a, lo.x, lo.y);
+          acc[frag][1].mma(a, lo.z, lo.w);
+          acc[frag][2].mma(a, hi.x, hi.y);
+          acc[frag][3].mma(a, hi.z, hi.w);
+        }
+      }
+    }
+    if (phase != 0) __syncthreads();  // la fin précédente a fini de lire output
+    stage<kCT, 1, Acc::kF16>(acc, output, p.bias + static_cast<long>(z) * kCT, warp, lane);
+    __syncthreads();
+    finish_tile<1>(output, p, f, y, x, phase);
+  }
+}
+void finish_four_phases(dim3 grid, int, cudaStream_t stream, const Params& p, const FusedFinishParams& f) {
+  constexpr int kHeight = kWarps + 2;
+  constexpr int kBytes = (kHeight * (kTW + 2) + kWarps * kTW) * (kCT + 8) * 2;
+  grid.z = 1;
+  finish_four<<<grid, kThreads, kBytes, stream>>>(p, f);
+}
+
 }  // namespace
 
-FinishLaunch pick_finish(RifeNativeSums sums, int kc, int rows) {
+FinishLaunch pick_finish(RifeNativeSums sums, int kc, int rows, bool shared_phases) {
+  if (shared_phases && sums == RifeNativeSums::kF16 && kc == 32 && rows == 1) return finish_four_phases;
   switch (sums) {
     case RifeNativeSums::kF16:
       if (rows == 1) return by_slice<1, Acc::kF16>(kc);

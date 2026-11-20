@@ -169,14 +169,15 @@ jobs:
         if: ${{ !inputs.sans_tests }}
         run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" linux-release
       # Les modèles livrés passent la découpe du chemin fusionné (RIFE 4.26, 4.25, 4.22 lite, 4.25 lite, DistilDRBA et
-      # son demi-flot, TemporalFix s1 à s3) : un graphe que la découpe ne reconnaît plus arrête la release au lieu de ralentir l'utilisateur
+      # son demi-flot, GMFSS Fortuna Union et TemporalFix s1 à s3) : un graphe que la découpe ne reconnaît plus arrête la release au lieu de ralentir l'utilisateur
       # (A28-07). Un saut compte comme un échec.
       - name: Découpe des modèles livrés
         if: env.KIRARI_TAG != '' && !inputs.sans_tests
         run: |
           models="$RUNNER_TEMP/package/kirari-linux-x64/models/rife"
           for f in rife_v4.26.onnx rife_v4.25.onnx rife_v4.22_lite.onnx rife_v4.25_lite.onnx distil_drba_v2_lite.onnx \
-            distil_drba_v2_lite_s05.onnx; do
+            distil_drba_v2_lite_s05.onnx gmfss_fortuna_union_pair.onnx gmfss_fortuna_union_s05_pair.onnx \
+            gmfss_fortuna_union_fusion.onnx; do
             [ -f "$models/$f" ] || { echo "::error::modèle livré absent : $f"; exit 1; }
           done
           tfix="$RUNNER_TEMP/package/kirari-linux-x64/models/temporalfix"
@@ -186,11 +187,12 @@ jobs:
           cmake --preset linux-release -DKIRARI_RIFE_MODEL_DIR="$models" -DKIRARI_DRBA_MODEL_DIR="$models" \
             -DKIRARI_TFIX_MODEL_DIR="$tfix"
           cmake --build --preset linux-release --target kirari_prepare_tests
-          ctest --test-dir build/linux-release -R 'du catalogue se coupent' --no-tests=error --output-on-failure \
+          ctest --test-dir build/linux-release -R 'du catalogue se coupent|GMFSS natif : .* exportée se lit|GMFSS natif : les quatre blocs' \
+            --no-tests=error --output-on-failure \
             --output-junit "$RUNNER_TEMP/models-junit.xml"
           ran="$(grep -c '<testcase' "$RUNNER_TEMP/models-junit.xml" || true)"
           skipped="$(grep -c '<skipped' "$RUNNER_TEMP/models-junit.xml" || true)"
-          [ "$ran" -ge 2 ] && [ "$skipped" -eq 0 ] || { echo "::error::tests de découpe sautés ($skipped sur $ran)"; exit 1; }
+          [ "$ran" -ge 5 ] && [ "$skipped" -eq 0 ] || { echo "::error::tests de découpe sautés ($skipped sur $ran)"; exit 1; }
       # Le même lecteur en un seul fichier (tools/release/appimage.sh) : à rendre exécutable et à lancer.
       - name: AppImage
         id: appimage

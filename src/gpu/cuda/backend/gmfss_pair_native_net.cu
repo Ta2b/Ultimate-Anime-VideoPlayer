@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/gmfss_conv_plan.cuh"
+#include "gpu/cuda/backend/gmfss_metric_motion.cuh"
 #include "gpu/cuda/backend/gmfss_pair_native_net.h"
 
 namespace kirari::gpu::cuda {
@@ -64,39 +65,6 @@ __global__ void unpack_planes(const __half* in, int ld, long plane, int count, _
   for (int j = 0; j < 4; ++j) {
     to[(2 * j) * plane] = __ushort_as_half(static_cast<unsigned short>(w[j] & 0xFFFFU));
     to[(2 * j + 1) * plane] = __ushort_as_half(static_cast<unsigned short>(w[j] >> 16U));
-  }
-}
-
-struct MotionPlanes {
-  __half* metric[2][3];  // le troisième plan de motion{k}_{l}
-};
-
-// La métrique du côté side au pixel (y, x) : tanh arrondi en FP16, puis × 10 arrondi, comme Tanh et Mul de la
-// paire en FP16.
-__device__ __forceinline__ float metric_at(const __half* m, int w, int y, int x, int side) {
-  const __half t = __float2half(tanhf(__half2float(m[(static_cast<long>(y) * w + x) * 8 + side])));
-  return __half2float(__float2half(__half2float(t) * prepare::kGmfssMetricScale));
-}
-
-// Un fil par pixel de la taille de la fusion : il écrit ses deux métriques, et celles de la moitié et du
-// quart dont il est le coin.
-__global__ void metric_motion(const __half* m, int h, int w, MotionPlanes out) {
-  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
-  const int y = static_cast<int>(blockIdx.y);
-  if (x >= w || y >= h) return;
-#pragma unroll
-  for (int side = 0; side < 2; ++side) {
-    out.metric[side][0][static_cast<long>(y) * w + x] = __float2half(metric_at(m, w, y, x, side));
-    if ((x & 1) == 0 && (y & 1) == 0) {
-      const float sum = metric_at(m, w, y, x, side) + metric_at(m, w, y, x + 1, side) +
-                        metric_at(m, w, y + 1, x, side) + metric_at(m, w, y + 1, x + 1, side);
-      out.metric[side][1][static_cast<long>(y / 2) * (w / 2) + x / 2] = __float2half(0.25F * sum);
-    }
-    if ((x & 3) == 0 && (y & 3) == 0) {
-      const float sum = metric_at(m, w, y + 1, x + 1, side) + metric_at(m, w, y + 1, x + 2, side) +
-                        metric_at(m, w, y + 2, x + 1, side) + metric_at(m, w, y + 2, x + 2, side);
-      out.metric[side][2][static_cast<long>(y / 4) * (w / 4) + x / 4] = __float2half(0.25F * sum);
-    }
   }
 }
 
@@ -173,17 +141,15 @@ class Net final : public GmfssPairNativeNet {
         static_cast<const __half*>(in), plane,
         ConvNet::at(zone_.as<void>(), metric_.tensor(prepare::kGmfssMetricInput)));
     metric_.run(stream, zone_.as<void>(), partial_.as<float>(), {});
-    MotionPlanes planes{};
+    gmfss_metric::MotionPlanes planes{};
     for (int side = 0; side < 2; ++side)
       for (int level = 0; level < 3; ++level) {
         const long level_plane = static_cast<long>(height_ >> level) * (width_ >> level);
         planes.metric[side][level] =
             static_cast<__half*>(motion.motion[static_cast<std::size_t>(side * 3 + level)]) + 2 * level_plane;
       }
-    const dim3 grid(static_cast<unsigned>((width_ + 127) / 128), static_cast<unsigned>(height_));
-    metric_motion<<<grid, 128, 0, stream>>>(ConvNet::at(zone_.as<void>(), metric_.tensor(kGmfssMetricOutput)),
-                                            height_, width_, planes);
-    return cudaGetLastError();
+    const auto* logits = ConvNet::at(zone_.as<void>(), metric_.tensor(kGmfssMetricOutput));
+    return gmfss_metric::launch_metric_motion(stream, logits, height_, width_, planes);
   }
 
  private:

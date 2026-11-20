@@ -9,14 +9,13 @@ Seuils (docs/parite-windows-linux.md) : par extrait, le 99e centile du temps par
 pas celui de Linux de plus de 5 %, et Windows ne perd pas plus d'images ; le temps médian, le rendu et
 l'acquisition restent à 10 % près. Sortie 1 dès qu'un seuil est franchi, pour bloquer une publication.
 """
-import glob
 import os
-import re
 import statistics
 import sys
+from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from banc_resume import read_stats, summarize  # noqa: E402
+from banc_resume import read_runs  # noqa: E402
 
 # (mesure, marge relative admise pour Windows ; None : aucune de plus que Linux)
 THRESHOLDS = [("p99_ms", 0.05), ("pertes", None), ("p50_ms", 0.10), ("render_ms", 0.10), ("acquire_ms", 0.10)]
@@ -24,28 +23,29 @@ THRESHOLDS = [("p99_ms", 0.05), ("pertes", None), ("p50_ms", 0.10), ("render_ms"
 
 def gather(directory):
     """Moyenne de chaque mesure par extrait, sur tous les tours et les deux variantes."""
+    runs = read_runs(directory)
     found = {}
-    for path in sorted(glob.glob(os.path.join(directory, "extrait*-tour*-*.tsv"))):
-        if path.endswith(".gpu.tsv"):
-            continue
-        match = re.match(r"extrait(\d+)-tour\d+-[AB]-", os.path.basename(path))
-        if not match:
-            continue
-        summary = summarize(read_stats(path))
-        if summary:
-            found.setdefault(int(match[1]), []).append(summary)
-    return {extrait: {name: statistics.fmean(s[name] for s in runs) for name, _ in THRESHOLDS}
-            for extrait, runs in found.items()}
+    for extrait, _, _, summary in runs:
+        found.setdefault(extrait, []).append(summary)
+    metrics = {extrait: {name: statistics.fmean(s[name] for s in samples) for name, _ in THRESHOLDS}
+               for extrait, samples in found.items()}
+    return metrics, Counter((extrait, tour, label) for extrait, tour, label, _ in runs)
 
 
 def compare(linux_dir, windows_dir):
-    linux, windows = gather(linux_dir), gather(windows_dir)
+    try:
+        linux, linux_runs = gather(linux_dir)
+        windows, windows_runs = gather(windows_dir)
+    except (OSError, ValueError) as error:
+        return str(error), True
     lines, failed = [], False
     common = sorted(set(linux) & set(windows))
     if not common:
         return "aucun extrait commun aux deux dossiers", True
-    for extrait in sorted(set(linux) ^ set(windows)):
-        lines.append(f"extrait {extrait} : joué sur un seul système, ignoré")
+    for extrait, tour, label in sorted(set(linux_runs) | set(windows_runs)):
+        if linux_runs[extrait, tour, label] != windows_runs[extrait, tour, label]:
+            failed = True
+            lines.append(f"extrait {extrait}, tour {tour}, variante {label} : passages différents selon le système")
     for extrait in common:
         lines.append(f"extrait {extrait}")
         for name, margin in THRESHOLDS:
@@ -63,14 +63,14 @@ def selftest():
     import tempfile
     from banc_resume import COLUMNS
 
-    def write(directory, interval_extra, dropped):
+    def write(directory, interval_extra, dropped, excerpt=1):
         rows = ["\t".join(COLUMNS)]
         for i in range(200):
             interval = 41_667 + (interval_extra if i >= 195 else 0)
             rows.append("\t".join(map(str, [i + 1, 1_000_000 + i * 41_667, i * 41_667, 1, 200, 900, 0, interval,
                                            dropped if i == 199 else 0, "i", 0, 0, 0, 0])))
         os.makedirs(directory, exist_ok=True)
-        with open(os.path.join(directory, "extrait1-tour1-A-1.tsv"), "w", encoding="utf-8") as f:
+        with open(os.path.join(directory, f"extrait{excerpt}-tour1-A-1.tsv"), "w", encoding="utf-8") as f:
             f.write("\n".join(rows) + "\n")
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -86,6 +86,9 @@ def selftest():
         assert failed and "ÉCART" in report, report
         _, failed = compare(os.path.join(tmp, "linux"), os.path.join(tmp, "vide"))
         assert failed
+        write(os.path.join(tmp, "linux"), 0, 0, excerpt=2)
+        report, failed = compare(os.path.join(tmp, "linux"), os.path.join(tmp, "win-ok"))
+        assert failed and "extrait 2" in report, report
     print("parite : auto-test réussi")
 
 

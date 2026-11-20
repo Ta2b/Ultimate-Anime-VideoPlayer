@@ -3,13 +3,18 @@
 // pixels, passent par le moteur TensorRT de la paire entière et par le flot et les réseaux natifs ; le choix
 // des sommes de chaque réseau est celui de gmfss_trial.h, chacune des quatorze sorties jugée à part, l'écart
 // rapporté à son étendue (au moins 1 : les caractéristiques et les flots ne sont pas des images).
+#include <algorithm>
 #include <chrono>
+#include <format>
+#include <limits>
 #include <cuda_fp16.h>
 #include <utility>
 #include <vector>
 
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/fused_graphs.h"
+#include "gpu/cuda/backend/gmflow_pair_flow_net.h"
+#include "gpu/cuda/backend/gmfss_mix.h"
 #include "gpu/cuda/backend/gmfss_pair_engine.h"
 #include "gpu/cuda/backend/gmfss_trial.h"
 
@@ -36,10 +41,19 @@ std::vector<__half> test_frames(const Shape& shape) {
   return out;
 }
 
+std::expected<std::vector<__half>, Refusal> read_output(const Tensor& output) {
+  std::vector<__half> host(elements(output.shape));
+  if (auto ok = cuda_check(cudaMemcpy(host.data(), fused_address(output), host.size() * 2, cudaMemcpyDeviceToHost),
+                            "GMFSS natif : copie de l'essai"); !ok)
+    return std::unexpected(std::move(ok.error()));
+  return host;
+}
+
 }  // namespace
 
 std::expected<std::vector<std::string>, Refusal> GmfssPairEngine::try_native(
-    const prepare::GmfssPairNets& nets_in, const std::shared_ptr<SharedActivations>& shared, double min_db) {
+    const prepare::GmfssPairNets& nets_in, std::span<const std::byte> pair,
+    const std::shared_ptr<SharedActivations>& shared, double min_db) {
   gmfss_trial::Scratch scratch;
   const auto device = [&](std::size_t count) -> std::expected<void*, Refusal> {
     void* at = nullptr;
@@ -75,6 +89,7 @@ std::expected<std::vector<std::string>, Refusal> GmfssPairEngine::try_native(
   if (auto ok = cuda_check(cudaDeviceSynchronize(), "GMFSS natif : essai de la paire"); !ok)
     return std::unexpected(std::move(ok.error()));
   // Quoi qu'il arrive, l'essai laisse la paire à TensorRT ou au natif retenu.
+  gmflow_.reset();
   native_.reset();
   native_on_ = false;
   const auto started = std::chrono::steady_clock::now();
@@ -98,26 +113,71 @@ std::expected<std::vector<std::string>, Refusal> GmfssPairEngine::try_native(
       .outputs = kOutputs,
       .pass =
           [&](bool native) {
-            native_on_ = native;
-            auto ok = enqueue(scratch.stream, shared, inputs, outputs);
-            native_on_ = false;
-            return ok;
+            return native ? enqueue_native(scratch.stream, shared, frames, outputs, nullptr)
+                          : full_->enqueue(scratch.stream, shared, inputs, outputs);
           },
       .piece = [&](int piece) { return enqueue_piece(scratch.stream, piece, frames, outputs); },
-      .fetch = [&](std::size_t i) -> std::expected<std::vector<__half>, Refusal> {
-        std::vector<__half> host(elements(outputs[i].shape));
-        if (auto ok = cuda_check(
-                cudaMemcpy(host.data(), fused_address(outputs[i]), host.size() * 2, cudaMemcpyDeviceToHost),
-                "GMFSS natif : copie de l'essai");
-            !ok)
-          return std::unexpected(std::move(ok.error()));
-        return host;
-      }};
+      .fetch = [&](std::size_t i) { return read_output(outputs[i]); }};
   auto outcome = gmfss_trial::try_mix(unit, min_db, tuning);
   if (!outcome || !outcome->keep) native_.reset();
   native_on_ = native_ != nullptr;
   if (!outcome) return std::unexpected(std::move(outcome.error()));
+  if (!outcome->keep) return std::move(outcome->lines);
+
+  // Juger GMFlow isolément, avec les mêmes FeatureNet et MetricNet et le même dessin.
+  if (auto result = try_flow_native(pair, scratch.stream, shared, frames, outputs, min_db); result)
+    outcome->lines.push_back(std::move(*result));
+  else if (result.error().code == RefusalCode::DeviceLost)
+    return std::unexpected(std::move(result.error()));
+  else
+    outcome->lines.push_back("GMFlow natif refusé, flot TensorRT : " + result.error().detail);
   return std::move(outcome->lines);
+}
+
+std::expected<std::string, Refusal> GmfssPairEngine::try_flow_native(
+    std::span<const std::byte> pair, cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared,
+    const Tensor& frames, std::span<const Tensor> outputs, double min_db) {
+  auto candidate = GmflowPairFlowNet::create(pair, height_, width_);
+  if (!candidate) return std::unexpected(std::move(candidate.error()));
+  const auto run = [&](const GmflowPairFlowNet* gmflow) {
+    return enqueue_native(stream, shared, frames, outputs, gmflow);
+  };
+  if (auto ok = run(nullptr); !ok) return std::unexpected(std::move(ok.error()));
+  if (auto ok = cuda_check(cudaStreamSynchronize(stream), "GMFlow : référence"); !ok)
+    return std::unexpected(std::move(ok.error()));
+  std::vector<std::vector<__half>> reference;
+  reference.reserve(kOutputs);
+  for (std::size_t i = 0; i < kOutputs; ++i) {
+    auto found = read_output(outputs[i]);
+    if (!found) return std::unexpected(std::move(found.error()));
+    reference.push_back(std::move(*found));
+  }
+  if (auto ok = run(candidate->get()); !ok) return std::unexpected(std::move(ok.error()));
+  if (auto ok = cuda_check(cudaStreamSynchronize(stream), "GMFlow : candidat"); !ok)
+    return std::unexpected(std::move(ok.error()));
+  double worst = std::numeric_limits<double>::infinity();
+  std::size_t worst_at = 0;
+  for (std::size_t i = 0; i < kOutputs; ++i) {
+    auto found = read_output(outputs[i]);
+    if (!found) return std::unexpected(std::move(found.error()));
+    const double db = gmfss_trial::output_db(reference[i], *found);
+    if (db < worst) {
+      worst = db;
+      worst_at = i;
+    }
+  }
+  const auto names = output_names();
+  if (worst < min_db)
+    return std::format("GMFlow natif écarté : {:.1f} dB sur {} (seuil {:.0f}), flot TensorRT", worst,
+                       names[worst_at], min_db);
+  auto ms = gmfss_trial::times(stream, 2, [&](std::size_t v) { return run(v == 0 ? nullptr : candidate->get()); },
+                               gmfss_trial::kPieceRounds);
+  if (!ms) return std::unexpected(std::move(ms.error()));
+  if (!gmfss_mix::beats((*ms)[0], (*ms)[1]))
+    return std::format("GMFlow natif écarté : {:.2f} ms contre {:.2f} ms, flot TensorRT", (*ms)[1], (*ms)[0]);
+  gmflow_ = std::move(*candidate);
+  return std::format("GMFlow natif retenu : {:.1f} dB au pire, paire {:.2f} ms contre {:.2f} ms",
+                     worst, (*ms)[1], (*ms)[0]);
 }
 
 }  // namespace kirari::gpu::cuda

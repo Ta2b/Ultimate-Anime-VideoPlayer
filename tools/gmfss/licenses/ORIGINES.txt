@@ -1,0 +1,18 @@
+GMFSS Fortuna Union pour Kirari
+
+Conversion en graphes ONNX FP16 par tools/gmfss/export_gmfss.py, à partir
+des poids historiques contenus dans vsgmfss_fortuna 1.0.0.
+https://pypi.org/project/vsgmfss-fortuna/1.0.0/#files
+SHA-256 de la roue : b46909bc313bf569e106c791abf040bcdd8c1a9d5127b334caf3dd6ed9e86237
+
+GMFSS-Fortuna-MIT.txt : GMFSS Fortuna, © 2023 98mxr, MIT.
+https://github.com/98mxr/GMFSS_Fortuna/blob/0fb7ac1dc292e2615217110dd9d82557845fb919/LICENSE
+
+vs-gmfss-fortuna-MIT.txt : port VapourSynth, © 2023 HolyWu, MIT, version 1.0.0.
+https://github.com/HolyWu/vs-gmfss_fortuna/blob/f4f990a456678942beb7bcbca3fd5645d139ebe4/LICENSE
+
+GMFlow-Apache-2.0.txt : GMFlow, © 2022 Haofei Xu, Apache 2.0.
+https://github.com/haofeixu/gmflow/blob/b5123431164d01ec14526a1c3d22218aecb62024/LICENSE
+
+IFNet-RIFE-MIT.txt : IFNet de RIFE, utilisé par la fusion Union, © Megvii Inc., MIT.
+https://github.com/hzwer/ECCV2022-RIFE/blob/5d8adbdd40e12c2c8f91930eff838aebe561c086/LICENSE

@@ -21,6 +21,7 @@ struct GmfssNativeInputs {
   std::array<const void*, 3> warped0{};
   std::array<const void*, 3> warped1{};
   const void* rife = nullptr;
+  bool packed_features = false;  // les splats ont écrit les six tranches de x1 à x3
 };
 
 // Les morceaux (GmfssNativeParts) : ligne 0, ligne 1 et ligne 2 (les convolutions qui écrivent un tenseur de
@@ -33,9 +34,15 @@ class GmfssNativeNet : public GmfssNativeParts {
   // réglée au banc sur stream pour les trois sommes, celles posées étant f32 partout. Rien et error rempli si
   // une convolution sort de ce que les noyaux font, ou sur une erreur CUDA (mémoire, banc).
   static std::unique_ptr<GmfssNativeNet> create(const prepare::GmfssGrid& grid, int height, int width,
-                                                cudaStream_t stream, std::string& error);
+                                                cudaStream_t stream, std::string& error,
+                                                bool features_c8 = false);
   // Le réseau sur stream : out reçoit 3 plans FP16 de 2·height × 2·width.
   virtual cudaError_t run(cudaStream_t stream, const GmfssNativeInputs& in, void* out) const = 0;
+  // x1 à x3, avec les canaux de A puis B dans chaque pixel.
+  virtual std::array<void*, 3> feature_inputs() const = 0;
+  // Le placement par anneaux est essayé après le choix des précisions et de l'IFNet.
+  virtual bool join_ready() const = 0;
+  virtual void use_join(bool enabled) = 0;
   // Les convolutions d'un morceau seul, sur ce que la zone garde : pour son temps.
   virtual cudaError_t run_piece(cudaStream_t stream, int piece) const = 0;
 };

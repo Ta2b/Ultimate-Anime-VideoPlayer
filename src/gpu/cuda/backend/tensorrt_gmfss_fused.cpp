@@ -36,6 +36,31 @@ std::expected<prepare::GmfssGrid, Refusal> native_grid(const std::filesystem::pa
   return prepare::gmfss_grid(*bytes);
 }
 
+std::expected<std::array<RifeNativePiece, 4>, Refusal> native_ifnet(
+    const std::filesystem::path& manifest_path) {
+  auto manifest = read_manifest(manifest_path);
+  if (!manifest) return std::unexpected(std::move(manifest.error()));
+  auto bytes =
+      prepare::read_gmfss_piece(manifest_path.parent_path(), manifest->pieces[1], manifest->digests[1]);
+  if (!bytes) return std::unexpected(std::move(bytes.error()));
+  auto layers = prepare::gmfss_ifnet_blocks(*bytes, manifest->height, manifest->width);
+  if (!layers) return std::unexpected(std::move(layers.error()));
+  std::array<RifeNativePiece, 4> pieces;
+  for (std::size_t k = 0; k < pieces.size(); ++k) {
+    for (prepare::RifeNativeLayer& layer : (*layers)[k]) {
+      pieces[k].push_back({.transposed = layer.transposed,
+                           .cin = layer.cin,
+                           .cout = layer.cout,
+                           .stride = layer.stride,
+                           .weights = std::move(layer.weights),
+                           .bias = std::move(layer.bias),
+                           .slope = std::move(layer.slope),
+                           .scale = std::move(layer.scale)});
+    }
+  }
+  return pieces;
+}
+
 }  // namespace
 
 std::expected<std::vector<std::string>, Refusal> TensorRtBackend::build_gmfss_pieces(
@@ -109,8 +134,10 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_fuse
   if (!engine) return std::unexpected(std::move(engine.error()));
   if (gmfss_native_) {
     auto grid = native_grid(artifact.path);
+    auto ifnet = native_ifnet(artifact.path);
+    if (!ifnet) log(BackendLogLevel::Info, "GMFSS natif, IFNet : " + ifnet.error().detail);
     auto kept =
-        grid ? (*engine)->try_native(*grid, arena(), kGmfssNativeMinDb)
+        grid ? (*engine)->try_native(*grid, arena(), kGmfssNativeMinDb, ifnet ? &*ifnet : nullptr)
              : std::expected<std::vector<std::string>, Refusal>(std::unexpected(std::move(grid.error())));
     // Un noyau fautif pendant l'essai perd le contexte CUDA : le chargement échoue au lieu de rendre une
     // fusion morte. Tout autre refus laisse la fusion à TensorRT, chargée et intacte.
@@ -129,16 +156,18 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_fuse
 
 std::expected<void, Refusal> TensorRtBackend::enqueue_gmfss_fused(GmfssFusedEngine& engine,
                                                                   std::span<const Tensor> inputs,
-                                                                  std::span<Tensor> outputs) {
+                                                                  std::span<Tensor> outputs,
+                                                                  bool packed_features) {
   if (auto ok = bind(); !ok) return ok;
   const std::shared_ptr<SharedActivations>& zone = arena();
   if (auto ok = order_engine(&engine, inputs, outputs, false); !ok) return ok;
   const Shape shape = outputs.empty() ? Shape{} : outputs[0].shape;
-  GpuTiming& timing = stage_named("GMFSS fusion {} {}×{}", engine.native() ? "native" : "TensorRT",
+  const char* mode = !engine.native() ? "TensorRT" : (packed_features ? "native, splats directs" : "native");
+  GpuTiming& timing = stage_named("GMFSS fusion {} {}×{}", mode,
                                   shape.dims[3], shape.dims[2]);
   role(Role::Interpolation).begin(stream_);
   timing.begin(stream_);
-  auto queued = engine.enqueue(stream_, zone, inputs, outputs);
+  auto queued = engine.enqueue(stream_, zone, inputs, outputs, packed_features);
   timing.end(stream_);
   role(Role::Interpolation).end(stream_);
   return queued;

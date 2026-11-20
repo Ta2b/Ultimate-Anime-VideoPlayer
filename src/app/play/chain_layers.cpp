@@ -19,7 +19,10 @@ void plan_plate(ChainEngines& c, const PlaySettings& settings) {
 
 LayerSetup layer_setup(const ChainEngines& c, const MasterClock* clock) {
   if (clock == nullptr || !c.scene_map) return {};
-  return {.layers = c.layers && c.rife_motion != nullptr, .plate = c.plate};
+  return {.layers = c.layers && c.rife_motion != nullptr,
+          .plate = c.plate,
+          .fused = c.fused_layers,
+          .nvof_guard = c.nvof_layer_guard};
 }
 
 }  // namespace kirari::app::play

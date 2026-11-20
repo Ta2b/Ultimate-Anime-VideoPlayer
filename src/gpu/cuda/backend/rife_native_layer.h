@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "gpu/cuda/backend/conv_stream.h"
 #include "gpu/cuda/backend/rife_native_plan.h"
 
 namespace kirari::gpu::cuda::rife_native {
@@ -83,14 +84,16 @@ struct Layer {
   Buffer w, bias, slope;
   dim3 grid;
   int smem = 0;
-  // La première couche du dernier bloc en pleine résolution, entrée calculée à la volée (pick_glue) : son
-  // noyau (nul sinon), ses poids rangés pour une tuile de toute la couche, sa grille, sa mémoire partagée et
-  // les échelles des sources de la colle qui la dimensionnent.
+  // La première couche du dernier bloc en pleine résolution ou de l'avant-dernier à moitié, entrée calculée
+  // à la volée (pick_glue) : son noyau (nul sinon), ses poids rangés pour une tuile de toute la couche, sa
+  // grille, sa mémoire partagée, les échelles des sources de la colle qui la dimensionnent et la réduction
+  // de son X.
   GlueLaunch glue = nullptr;
   Buffer glue_w;
   dim3 glue_grid;
   int glue_smem = 0;
   std::vector<int> glue_scales;
+  int glue_reduce = 1;
   // La dernière couche du dernier bloc, fin comprise (pick_finish) : son noyau (nul sinon), ses poids rangés
   // pour une tuile de 32, ses tuiles de 32 par phase, sa grille et sa mémoire partagée.
   FinishLaunch finish = nullptr;
@@ -110,18 +113,29 @@ struct Layer {
   }
 };
 
+// Le flux ne change le calendrier que des ResConv 3 × 3 sur 64 canaux, hors phases et bordures transposées.
+inline bool can_stream(const Layer& layer) {
+  return layer.kind == Kind::kSame && layer.residual && layer.cin == 64 && layer.cout == 64 &&
+         layer.phases == 1 && layer.ih == layer.oh && layer.iw == layer.ow;
+}
+
 // La forme cfg pour cette couche : lancement, grille, mémoire partagée ; faux si aucun noyau ne la fait.
 inline bool shape(Layer& layer, const Config& cfg) {
-  const Launch launch = pick_for(layer.sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
+  const bool stream = cfg.bands > 0;
+  if (stream && !can_stream(layer)) return false;
+  const Launch launch = stream ? pick_stream(layer.sums, layer.kind, cfg)
+                               : pick_for(layer.sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
   if (launch == nullptr || layer.cin % cfg.kc != 0 || layer.cout % cfg.ct != 0) return false;
   layer.cfg = cfg;
   layer.launch = launch;
   layer.tiles = layer.cout / cfg.ct;
   const int th = kWarps * cfg.rows;
-  layer.grid =
-      dim3(static_cast<unsigned>((layer.ow + kTW - 1) / kTW), static_cast<unsigned>((layer.oh + th - 1) / th),
-           static_cast<unsigned>(layer.phases * layer.tiles * cfg.ksplit));
-  layer.smem = smem_bytes(cfg.kc, cfg.ct, kernel_size(layer.kind), stride_of(layer.kind), cfg.rows);
+  const int tiles_y = (layer.oh + th - 1) / th;
+  const int grid_y = stream ? conv_stream::strips_for(tiles_y, cfg.bands) : tiles_y;
+  layer.grid = dim3(static_cast<unsigned>((layer.ow + kTW - 1) / kTW), static_cast<unsigned>(grid_y),
+                    static_cast<unsigned>(layer.phases * layer.tiles * cfg.ksplit));
+  layer.smem = stream ? conv_stream::smem_bytes(cfg.kc, cfg.rows)
+                      : smem_bytes(cfg.kc, cfg.ct, kernel_size(layer.kind), stride_of(layer.kind), cfg.rows);
   return true;
 }
 
@@ -156,11 +170,14 @@ inline void enqueue(const Layer& layer, cudaStream_t stream, const Params& p) {
   if (layer.cfg.ksplit > 1) launch_reduce(layer.kind == Kind::kPhase, layer.phases * layer.cout, stream, p);
 }
 
-// La colle g convient-elle au noyau à entrée calculée de layer : même image, pleine résolution, X au pas 32
-// (le flot y est écrit), sources aux échelles prévues, rangées au pas 56 ?
+// La colle g convient-elle au noyau à entrée calculée de layer : même réduction, X à la taille de l'entrée
+// de la couche et l'image d fois plus grande, X au pas 32 (le flot y est écrit en pleine résolution),
+// sources aux échelles prévues, rangées au pas 56 ?
 inline bool glue_fits(const Layer& layer, const FusedGlueParams& g) {
-  if (layer.glue == nullptr || g.reduce != 1 || g.x_pitch != 32 || g.height != layer.ih ||
-      g.width != layer.iw || g.flows != static_cast<int>(layer.glue_scales.size()))
+  const int d = layer.glue_reduce;
+  if (layer.glue == nullptr || g.reduce != d || g.x_pitch != 32 || g.out_height != layer.ih ||
+      g.out_width != layer.iw || g.height != d * layer.ih || g.width != d * layer.iw ||
+      g.flows != static_cast<int>(layer.glue_scales.size()))
     return false;
   for (int j = 0; j < g.flows; ++j)
     if (g.source[j].scale != layer.glue_scales[static_cast<std::size_t>(j)] || g.source[j].pitch != 56)
@@ -192,6 +209,7 @@ class Bench {
     std::int64_t out_bytes = 0;
     std::int64_t partial_bytes = 0;
     RifeNativeSums sums = RifeNativeSums::kF16;
+    bool bit_exact = false;  // mêmes bits FP16 pour les changements d'ordonnancement
     std::function<void(cudaStream_t, const __half* in, __half* out, float* partial)> enqueue;
   };
   explicit Bench(cudaStream_t stream) : stream_(stream) {}

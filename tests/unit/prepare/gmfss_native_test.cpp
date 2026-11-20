@@ -5,6 +5,7 @@
 #include "prepare/gmfss_native.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <filesystem>
 #include <string>
@@ -212,6 +213,46 @@ TEST_CASE("GMFSS natif : la fusion exportée se lit et son IFNet s'extrait", "[p
   const auto ifnet = gmfss_ifnet(*bytes, 384, 640);
   REQUIRE(ifnet);
   CHECK(ifnet->size() < bytes->size());
+}
+
+TEST_CASE("GMFSS natif : les quatre blocs de l'IFNet d'origine se lisent dans le vrai modèle",
+          "[prepare][gmfss]") {
+  const std::filesystem::path dir(KIRARI_RIFE_MODEL_DIR);
+  auto model = dir / "gmfss_fortuna_union_fusion.onnx";
+  if (!std::filesystem::exists(model)) model = dir / "gmfss_fortuna_union_s05_fusion.onnx";
+  if (!std::filesystem::exists(model)) SKIP("fusion GMFSS Fortuna Union absente");
+  const auto fusion = read_onnx_bytes(model);
+  REQUIRE(fusion);
+  const auto derived = gmfss_ifnet(*fusion, 384, 640);
+  REQUIRE(derived);
+  const auto blocks = gmfss_ifnet_blocks(*derived, 384, 640);
+  INFO((blocks ? std::string() : blocks.error().detail));
+  REQUIRE(blocks);
+  constexpr std::array<int, 4> sources{7, 12, 12, 12};
+  constexpr std::array<int, 4> first{96, 64, 48, 32};
+  for (std::size_t b = 0; b < blocks->size(); ++b) {
+    INFO("bloc " << b);
+    const auto& layers = (*blocks)[b];
+    REQUIRE(layers.size() == 11);
+    CHECK(layers[0].cin == sources[b]);
+    CHECK(layers[0].cout == first[b]);
+    CHECK(layers[0].stride == 2);
+    CHECK(layers[1].cout == 2 * first[b]);
+    CHECK(layers[1].stride == 2);
+    const auto channels = static_cast<std::size_t>(2 * first[b]);
+    for (std::size_t r = 2; r < 10; ++r) {
+      CHECK(layers[r].stride == 1);
+      CHECK(layers[r].scale.size() == channels);
+      CHECK(layers[r].slope == std::vector<float>(channels, 0.2F));
+    }
+    const auto& tail = layers.back();
+    CHECK(tail.transposed);
+    CHECK(tail.cout == 24);
+    CHECK(tail.kernel == 4);
+    CHECK(tail.stride == 2);
+    CHECK(tail.weights.size() == 16 * 24 * channels);
+  }
+  CHECK_FALSE(gmfss_ifnet_blocks(*derived, 384, 672));
 }
 
 }  // namespace kirari::prepare

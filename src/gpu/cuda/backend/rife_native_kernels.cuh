@@ -26,7 +26,7 @@ inline constexpr int kThreads = kWarps * 32;
 inline constexpr int kTW = 32;
 
 // Entrée : NHWC FP16 au pas in_ld, ou (kImage) trois plans FP16 d'une image, complétés à 16 canaux nuls.
-enum class In : int { kNhwc, kImage };
+enum class In : int { kNhwc, kImage, kBlocked8 };
 // Sortie : NHWC au pas out_ld (kNhwc) ; la phase (py, px) d'une transposée, NHWC deux fois plus grande
 // (kPhase) ; ou la transposée de l'encodeur en 16 canaux phase · 4 + c, rangés en quatre plans deux fois plus
 // grands (kPlanes4).
@@ -221,7 +221,7 @@ __device__ __forceinline__ __half2 to_half2(float lo, float hi) {
 
 // La tranche [c0, c0 + Kc) de la tuile d'entrée en mémoire partagée, au pas Kc + 8 : kIR × kIC pixels dont
 // l'origine est (y0, x0) ; zéros hors de l'image.
-template <int Kc, int S, int IR, int IC>
+template <int Kc, int S, int IR, int IC, bool Blocked8 = false>
 __device__ __forceinline__ void load_nhwc(__half* s, const Params& p, int c0, int y0, int x0) {
   constexpr int kChunks = Kc / 8, kLds = Kc + 8;
   const std::uint32_t base = smem_u32(s);
@@ -230,7 +230,9 @@ __device__ __forceinline__ void load_nhwc(__half* s, const Params& p, int c0, in
     const int r = q / IC, col = q - r * IC;
     const int y = y0 + r, x = x0 + col;
     const bool ok = y >= 0 && y < p.ih && x >= 0 && x < p.iw;
-    const __half* from = ok ? p.in + (static_cast<long>(y) * p.iw + x) * p.in_ld + c0 + c * 8 : p.in;
+    const long pixel = static_cast<long>(y) * p.iw + x;
+    const long src = Blocked8 ? ((c0 / 8 + c) * p.in_plane + pixel) * 8 : pixel * p.in_ld + c0 + c * 8;
+    const __half* from = ok ? p.in + src : p.in;
     const int at = r * IC + smem_col<S, IC>(col);
     cp_async16(base + static_cast<std::uint32_t>((at * kLds + c * 8) * 2), from, ok);
   }
@@ -547,7 +549,8 @@ __device__ __forceinline__ void conv_sums(Frag<A> (&acc)[Rows * 2][CT / 8], __ha
     if constexpr (I == In::kImage) {
       load_image<S, G::kIR, G::kIC>(s, p, ty0 * S + origin_y, tx0 * S + origin_x);
     } else {
-      load_nhwc<Kc, S, G::kIR, G::kIC>(s, p, q * Kc, ty0 * S + origin_y, tx0 * S + origin_x);
+      load_nhwc<Kc, S, G::kIR, G::kIC, I == In::kBlocked8>(s, p, q * Kc,
+                                                            ty0 * S + origin_y, tx0 * S + origin_x);
       cp_async_wait_all();
     }
     __syncthreads();

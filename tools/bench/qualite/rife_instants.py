@@ -33,21 +33,28 @@ MASK_EPSILON = 1e-4
 CUT = 0.12  # écart moyen au-delà duquel deux images sont de plans différents (sources.windows)
 
 
-def estimate_at(sess, names, a, b, t, align):
-    """Flot (4 plans) et masque de RIFE à l'instant t, estimés à 720p et remontés en 1080p."""
-    width = int(round(rt.WIDTH * rt.REFERENCE / rt.HEIGHT / 2)) * 2
-    sa, sb = rt.resize(a, width, rt.REFERENCE, rt._area_axis), rt.resize(b, width, rt.REFERENCE, rt._area_axis)
+def estimate_at(sess, names, a, b, t, align, motion_height=rt.REFERENCE):
+    """Flot (4 plans) et masque de RIFE à t, remontés à la taille des deux images."""
+    _, height, width = a.shape
+    sh = min(motion_height, height)
+    sw = min(width, max(2, int(round(width * sh / height / 2)) * 2))
+    if (sh, sw) == (height, width):
+        sa, sb = a, b
+    else:
+        sa, sb = rt.resize(a, sw, sh, rt._area_axis), rt.resize(b, sw, sh, rt._area_axis)
     (pa, (top, left)), (pb, _) = modeles.pad(sa, align), modeles.pad(sb, align)
     x = modeles.rife_input(pa, pb, t, 11).astype(np.float16)
     _, flow, mask = sess.run(names, {sess.get_inputs()[0].name: x})
-    window = (slice(None), slice(top, top + rt.REFERENCE), slice(left, left + width))
+    window = (slice(None), slice(top, top + sh), slice(left, left + sw))
     flow = flow[0].astype(np.float32)[window]
     mask = 1.0 / (1.0 + np.exp(-mask[0].astype(np.float32)[window]))
-    up = rt.resize(flow, rt.WIDTH, rt.HEIGHT, rt._linear_axis)
-    up[0::2] *= rt.WIDTH / width
-    up[1::2] *= rt.HEIGHT / rt.REFERENCE
     biggest = float(np.percentile(np.abs(flow).max(0), 99.9))
-    return up, rt.resize(mask, rt.WIDTH, rt.HEIGHT, rt._linear_axis), biggest
+    if (sh, sw) == (height, width):
+        return flow, mask, biggest
+    up = rt.resize(flow, width, height, rt._linear_axis)
+    up[0::2] *= width / sw
+    up[1::2] *= height / sh
+    return up, rt.resize(mask, width, height, rt._linear_axis), biggest
 
 
 def blend_at(a, b, flow, mask, t):

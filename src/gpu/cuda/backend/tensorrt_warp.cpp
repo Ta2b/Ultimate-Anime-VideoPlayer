@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/layer_kernels.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "gpu/cuda/backend/warp_kernels.h"
 #include "kernels/spec/warp.h"
@@ -148,8 +149,97 @@ std::expected<void, Refusal> TensorRtBackend::warp_blend_poses_ring(const Tensor
   return warp(a, b, motion, Poses{.keep = true, .previous = previous}, t, Target{.ring = &ring});
 }
 
+std::expected<void, Refusal> TensorRtBackend::warp_layered(const LayerJob& job, const Motion& motion,
+                                                           const Motion* previous, float t, bool poses,
+                                                           bool same_sources) {
+  return warp_layered_into(job, motion, Poses{.keep = poses, .previous = poses ? previous : nullptr}, t,
+                           same_sources, Target{.out = &job.out});
+}
+
+std::expected<void, Refusal> TensorRtBackend::warp_layered_ring(const LayerJob& job, const Motion& motion,
+                                                                const Motion* previous, float t, bool poses,
+                                                                bool same_sources, const RingTarget& ring) {
+  if (ring.slot == nullptr ||
+      (ring.slot->format != RingFormat::Rgba16Unorm && ring.slot->format != RingFormat::Rgb10a2Unorm))
+    return refuse(RefusalCode::FormatUnsupported, "warp_layered_ring : slot RGB attendu");
+  return warp_layered_into(job, motion, Poses{.keep = poses, .previous = poses ? previous : nullptr}, t,
+                           same_sources, Target{.ring = &ring});
+}
+
+std::expected<void, Refusal> TensorRtBackend::warp_layered_into(const LayerJob& job, const Motion& motion,
+                                                                const Poses& poses, float t,
+                                                                bool same_sources, const Target& target) {
+  if (!same_sources) {
+    for (LayerProof& proof : layer_proofs_) proof.handles = {};
+  }
+  const kernels::LayerParams& p = job.params;
+  const auto& g = p.grid;
+  if (filtered_warp_ || (motion.pan_lock && !poses.keep) || p.count != 2 || p.source_grid.cols != 0 ||
+      !g.fits(g.cols, g.rows) || !(g.tile_w > 0.0F && g.tile_h > 0.0F && p.guard_high > p.guard_low) ||
+      job.a.shape.dims[2] > 16384 || job.a.shape.dims[3] > 16384)
+    return refuse(RefusalCode::FormatUnsupported,
+                  "warp_layered : warp exact et deux calques de paire attendus");
+  const Tensor* out = target.out;
+  if (out != nullptr && (out->handle == job.a.handle || out->handle == job.b.handle ||
+                         out->handle == motion.flow.handle || out->handle == motion.mask.handle ||
+                         (poses.previous != nullptr && out->handle == poses.previous->flow.handle)))
+    return refuse(RefusalCode::FormatUnsupported, "warp_layered : la sortie est une source");
+  if (auto ok = check_previous(motion, poses.previous); !ok) return ok;
+  LayerArgs layers = layer_args(p);
+  layers.a = address(job.a);
+  layers.b = address(job.b);
+  layers.out = out != nullptr ? const_cast<void*>(address(*out)) : nullptr;  // NOLINT : écrit
+  layers.width = width_of(job.a);
+  layers.height = height_of(job.a);
+  return warp(job.a, job.b, motion, poses, t, target, &layers);
+}
+
+std::expected<void, Refusal> TensorRtBackend::certify_layered(const WarpBlendParams& p,
+                                                              std::array<std::uintptr_t, 2> handles,
+                                                              LayerWarpBounds& bounds) {
+  // En dehors de cette plage, le rapport (1−t)/t du warp du milieu peut déborder.
+  if (p.time < 0x1p-16F || p.time > 1.0F - 0x1p-16F) return {};
+  LayerProof& proof = layer_proofs_[lane_index(lane_)];
+  if (proof.flags == nullptr) {
+    if (auto ok =
+            cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&proof.flags), 3 * sizeof(unsigned), stream_),
+                       "certification décor : allocation");
+        !ok)
+      return ok;
+    layer_certificates_ = true;
+  }
+  const std::array sources{p.a, p.b};
+  const auto elements =
+      std::size_t{3} * static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+  const bool fresh = proof.handles != handles || proof.sources != sources || proof.elements != elements;
+  const bool mask = !p.from_middle;
+  if (fresh || mask) {
+    GpuTiming& timing = stage("certification décor");
+    timing.begin(stream_);
+    cudaError_t result = cudaSuccess;
+    if (fresh) {
+      proof.handles = {};
+      result = launch_certify_layer_warp(p.a, elements, false, proof.flags, stream_);
+      if (result == cudaSuccess)
+        result = launch_certify_layer_warp(p.b, elements, false, proof.flags + 1, stream_);
+    }
+    if (result == cudaSuccess && mask) {
+      const auto points = static_cast<std::size_t>(p.plane_width) * static_cast<std::size_t>(p.plane_height);
+      result = launch_certify_layer_warp(p.mask, points, true, proof.flags + 2, stream_);
+    }
+    timing.end(stream_);
+    if (auto ok = cuda_check(result, "certification décor<<<>>>"); !ok) return ok;
+    proof.handles = handles;
+    proof.sources = sources;
+    proof.elements = elements;
+  }
+  bounds = {proof.flags, proof.flags + 1, mask ? proof.flags + 2 : nullptr};
+  return {};
+}
+
 std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor& b, const Motion& motion,
-                                                   const Poses& poses, float t, const Target& target) {
+                                                   const Poses& poses, float t, const Target& target,
+                                                   const LayerArgs* layers) {
   const Tensor* out = target.out;
   if (auto ok = check_warp_target(a, b, out, target.ring, t); !ok) return ok;
   if (auto ok = check_motion(motion); !ok) return ok;
@@ -189,6 +279,10 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
                          poses.previous != nullptr ? poses.previous->flow.handle : std::uintptr_t{0}};
   const std::array writes{out != nullptr ? out->handle : 0};
   if (auto ok = order(reads, std::span(writes).first(out != nullptr ? 1 : 0)); !ok) return ok;
+  LayerWarpBounds bounds;
+  if (layers != nullptr) {
+    if (auto ok = certify_layered(params, {a.handle, b.handle}, bounds); !ok) return ok;
+  }
   // --warp-l2 : le flot (le plus gros des tenseurs du mouvement) en L2 persistant le temps du warp. Le
   // mouvement du milieu sert à tous les instants d'une paire calme.
   const std::size_t window =
@@ -197,6 +291,15 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
                static_cast<std::size_t>(properties_.accessPolicyMaxWindowSize));
   const auto reserve = [this] { return persisting_l2(); };
   return within_l2(warp_l2_, stream_, address(motion.flow), window, reserve, [&] {
+    if (layers != nullptr) {
+      const char* label = target.ring != nullptr ? "warp et calques dans le ring" : "warp et calques";
+      return launch_into(target, label, [&](RingSurface surface) {
+        WarpBlendParams into = params;
+        into.surface = surface;
+        return cuda_check(launch_warp_blend_layers(into, *layers, bounds, nullptr, stream_),
+                          "warp_blend_layers<<<>>>");
+      });
+    }
     return launch_into(target, "warp et mélange", [&](RingSurface surface) {
       WarpBlendParams into = params;
       into.surface = surface;

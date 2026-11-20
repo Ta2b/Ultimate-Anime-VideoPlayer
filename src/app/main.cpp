@@ -25,7 +25,7 @@ extern "C" {
 #include <spawn.h>
 #include <unistd.h>
 
-extern char** environ;  // NOLINT : env: hérité, posix_spawn le transmet tel quel
+extern char** environ;  // NOLINT : env: hérité de la relance
 #endif
 #include <cerrno>
 #include <cstdio>
@@ -249,6 +249,26 @@ int relaunch_failed(const std::filesystem::path& log_file, const std::string& ca
   return 1;
 }
 
+#if defined(__linux__)
+// Smooth Motion modifie l'environnement du processus pour le pilote. Garder la valeur reçue au
+// lancement, pour que le lecteur relancé puisse aussi bien décocher la case que la cocher.
+char** relaunch_environment(std::vector<char*>& env, std::string& original) {
+  SDL_Environment* inherited = SDL_GetEnvironment();
+  if (inherited == nullptr) return environ;
+  constexpr char name[] = "NVPRESENT_ENABLE_SMOOTH_MOTION";
+  constexpr std::string_view prefix = "NVPRESENT_ENABLE_SMOOTH_MOTION=";
+  for (char** entry = environ; *entry != nullptr; ++entry) {
+    if (!std::string_view(*entry).starts_with(prefix)) env.push_back(*entry);
+  }
+  if (const char* value = SDL_GetEnvironmentVariable(inherited, name); value != nullptr) {
+    original = std::string(prefix) + value;
+    env.push_back(original.data());
+  }
+  env.push_back(nullptr);
+  return env.data();
+}
+#endif
+
 // Relance le lecteur avec les mêmes arguments, après la mise à jour d'un moteur ou la perte du GPU : il
 // remplace ce processus (POSIX) ou démarre à sa place (Windows). fresh (POSIX) : un processus neuf par
 // posix_spawn, l'appelant sortant ensuite ; une fermeture figée ne peut pas faire execv, qui attendrait la
@@ -281,18 +301,23 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv,
   std::vector<char*> arguments{const_cast<char*>(program.c_str())};
   for (const std::string& argument : kept) arguments.push_back(const_cast<char*>(argument.c_str()));
   arguments.push_back(nullptr);
+#if defined(__linux__)
+  std::vector<char*> entries;
+  std::string original;
+  char** env = relaunch_environment(entries, original);
+#else
+  char** env = environ;
+#endif
   if (fresh) {
     pid_t child = 0;
-    // env: hérité, le bloc passe tel quel à l'enfant, aucune valeur n'en est lue.
-    const int spawned =
-        posix_spawn(&child, program.c_str(), nullptr, nullptr, arguments.data(), environ);  // env: hérité
+    const int spawned = posix_spawn(&child, program.c_str(), nullptr, nullptr, arguments.data(), env);
     if (spawned == 0) return 0;
     return relaunch_failed(log_file,
                            std::format("posix_spawn : {} (errno {})", std::strerror(spawned), spawned));
   }
-  execv(program.c_str(), arguments.data());
-  const int error = errno;  // execv ne revient que sur un échec
-  return relaunch_failed(log_file, std::format("execv : {} (errno {})", std::strerror(error), error));
+  execve(program.c_str(), arguments.data(), env);
+  const int error = errno;  // execve ne revient que sur un échec
+  return relaunch_failed(log_file, std::format("execve : {} (errno {})", std::strerror(error), error));
 #endif
 }
 

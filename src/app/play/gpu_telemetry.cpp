@@ -199,9 +199,10 @@ SmoothMotionBlock smooth_motion_block(std::string_view gpu_name, std::string_vie
   const bool ampere_pro = rtx_a != std::string::npos && rtx_a + 5 < name.size() && name[rtx_a + 5] >= '0' &&
                           name[rtx_a + 5] <= '9';
   // « RTX 2000 Ada », « RTX PRO 4000 Blackwell » : Ada et Blackwell, quel que soit le numéro.
-  if (has("ada") || has("blackwell")) {
+  if (has("rtx 50") || has("blackwell"))
+    return nvidia_driver_older_than(driver, 580, 65, 6) ? SmoothMotionBlock::Driver : SmoothMotionBlock::None;
+  if (has("ada"))
     return nvidia_driver_older_than(driver, 580, 82, 7) ? SmoothMotionBlock::Driver : SmoothMotionBlock::None;
-  }
   if (has("gtx") || has("rtx 20") || has("rtx 30") || ampere_pro || has("quadro") || has("titan") ||
       has("tesla"))
     return SmoothMotionBlock::Gpu;

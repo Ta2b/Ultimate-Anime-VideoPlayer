@@ -36,6 +36,7 @@ std::expected<void, Refusal> LayerStage::allocate(gpu::Backend& backend, const L
 
 void LayerStage::forget() {
   pair_.reset();
+  fused_sources_.reset();
   plate_track_.forget();
   plate_step_ = {};
   plate_ready_ = false;
@@ -49,6 +50,8 @@ void LayerStage::arrive(const PairFacts& facts, const LayerSetup& setup, bool sm
   const bool smooth = smooth_first || smooth_second;
   pair_.reset();
   pair_layers_ = setup.layers;
+  fused_ = setup.fused;
+  fused_sources_.reset();
   plate_step_ = {};
   if (refused_ || (!setup.layers && !setup.plate_on())) return;
   if (!continues) forget();
@@ -60,13 +63,20 @@ void LayerStage::arrive(const PairFacts& facts, const LayerSetup& setup, bool sm
   // L'affinage de la paire en retard : la caméra lk d'une paire d'avant (layer_plan.h, with_neighbour).
   neighbours_.next();
   bool borrowed = false;
-  auto planned =
-      plan_with_neighbour(facts.scene, neighbours_.for_pair(), work_width_, work_height_, borrowed);
+  auto planned = plan_with_neighbour(facts.scene, neighbours_.for_pair(), work_width_, work_height_, borrowed,
+                                     setup.nvof_guard);
   if (!planned && planned.error() == LayerSkip::Cut) neighbours_.forget();  // jamais d'un autre plan
   if (const auto own = refined_camera(facts.scene)) neighbours_.seen(*own);
   if (planned) {
     ++counts_.pairs;
     counts_.share += planned->share;
+    counts_.roundtrip_edges += planned->roundtrip_edges;
+    counts_.roundtrip_camera_edges += planned->roundtrip_camera_edges;
+    counts_.roundtrip_protected += planned->roundtrip_protected;
+    if (facts.scene && facts.scene->roundtrip) {
+      ++counts_.roundtrip_pairs;
+      if (!facts.scene->roundtrip_photo_edge_a.empty()) ++counts_.roundtrip_camera_pairs;
+    }
     if (borrowed) ++counts_.borrowed;
   } else {
     ++counts_.skipped[static_cast<std::size_t>(planned.error())];
@@ -103,6 +113,35 @@ std::expected<void, Refusal> LayerStage::compose_pair(gpu::KernelOps& ops, const
   }
   ++counts_.composed;
   return {};
+}
+
+std::expected<bool, Refusal> LayerStage::warp_pair(gpu::KernelOps& ops, const gpu::Tensor& a,
+                                                   const gpu::Tensor& b, const gpu::Tensor& out,
+                                                   const gpu::Motion& motion, const gpu::Motion* previous,
+                                                   float t, bool poses, bool cubic, LayerRingOutput* ring) {
+  if (!fused_ || !pair_ || !pair_layers_ || refused_) return false;
+  const auto params = pair_params(*pair_, width_of(out), height_of(out), static_cast<double>(t), cubic);
+  if (!params) return false;
+  KIRARI_TRACE("warp et calques");
+  const std::array sources{a.handle + a.offset, b.handle + b.offset};
+  const bool same = fused_sources_ == sources;
+  const gpu::KernelOps::LayerJob job{.out = out, .a = a, .b = b, .params = *params};
+  std::expected<void, Refusal> ok;
+  if (ring != nullptr) {
+    ok = ops.warp_layered_ring(job, motion, previous, t, poses, same, ring->target);
+    if (!ok && ok.error().code == RefusalCode::FormatUnsupported) ring = nullptr;
+  }
+  if (ring == nullptr) ok = ops.warp_layered(job, motion, previous, t, poses, same);
+  if (!ok) {
+    fused_sources_.reset();
+    if (ok.error().code == RefusalCode::FormatUnsupported) return false;
+    return std::unexpected(std::move(ok.error()));
+  }
+  fused_sources_ = sources;
+  if (ring != nullptr) ring->written = true;
+  ++counts_.composed;
+  ++counts_.fused_composed;
+  return true;
 }
 
 std::expected<void, Refusal> LayerStage::after_span(gpu::Backend& backend, const LayerSetup& setup,
@@ -162,6 +201,18 @@ void LayerStage::log_summary(const LayerSetup& setup) const {
       skipped.empty() ? std::string("aucune") : skipped,
       counts_.smooth > 0 ? std::format(", Smooth {}", counts_.smooth) : std::string(), counts_.keys,
       counts_.plated, refused_ ? " ; coupés par un refus du backend" : "");
+  if (counts_.roundtrip_pairs > 0) {
+    log_channel("gpu")->info(
+        "calques : {} tuiles de bord avec désaccord NVOF sur {} paires relues ; {} aussi vérifiées sur "
+        "l'image sous la caméra de la paire ({} paires avec les deux mesures)",
+        counts_.roundtrip_edges, counts_.roundtrip_pairs, counts_.roundtrip_camera_edges,
+        counts_.roundtrip_camera_pairs);
+    if (counts_.roundtrip_protected > 0)
+      log_channel("gpu")->info("calques NVOF : {} tuiles de bord rendues au RIFE",
+                               counts_.roundtrip_protected);
+  }
+  if (counts_.fused_composed > 0)
+    log_channel("gpu")->info("warp et calques fusionnés : {} images", counts_.fused_composed);
 }
 
 }  // namespace kirari::app::play

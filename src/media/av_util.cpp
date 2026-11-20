@@ -1,5 +1,6 @@
 #include "media/av_util.h"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <format>
@@ -22,14 +23,14 @@ namespace {
 constexpr std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
 constexpr std::int64_t kMin = std::numeric_limits<std::int64_t>::min();
 
+}  // namespace
+
 // a + b, borné à [INT64_MIN, INT64_MAX] (std::add_sat n'arrive qu'en C++26).
 std::int64_t add_saturated(std::int64_t a, std::int64_t b) {
   if (b > 0 && a > kMax - b) return kMax;
   if (b < 0 && a < kMin - b) return kMin;
   return a + b;
 }
-
-}  // namespace
 
 // P2.29 : av_rescale_q rend INT64_MIN (AV_NOPTS_VALUE) quand le résultat déborde ; la soustraction qui
 // suivait était alors indéfinie. Un débordement reste « sans horodatage », le décalage est saturé.
@@ -48,7 +49,7 @@ std::int64_t from_us(std::int64_t us, AVRational time_base, std::int64_t start_u
 
 std::int64_t duration_to_us(std::int64_t duration, AVRational time_base) {
   if (duration == AV_NOPTS_VALUE || duration <= 0) return 0;
-  return av_rescale_q(duration, time_base, kMicroseconds);
+  return std::max<std::int64_t>(0, av_rescale_q(duration, time_base, kMicroseconds));
 }
 
 bool chroma_beyond_420(const AVCodecParameters& av) {

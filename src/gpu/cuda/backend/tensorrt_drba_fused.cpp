@@ -2,6 +2,7 @@
 // « .drbafused » lance trtexec sur chacun des quatre morceaux qu'il nomme ; « charger » les charge ensemble
 // et fait un essai de toute la chaîne. Tout refus ici fait reprendre la chaîne sur le moteur DistilDRBA
 // entier (chain_setup.cpp) : l'ONNX d'origine n'est jamais touché.
+#include <algorithm>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -102,7 +103,17 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_drba_fused(DrbaFusedEngine
   GpuTiming& timing = stage_named("moteur DistilDRBA fusionné {}×{}", shape.dims[3], shape.dims[2]);
   role(Role::Interpolation).begin(stream_);
   timing.begin(stream_);
-  auto queued = engine.enqueue(stream_, zone, inputs, outputs);
+  // Sur pair01, tous les consommateurs du temps peuvent lire le scalaire posé par rife_time.
+  // Une entrée ordinaire garde son plan dense. Une autre chaîne qui lirait l'entrée ferait reposer le
+  // plan entier (restore_rife_times), ce qui retire également la marque.
+  const bool scalar_time =
+      !inputs.empty() && std::ranges::find(stale_times_, inputs[0].handle + inputs[0].offset,
+                                           &StaleTime::key) != stale_times_.end();
+  auto queued = engine.enqueue(stream_, zone, inputs, outputs, scalar_time);
+  if (queued) {
+    note_rife_reader(inputs[0], true);
+    note_rife_reader(inputs[1], true);  // l'entrée 12 ne fournit que des plans RGB au moteur
+  }
   timing.end(stream_);
   role(Role::Interpolation).end(stream_);
   if (std::string notice = engine.take_notice(); !notice.empty())

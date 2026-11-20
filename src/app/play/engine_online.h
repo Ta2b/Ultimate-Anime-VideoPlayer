@@ -40,17 +40,16 @@ bool release_index_signed(std::string_view text, std::string_view signature,
 // récent). Rend le nombre de moteurs pris ; une entrée hors de la release est écartée et dite dans problem.
 int merge_release_index(EngineCatalog& catalog, std::string_view text, std::string_view prefix);
 
-// Faux tant qu'une copie gardée de la release de cette version a moins d'un jour, qu'un 404 pour cette
-// version a moins d'un jour, ou qu'un autre échec a moins de quelques heures : rien à demander au réseau. Une
-// copie ou une marque d'une autre version ne retient rien. once_per_version (mises à jour sur « Jamais ») :
-// la copie et le 404 de cette version valent sans limite d'âge, l'index n'est pas une vérification
-// périodique.
+// Une copie signée de la version courante vaut un jour, ou sans limite d'âge via once_per_version
+// (« Jamais »). Un 404 se retient deux heures dans les deux modes : l’index peut être publié plus tard.
+// Les autres échecs sont retenus quelques heures, pour la version qui les a rencontrés.
 bool release_index_due(const std::filesystem::path& cache, std::string_view version,
-                       bool once_per_version = false);
-// Relit engines-nvidia.lock et sa signature de la release si c'est dû (release_index_due), en quelques
-// secondes au plus, dans cache et cache.sig ; hors du thread de la fenêtre (A18-02). stop coupe curl.
+                       const std::vector<std::string>& keys, bool once_per_version = false);
+// Relit engines-nvidia.lock et sa signature si c'est dû. Une copie vérifiée remplace l'ancienne d'un seul
+// geste. Hors du thread de la fenêtre (A18-02). stop coupe curl.
 void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,
-                           std::string_view version, const UpdateFetch& fetch, const std::stop_token& stop);
+                           std::string_view version, const std::vector<std::string>& keys,
+                           const UpdateFetch& fetch, const std::stop_token& stop);
 // La copie gardée, lue d'un coup : l'index et sa signature vont ensemble.
 struct ReleaseIndexCopy {
   std::string text;
@@ -64,7 +63,7 @@ void merge_release_copy(EngineCatalog& catalog, const ReleaseIndexCopy& copy, st
 
 // refresh_release_index puis merge_release_copy, sur le thread de l'appelant (essais) : relit
 // engines-nvidia.lock et sa signature de la release (au plus une fois par jour, en quelques secondes au plus,
-// gardés dans cache et cache.sig), puis l'ajoute au catalogue s'il est signé par l'une des keys. Sans réseau,
+// gardés ensemble dans cache), puis l'ajoute au catalogue s'il est signé par l'une des keys. Sans réseau,
 // la copie gardée sert, revérifiée.
 void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& cache, std::string_view repo,
                          std::string_view version, const std::vector<std::string>& keys,

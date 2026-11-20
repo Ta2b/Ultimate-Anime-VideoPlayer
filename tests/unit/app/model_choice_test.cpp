@@ -64,6 +64,24 @@ TEST_CASE("Modèle RIFE : le défaut, le choix du menu, la liste du dossier", "[
   CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.22_lite.onnx");
 }
 
+TEST_CASE("Modèle RIFE : la liste relue ignore un dossier de même nom", "[app][model_choice]") {
+  const FakeHome fake("rife-added");
+  const auto file = fake.rife / "rife_v4.25.onnx";
+  PlaySettings s;
+  s.rife_model = "rife_v4.25.onnx";
+  std::filesystem::create_directory(file);
+  auto current = choose_rife_model(PlayOptions{}, fake.home, s);
+  REQUIRE(current);
+  CHECK_FALSE(std::ranges::contains(current->available, s.rife_model));
+  CHECK(current->path == fake.rife / "rife_v4.22_lite.onnx");
+  std::filesystem::remove(file);
+  std::ofstream(file) << "modèle";
+  current = choose_rife_model(PlayOptions{}, fake.home, s);
+  REQUIRE(current);
+  CHECK(std::ranges::contains(current->available, s.rife_model));
+  CHECK(current->path == file);
+}
+
 TEST_CASE("Modèle RIFE introuvable : refus qui cite les chemins essayés", "[app][model_choice]") {
   const auto home = std::filesystem::temp_directory_path() / "kirari-model-choice-empty";
   std::filesystem::remove_all(home);

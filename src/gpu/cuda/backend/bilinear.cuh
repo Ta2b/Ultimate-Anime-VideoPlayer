@@ -92,40 +92,71 @@ struct CatmullRom {
     w[2] = -1.5F * t3 + 2.0F * t2 + 0.5F * t;
     w[3] = 0.5F * t3 - 0.5F * t2;
   }
-  __device__ static float sample(const Planes& t, int c, float x, float y) {
+
+  struct Footprint {
+    std::size_t cols[4];
+    std::size_t rows[4];
+    float wx[4];
+    float wy[4];
+  };
+
+  __device__ static Footprint footprint(const Planes& t, float x, float y) {
     x = fminf(fmaxf(x, 0.0F), static_cast<float>(t.fw - 1));
     y = fminf(fmaxf(y, 0.0F), static_cast<float>(t.fh - 1));
     const int x0 = static_cast<int>(x);
     const int y0 = static_cast<int>(y);
-    float wx[4];
-    float wy[4];
-    weights(x - static_cast<float>(x0), wx);
-    weights(y - static_cast<float>(y0), wy);
-    const __half* p =
-        t.data +
-        (static_cast<std::size_t>(c) * static_cast<std::size_t>(t.plane_h) + static_cast<std::size_t>(t.oy)) *
-            static_cast<std::size_t>(t.plane_w) +
-        static_cast<std::size_t>(t.ox);
+    Footprint f;
+    weights(x - static_cast<float>(x0), f.wx);
+    weights(y - static_cast<float>(y0), f.wy);
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      f.cols[i] = static_cast<std::size_t>(min(max(x0 - 1 + i, 0), t.fw - 1));
+      f.rows[i] = static_cast<std::size_t>(min(max(y0 - 1 + i, 0), t.fh - 1)) *
+                  static_cast<std::size_t>(t.plane_w);
+    }
+    return f;
+  }
+
+  __device__ static float gather(const __half* p, const Footprint& f) {
     float sum = 0.0F;
     float lo = 3.0e38F;  // la sortie reste entre le plus petit et le plus grand des quatre points centraux
     float hi = -3.0e38F;
 #pragma unroll
     for (int j = 0; j < 4; ++j) {
-      const auto yy = static_cast<std::size_t>(min(max(y0 - 1 + j, 0), t.fh - 1));
       float row = 0.0F;
 #pragma unroll
       for (int i = 0; i < 4; ++i) {
-        const auto xx = static_cast<std::size_t>(min(max(x0 - 1 + i, 0), t.fw - 1));
-        const float v = __half2float(p[yy * static_cast<std::size_t>(t.plane_w) + xx]);
-        row += v * wx[i];
+        const float v = __half2float(p[f.rows[j] + f.cols[i]]);
+        row += v * f.wx[i];
         if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
           lo = fminf(lo, v);
           hi = fmaxf(hi, v);
         }
       }
-      sum += row * wy[j];
+      sum += row * f.wy[j];
     }
     return fminf(fmaxf(sum, lo), hi);
+  }
+
+  // Les plans partagent les voisins et les poids. Les lire un à un limite les registres.
+  // Chaque plan garde l'ordre de calcul de gather.
+  template <int N>
+  __device__ static void sample_n(const Planes& t, int first, float x, float y, float (&out)[N]) {
+    const auto f = footprint(t, x, y);
+    const auto w = static_cast<std::size_t>(t.plane_w);
+    const auto plane = static_cast<std::size_t>(t.plane_h) * w;
+    const auto corner = static_cast<std::size_t>(t.oy) * w + static_cast<std::size_t>(t.ox);
+#pragma unroll 1
+    for (int k = 0; k < N; ++k) {
+      const auto* p = t.data + static_cast<std::size_t>(first + k) * plane + corner;
+      out[k] = gather(p, f);
+    }
+  }
+
+  __device__ static float sample(const Planes& t, int c, float x, float y) {
+    float value[1];
+    sample_n(t, c, x, y, value);
+    return value[0];
   }
 };
 

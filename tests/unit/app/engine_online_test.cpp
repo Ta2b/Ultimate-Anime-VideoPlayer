@@ -2,17 +2,24 @@
 // cette version seulement, un moteur déjà livré remplacé avec ses fichiers NVIDIA, le reste écarté.
 #include "app/play/engine_online.h"
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <expected>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <memory>
+#include <mutex>
 #include <stop_token>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/player.h"
+#include "app/play/release_refresh.h"
 #include "core/model_index.h"
 #include "core/update_manifest.h"
 
@@ -101,6 +108,7 @@ std::string signed_index() {
   return text;
 }
 constexpr std::string_view kTestKey = "6e9a2010904180bcac497c94a59aa5ebf48a01578501b17a2493a8782ffb3a3f";
+const std::vector<std::string> kTestKeys{std::string(kTestKey)};
 constexpr std::string_view kTestSignature =
     "57c0ffe2b77eb8d212e7e4c78339aed31b2c85e8a87181035432ec25098210ecf3188fdce24eada703e2f9074a94a948e3449739"
     "e47e74046da339ff45105b0b";
@@ -185,7 +193,7 @@ TEST_CASE("Moteurs de la release : l'index et sa signature se téléchargent ens
   REQUIRE(asked.size() == 2);
   CHECK(asked[0] == std::string(kPrefix) + "engines-nvidia.lock");
   CHECK(asked[1] == std::string(kPrefix) + "engines-nvidia.lock.sig");
-  CHECK(fs::exists(dir / "engines-nvidia.lock.sig"));
+  CHECK(read_release_index(cache).signature == kTestSignature);
 
   // La release n'a plus d'index (404) : les copies gardées s'effacent.
   fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(48));
@@ -233,28 +241,28 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   write(cache, signed_index());
   write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
   fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(48));
-  CHECK(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache, "1.2.3", kTestKeys));
   int asked = 0;
   const UpdateFetch offline = [&](std::string_view, const fs::path&, int,
                                   const std::stop_token&) -> std::expected<void, Refusal> {
     ++asked;
     return std::unexpected(Refusal{RefusalCode::IoFailed, "hors ligne"});
   };
-  refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, offline, std::stop_token{});
   CHECK(asked == 1);
   CHECK(fs::exists(dir / "engines-nvidia.lock.tried"));
-  CHECK_FALSE(release_index_due(cache, "1.2.3"));
+  CHECK_FALSE(release_index_due(cache, "1.2.3", kTestKeys));
   // La copie gardée et signée sert toujours.
   EngineCatalog catalog = empty_catalog();
   merge_release_copy(catalog, read_release_index(cache), "o/r", {std::string(kTestKey)}, "1.2.3");
   CHECK(catalog.packages.size() == 1);
   // Pas de nouvel essai tout de suite ; quelques heures après, si.
-  refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, offline, std::stop_token{});
   CHECK(asked == 1);
   fs::last_write_time(dir / "engines-nvidia.lock.tried",
                       fs::file_time_type::clock::now() - std::chrono::hours(7));
-  CHECK(release_index_due(cache, "1.2.3"));
-  refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
+  CHECK(release_index_due(cache, "1.2.3", kTestKeys));
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, offline, std::stop_token{});
   CHECK(asked == 2);
 
   // Le lecteur fermé pendant la requête : ni marque ni copie effacée.
@@ -265,7 +273,7 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
                                    const std::stop_token&) -> std::expected<void, Refusal> {
     return std::unexpected(Refusal{RefusalCode::Cancelled, "annulé"});
   };
-  refresh_release_index(cache, "o/r", "1.2.3", cancelled, closing.get_token());
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, cancelled, closing.get_token());
   CHECK_FALSE(fs::exists(dir / "engines-nvidia.lock.tried"));
   CHECK(fs::exists(cache));
   fs::remove_all(dir);
@@ -280,8 +288,10 @@ TEST_CASE("Moteurs de la release : une copie ou une marque d'une autre version n
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
   write(cache, signed_index());  // étiquette v1.2.3, écrite à l'instant
-  CHECK_FALSE(release_index_due(cache, "1.2.3"));
-  CHECK(release_index_due(cache, "1.3.0"));
+  CHECK(release_index_due(cache, "1.2.3", kTestKeys));
+  write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature));
+  CHECK_FALSE(release_index_due(cache, "1.2.3", kTestKeys));
+  CHECK(release_index_due(cache, "1.3.0", kTestKeys));
 
   // Un 404 de la 1.2.3 ne vaut pas pour la 1.3.0, dont le paquet TensorRT peut arriver dix minutes plus tard.
   fs::remove(cache);
@@ -289,9 +299,9 @@ TEST_CASE("Moteurs de la release : une copie ou une marque d'une autre version n
                                  const std::stop_token&) -> std::expected<void, Refusal> {
     return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "404"});
   };
-  refresh_release_index(cache, "o/r", "1.2.3", missing, std::stop_token{});
-  CHECK_FALSE(release_index_due(cache, "1.2.3"));
-  CHECK(release_index_due(cache, "1.3.0"));
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, missing, std::stop_token{});
+  CHECK_FALSE(release_index_due(cache, "1.2.3", kTestKeys));
+  CHECK(release_index_due(cache, "1.3.0", kTestKeys));
 
   // Idem d'un échec réseau retenu quelques heures.
   fs::remove(dir / "engines-nvidia.lock.absent");
@@ -299,9 +309,9 @@ TEST_CASE("Moteurs de la release : une copie ou une marque d'une autre version n
                                  const std::stop_token&) -> std::expected<void, Refusal> {
     return std::unexpected(Refusal{RefusalCode::IoFailed, "hors ligne"});
   };
-  refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
-  CHECK_FALSE(release_index_due(cache, "1.2.3"));
-  CHECK(release_index_due(cache, "1.3.0"));
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, offline, std::stop_token{});
+  CHECK_FALSE(release_index_due(cache, "1.2.3", kTestKeys));
+  CHECK(release_index_due(cache, "1.3.0", kTestKeys));
   fs::remove_all(dir);
 }
 
@@ -312,12 +322,13 @@ TEST_CASE("Moteurs de la release : sur « Jamais », une fois par version et non
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
-  CHECK(release_index_due(cache, "1.2.3", true));  // aucune copie : à relire
+  CHECK(release_index_due(cache, "1.2.3", kTestKeys, true));  // aucune copie : à relire
   write(cache, signed_index());
+  write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature));
   fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(24 * 30));
-  CHECK(release_index_due(cache, "1.2.3"));              // périodique : périmée
-  CHECK_FALSE(release_index_due(cache, "1.2.3", true));  // une fois par version : la copie suffit
-  CHECK(release_index_due(cache, "1.3.0", true));        // nouvelle version : à relire
+  CHECK(release_index_due(cache, "1.2.3", kTestKeys));              // périodique : périmée
+  CHECK_FALSE(release_index_due(cache, "1.2.3", kTestKeys, true));  // une fois par version : la copie suffit
+  CHECK(release_index_due(cache, "1.3.0", kTestKeys, true));        // nouvelle version : à relire
   fs::remove_all(dir);
 }
 
@@ -392,15 +403,15 @@ TEST_CASE("Moteurs de la release : une copie fraîche d'une autre version est re
   const fs::path cache = dir / "engines-nvidia.lock";
   write(cache, signed_index());  // étiquette v1.2.3
   write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
-  CHECK_FALSE(release_index_due(cache, "1.2.3"));  // la bonne version, fraîche : rien à demander
-  CHECK(release_index_due(cache, "1.2.4"));        // le lecteur a été mis à jour : à relire
+  CHECK_FALSE(release_index_due(cache, "1.2.3", kTestKeys));  // la bonne version, fraîche : rien à demander
+  CHECK(release_index_due(cache, "1.2.4", kTestKeys));        // le lecteur a été mis à jour : à relire
   int asked = 0;
   const UpdateFetch offline = [&](std::string_view, const fs::path&, int,
                                   const std::stop_token&) -> std::expected<void, Refusal> {
     ++asked;
     return std::unexpected(Refusal{RefusalCode::IoFailed, "hors ligne"});
   };
-  refresh_release_index(cache, "o/r", "1.2.4", offline, std::stop_token{});
+  refresh_release_index(cache, "o/r", "1.2.4", kTestKeys, offline, std::stop_token{});
   CHECK(asked == 1);
   fs::remove_all(dir);
 }
@@ -416,18 +427,18 @@ TEST_CASE("Moteurs de la release : un 404 se retient deux heures et pour sa vers
                                  const std::stop_token&) -> std::expected<void, Refusal> {
     return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "404"});
   };
-  refresh_release_index(cache, "o/r", "1.2.3", missing, std::stop_token{});
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, missing, std::stop_token{});
   REQUIRE(fs::exists(dir / "engines-nvidia.lock.absent"));
-  CHECK_FALSE(release_index_due(cache, "1.2.3"));
-  CHECK(release_index_due(cache, "1.2.4"));  // le 404 de l'ancienne version ne retient rien
+  CHECK_FALSE(release_index_due(cache, "1.2.3", kTestKeys));
+  CHECK(release_index_due(cache, "1.2.4", kTestKeys));  // le 404 de l'ancienne version ne retient rien
   fs::last_write_time(dir / "engines-nvidia.lock.absent",
                       fs::file_time_type::clock::now() - std::chrono::hours(3));
-  CHECK(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache, "1.2.3", kTestKeys));
+  CHECK(release_index_due(cache, "1.2.3", kTestKeys, true));
   fs::remove_all(dir);
 }
 
-// C06-10 : une relecture réussie laisse le texte et la signature de la même relecture, jamais l'un des deux
-// d'une autre ; l'ancienne copie est retirée avant les renommages.
+// C06-10 : le texte et la signature de la nouvelle copie sont publiés ensemble.
 TEST_CASE("Moteurs de la release : la copie relue remplace l'ancienne en entier (C06-10)", "[app][install]") {
   const fs::path dir = fs::temp_directory_path() / "kirari-online-pair";
   fs::remove_all(dir);
@@ -438,15 +449,75 @@ TEST_CASE("Moteurs de la release : la copie relue remplace l'ancienne en entier 
   fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(48));
   const UpdateFetch fetch = [](std::string_view url, const fs::path& to, int,
                                const std::stop_token&) -> std::expected<void, Refusal> {
-    write(to, url.ends_with(".sig") ? "nouvelle signature\n" : "nouveau texte\n");
+    write(to, url.ends_with(".sig") ? std::string(kTestSignature) + "\n" : signed_index());
     return {};
   };
-  refresh_release_index(cache, "o/r", "1.2.3", fetch, std::stop_token{});
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, fetch, std::stop_token{});
   const ReleaseIndexCopy copy = read_release_index(cache);
-  CHECK(copy.text == "nouveau texte\n");
-  CHECK(copy.signature == "nouvelle signature\n");
-  // Une copie sans texte (arrêt entre les renommages) est à relire, pas fraîche.
+  CHECK(copy.text == signed_index());
+  CHECK(copy.signature == kTestSignature);
+  CHECK_FALSE(release_index_due(cache, "1.2.3", kTestKeys));
+  // Même si un ancien fichier .sig reste sur disque, il ne constitue pas une copie.
   fs::remove(cache);
-  CHECK(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache, "1.2.3", kTestKeys));
   fs::remove_all(dir);
+}
+
+TEST_CASE("Moteurs de la release : un téléchargement invalide conserve l’index signé", "[app][install]") {
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-invalid-refresh";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path cache = dir / "engines-nvidia.lock";
+  write(cache, signed_index());
+  write(dir / "engines-nvidia.lock.sig", kTestSignature);
+  fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(48));
+  const auto original_time = fs::last_write_time(cache);
+  const UpdateFetch invalid = [](std::string_view url, const fs::path& to, int,
+                                 const std::stop_token&) -> std::expected<void, Refusal> {
+    write(to, url.ends_with(".sig") ? std::string(128, '0') : signed_index());
+    return {};
+  };
+  REQUIRE(release_index_due(cache, "1.2.3", kTestKeys));
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, invalid, std::stop_token{});
+  const auto copy = read_release_index(cache);
+  CHECK(copy.text == signed_index());
+  CHECK(copy.signature == kTestSignature);
+  CHECK(fs::last_write_time(cache) == original_time);
+  CHECK(fs::exists(dir / "engines-nvidia.lock.tried"));
+  fs::remove(dir / "engines-nvidia.lock.tried");
+  const UpdateFetch half_published = [](std::string_view url, const fs::path& to, int,
+                                        const std::stop_token&) -> std::expected<void, Refusal> {
+    if (url.ends_with(".sig")) return refuse(RefusalCode::TrackUnavailable, "404");
+    write(to, signed_index());
+    return {};
+  };
+  refresh_release_index(cache, "o/r", "1.2.3", kTestKeys, half_published, std::stop_token{});
+  CHECK(read_release_index(cache).signature == kTestSignature);
+  CHECK(fs::last_write_time(cache) == original_time);
+  CHECK(fs::exists(dir / "engines-nvidia.lock.absent"));
+  fs::remove_all(dir);
+}
+
+TEST_CASE("Moteurs de la release : une copie gardée laisse la relecture se terminer en fond",
+          "[app][install]") {
+  std::mutex mutex;
+  std::condition_variable_any network;
+  bool fetched = false;
+  ReleaseRefresh refresh{.before = {.text = signed_index(), .signature = std::string(kTestSignature)},
+                         .done = std::make_shared<std::atomic<bool>>(false)};
+  refresh.thread = std::jthread([&](const std::stop_token& stop) {
+    std::unique_lock lock(mutex);
+    if (network.wait(lock, stop, [&] { return fetched; }) && !stop.stop_requested())
+      refresh.done->store(true);
+  });
+  const PlayerPaths paths{.data = fs::temp_directory_path() / "kirari-online-fond"};
+  engine_catalog(paths, PlaySettings{}, refresh);
+  CHECK_FALSE(refresh.thread.get_stop_token().stop_requested());
+  {
+    const std::lock_guard lock(mutex);
+    fetched = true;
+  }
+  network.notify_one();
+  refresh.thread.join();
+  CHECK(refresh.done->load());
 }

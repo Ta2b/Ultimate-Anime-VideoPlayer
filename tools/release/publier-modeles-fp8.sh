@@ -10,8 +10,7 @@
 # Un groupe, facultatif (dans SHA256SUMS.facultatif, JAMAIS téléchargé par fetch-models.sh) : distil_drba_v2_lite{,_s05}_fp8.onnx,
 #    11 % plus rapides que le DistilDRBA entier en FP16 mais plus lents que le DistilDRBA fusionné, qu'ils coupent :
 #    pour ceux qui les veulent (à poser à côté de distil_drba_v2_lite.onnx).
-# Aucun graphe FP8 de RIFE : plus lents ou hors des gardes de qualité. Les paires FP8 de GMFSS, retiré du lecteur
-# (0.10.0), sortent du SHA256SUMS de la release.
+# Aucun graphe FP8 de RIFE ni de GMFSS dans cet envoi. Les empreintes des modèles livrés sont conservées.
 set -euo pipefail
 
 OUT="${1:?dossier de sortie de build_interp_fp8.sh}"
@@ -27,9 +26,9 @@ OPTIONAL=(distil_drba_v2_lite_fp8.onnx distil_drba_v2_lite_s05_fp8.onnx)
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-# SHA256SUMS de la release tel qu'il est, sans les graphes de GMFSS.
+# Reprend les empreintes déjà publiées.
 if gh release download "$TAG" -R "$REPO" -p SHA256SUMS -D "$work" 2>/dev/null; then
-  grep -v ' gmfss_' "$work/SHA256SUMS" >"$work/SHA256SUMS.new" || true
+  cp "$work/SHA256SUMS" "$work/SHA256SUMS.new"
 else
   echo "release $TAG sans SHA256SUMS : un nouveau sera écrit" >&2
   : >"$work/SHA256SUMS.new"

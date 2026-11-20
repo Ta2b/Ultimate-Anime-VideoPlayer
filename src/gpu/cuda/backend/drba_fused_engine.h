@@ -53,7 +53,8 @@ class DrbaFusedEngine final : public Engine {
   // : le lancement passe par un graphe CUDA capturé à la deuxième. Une sortie : l'image ; deux : le flot et
   // le masque du warp final (variante mouvement, le warp après SPAN).
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
-                                       std::span<const Tensor> inputs, std::span<const Tensor> outputs);
+                                       std::span<const Tensor> inputs, std::span<const Tensor> outputs,
+                                       bool scalar_time = false);
 
   // D6 : le prochain enqueue reprend les mêmes paires, seul le temps a changé.
   void next_times_only() override { times_only_next_ = true; }
@@ -70,11 +71,11 @@ class DrbaFusedEngine final : public Engine {
   // times_only : pre n'écrit que les plans du temps, l'encodeur et post sont sautés (D6).
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                    std::span<const Tensor> inputs, std::span<const Tensor> outputs,
-                                   bool times_only);
+                                   bool times_only, bool scalar_time);
   std::expected<void, Refusal> enqueue_chain(cudaStream_t stream,
                                              const std::shared_ptr<SharedActivations>& arena,
                                              std::span<const Tensor> inputs, std::span<const Tensor> outputs,
-                                             bool times_only);
+                                             bool times_only, bool scalar_time);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
   // Les tampons repris au-dessus des activations si arena n'est plus la zone posée, a grandi, a changé de
   // génération, ou si un moteur entier y monte plus haut qu'eux.
@@ -86,6 +87,7 @@ class DrbaFusedEngine final : public Engine {
   kernels::DrbaFusedPlan plan_;
   int height_ = 0;
   int width_ = 0;
+  bool shared_finish_ = false;
   kernels::DrbaFusedLayout layout_;
   // Début des tampons intermédiaires dans la zone : au-dessus des activations de ses morceaux et de celles
   // des moteurs entiers de la même zone (SharedActivations::activation_peak, C03-01).

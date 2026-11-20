@@ -35,7 +35,7 @@ std::string auto_factor_text(int centi);
 // Le palier du mode Auto et sa raison : « Auto ×3,5 (84 i/s) · plafond écran ×6 · prédit ×4 · limite GPU 78 %
 // · scène lourde · dernier changement : scène allégée ».
 std::string auto_status_text(const core::AutoInfo& info, double source_fps);
-// Le mode Rapide : « Rapide · 87 i/s · limite GPU 78 % · écart service 11,4 ms ».
+// Le mode Rapide indique sa cadence planifiée à part de la cadence affichée.
 std::string free_status_text(const core::FreeInfo& info);
 // Rapide à pas constant : N, l'échelle mesurée, le budget, les pertes.
 std::string steady_status_text(const core::SteadyInfo& info);

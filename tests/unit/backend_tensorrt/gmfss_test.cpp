@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -15,6 +16,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "backend_fixture.h"
+#include "gpu/cuda/backend/gmfss_kernels.h"
 #include "kernels/ref/half.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
@@ -60,6 +62,133 @@ float worst_of(const std::vector<float>& got, const std::vector<float>& expected
 }
 
 }  // namespace
+
+TEST_CASE("GMFSS : normalisation des splats directement dans les canaux par pixel",
+          "[backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  namespace cuda = gpu::cuda;
+  const int width = GENERATE(35, 36);
+  constexpr int height = 17, channels = 12, stride = 32, dst_channel = 8;
+  const auto plane = static_cast<std::size_t>(width) * height;
+  const auto buffer = [&](gpu::TensorType type, int count) {
+    auto tensor = loaded.backend->alloc_tensor(type, {.dims = {1, count, height, width}});
+    REQUIRE(tensor);
+    return std::move(*tensor);
+  };
+  auto source = buffer(gpu::TensorType::F16, channels);
+  auto motion = buffer(gpu::TensorType::F16, 3);
+  auto sums = buffer(gpu::TensorType::F32, 9);
+  auto planar = buffer(gpu::TensorType::F16, channels);
+  auto packed = buffer(gpu::TensorType::F16, stride);
+  upload(source->tensor(), flat(planes(channels, 2, -2.F, 2.F, width, height)));
+  std::vector<float> flow(3 * plane, 0.F);
+  for (std::size_t i = 0; i < plane; ++i) flow[i + 2 * plane] = static_cast<float>(i % 31) / 9.F - 1.F;
+  upload(motion->tensor(), flow);
+  const std::vector<float> sentinel(plane * stride, -10.F);
+  const auto half_data = [](const gpu::Tensor& t) {
+    return reinterpret_cast<std::uint16_t*>(t.handle + t.offset);
+  };
+  auto* scratch = reinterpret_cast<float*>(sums->tensor().handle + sums->tensor().offset);
+  const auto run = [&](const gpu::Tensor& output, int pixel_stride) {
+    const int stage = 4;  // la deuxième étape commence dans un groupe de huit canaux
+    for (int first = 0; first < channels; first += stage) {
+      const std::size_t from = static_cast<std::size_t>(first) * plane;
+      const std::size_t to = pixel_stride < 0 ? dst_channel * plane
+                             : pixel_stride == 0 ? from
+                                                 : static_cast<std::size_t>(dst_channel + first);
+      cuda::SoftSplatBatch batch{.count = 1};
+      batch.jobs[0] = {.source = half_data(source->tensor()) + from,
+                       .motion = half_data(motion->tensor()),
+                       .width = width,
+                       .height = height,
+                       .channels = stage,
+                       .s = 0.75F,
+                       .sums = scratch,
+                       .out = half_data(output) + to,
+                       .weight_planes = stage,
+                       .reuse_weights = first != 0,
+                       .out_pitch = pixel_stride,
+                       .out_first = first};
+      const std::size_t clear = static_cast<std::size_t>(stage + (first == 0 ? 1 : 0)) * plane * sizeof(float);
+      REQUIRE(cuda::launch_soft_splat_all(batch, scratch, clear, nullptr) == cudaSuccess);
+    }
+  };
+  run(planar->tensor(), 0);
+  std::vector<std::uint16_t> a(plane * channels), b(plane * stride);
+  REQUIRE(cudaMemcpy(a.data(), half_data(planar->tensor()), a.size() * sizeof(a[0]), cudaMemcpyDeviceToHost) ==
+          cudaSuccess);
+  for (int pitch : {stride, -stride}) {
+    if (pitch < 0 && width % 2 != 0) continue;
+    upload(packed->tensor(), sentinel);
+    run(packed->tensor(), pitch);
+    REQUIRE(cudaMemcpy(b.data(), half_data(packed->tensor()), b.size() * sizeof(b[0]), cudaMemcpyDeviceToHost) ==
+            cudaSuccess);
+    for (std::size_t pixel = 0; pixel < plane; ++pixel) {
+      for (int c = 0; c < stride; ++c) {
+        const auto channel = static_cast<std::size_t>(c);
+        const std::size_t offset = pitch > 0 ? pixel * stride + channel
+                                             : (channel / 8) * 8 * plane + pixel * 8 + channel % 8;
+        const std::uint16_t expected = c >= dst_channel && c < dst_channel + channels
+                                           ? a[static_cast<std::size_t>(c - dst_channel) * plane + pixel]
+                                           : k::ref::float_to_half(-10.F);
+        CHECK(b[offset] == expected);
+      }
+    }
+  }
+}
+
+TEST_CASE("Backend TensorRT : un grand splat conserve ses plans et sa couverture",
+          "[backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  constexpr int kWidth = 1024;
+  constexpr int kHeight = 512;
+  constexpr int kChannels = 32;
+  constexpr std::size_t kPlane = static_cast<std::size_t>(kWidth) * kHeight;
+  const auto alloc = [&](int channels) {
+    auto tensor =
+        loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, channels, kHeight, kWidth}});
+    REQUIRE(tensor);
+    return std::move(*tensor);
+  };
+  auto source = alloc(kChannels);
+  auto motion = alloc(k::kGmfssMotionChannels);
+  auto output = alloc(kChannels + 1);
+  auto time = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 1, 1, 1}});
+  REQUIRE(time);
+  const auto tone = [](int c) { return static_cast<float>(c + 1) / 64.0F; };
+  {
+    std::vector<float> values(kPlane * kChannels);
+    for (int c = 0; c < kChannels; ++c)
+      std::fill_n(values.data() + static_cast<std::size_t>(c) * kPlane, kPlane, tone(c));
+    upload(source->tensor(), values);
+  }
+  {
+    std::vector<float> flow(kPlane * k::kGmfssMotionChannels, 0.0F);
+    std::fill_n(flow.begin(), kPlane, 1.0F);  // une seule contribution par destination, décalée à droite
+    upload(motion->tensor(), flow);
+  }
+  const std::array jobs{gpu::KernelOps::SplatJob{.source = source->tensor(),
+                                                 .motion = motion->tensor(),
+                                                 .s = 1.0F,
+                                                 .out = output->tensor(),
+                                                 .coverage = true}};
+  REQUIRE(loaded.backend->kernels()->soft_splat_fill(jobs, (*time)->tensor(), 0.5F));
+  CHECK(download((*time)->tensor()) == std::vector<float>{0.5F});
+  const auto got = download(output->tensor());
+  REQUIRE(got.size() == kPlane * (kChannels + 1));
+  for (int c = 0; c <= kChannels; ++c) {
+    CAPTURE(c);
+    const std::size_t base = static_cast<std::size_t>(c) * kPlane;
+    const float value = c == kChannels ? 1.0F : tone(c);
+    CHECK(got[base] == 0.0F);
+    CHECK(got[base + 1] == value);
+    CHECK(got[base + kPlane - 1] == value);
+  }
+}
 
 TEST_CASE("Backend TensorRT : les splats d'un instant en un passage, l'instant rempli",
           "[backend_tensorrt][cuda][gmfss]") {

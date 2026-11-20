@@ -292,6 +292,46 @@ void UpscaleStage::pick_span_buffer() {
   span_of_[current_] = reuse_span_ ? span_of_[current_ ^ 1U] : span_of_[current_ ^ 1U] ^ 1U;
 }
 
+std::expected<void, Refusal> UpscaleStage::before_slot_wait(std::uint32_t output) {
+  // B est sur la grille : même si tous les instants deviennent Late, late() prépare son SPAN
+  // pour la paire suivante. Le grade et la plaque restent au premier usage (span_current).
+  if (!setup_.span_b_ahead || output != 0 || intermediates_ == 0 || instants_[outputs_ - 1].t < 1.0F ||
+      copy_pair_ || reuse_span_ || reuse_.check || spanned_now_ || span_body_queued_)
+    return {};
+  if (setup_.engine == nullptr || !by_motion() || !warps_spanned() || setup_.drba_by_shot ||
+      setup_.gmfss.use != GmfssUse::Off || setup_.smooth_drawings || setup_.temporal_fix != nullptr)
+    return {};
+  if (setup_.live && (setup_.live->auto_active() || setup_.live->steady_active())) return {};
+  KIRARI_TRACE("span.B");
+  const std::int64_t started = host_now_us();
+  const gpu::Lane back = lane_;
+  use_lane(gpu::Lane::Upscale);
+  auto ok = span_body();
+  use_lane(back);
+  if (ok) {
+    span_body_queued_ = true;
+    span_body_enqueued_us_ = started;
+    ++span_body_ahead_;
+  }
+  return ok;
+}
+
+std::expected<void, Refusal> UpscaleStage::span_body() {
+  const std::array inputs{rgb_[current_]->tensor()};
+  std::array results{spanned(current_)};
+  const std::uint32_t before = span_of_[current_ ^ 1U];
+  if (reuse_.ungraded_of == span_of_[current_]) reuse_.ungraded_of.reset();  // ce tampon va changer
+  const gpu::Tensor* previous =
+      ungraded_previous(reuse_, spanned(current_ ^ 1U), before, rewritten(span_graded_, reuse_, before));
+  if (previous == nullptr) drop_plan(reuse_);
+  const bool tiled = previous != nullptr && send_tiles(reuse_, *setup_.engine, previous);
+  auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
+  if (!ok && tiled) drop_tiles(*setup_.engine);
+  if (ok && tiled) ok = check_tiles(reuse_, *setup_.backend, *setup_.engine, inputs, results[0]);
+  reuse_.spanned = ok ? std::optional(frame_id_) : std::nullopt;
+  return ok;
+}
+
 std::expected<void, Refusal> UpscaleStage::span_current() {
   KIRARI_TRACE("span");
   if (spanned_now_) return {};
@@ -311,37 +351,28 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   if (setup_.engine == nullptr) {  // copies gradées (graded_copies_) : la source copiée, puis gradée
     auto ok = setup_.backend->kernels()->resample(rgb_[current_]->tensor(), kernels::Filter::Area,
                                                   spanned(current_));
-    if (ok) ok = grade_spanned(span_of_[current_]);
+    if (ok) ok = grade_spanned(span_of_[current_], head_, debanded_);
     use_lane(back);
     return ok;
   }
-  const std::array inputs{rgb_[current_]->tensor()};
-  std::array results{spanned(current_)};
-  const std::uint32_t before = span_of_[current_ ^ 1U];
-  if (reuse_.ungraded_of == span_of_[current_]) reuse_.ungraded_of.reset();  // ce tampon va changer
-  const gpu::Tensor* previous =
-      ungraded_previous(reuse_, spanned(current_ ^ 1U), before, rewritten(span_graded_, reuse_, before));
-  if (previous == nullptr) drop_plan(reuse_);
-  const bool tiled = previous != nullptr && send_tiles(reuse_, *setup_.engine, previous);
-  auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
-  if (!ok && tiled) drop_tiles(*setup_.engine);
-  if (ok && tiled) ok = check_tiles(reuse_, *setup_.backend, *setup_.engine, inputs, results[0]);
-  reuse_.spanned = ok ? std::optional(frame_id_) : std::nullopt;
+  auto ok = span_body_queued_ ? std::expected<void, Refusal>{} : span_body();
   // La plaque de décor (layer_stage.h), avant le grade : le décor de b repris de l'image clé, sur place ; la
   // sortie de SPAN est copiée juste avant, pour les tuiles de la suivante.
   const std::uint32_t buf = span_of_[current_];
+  const gpu::Tensor& rgb = spanned(current_);
   reuse_.plated[buf] = ok && layers_.rewrites(setup_.layers);
   if (reuse_.plated[buf] && keeps_ungraded(setup_, reuse_))
-    ok = keep_ungraded(*setup_.backend, results[0], buf, reuse_);
+    ok = keep_ungraded(*setup_.backend, rgb, buf, reuse_);
   if (ok)
-    ok = layers_.after_span(*setup_.backend, setup_.layers, results[0],
-                            setup_.warp == kernels::RifeWarp::CatmullRom);
-  if (ok) ok = grade_spanned(span_of_[current_]);
+    ok =
+        layers_.after_span(*setup_.backend, setup_.layers, rgb, setup_.warp == kernels::RifeWarp::CatmullRom);
+  if (ok) ok = grade_spanned(span_of_[current_], head_, debanded_);
   use_lane(back);
   return ok;
 }
 
-std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
+std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf, const Previous& at,
+                                                         bool debanded) {
   span_graded_[buf] = false;
   // Copiée avant la plaque, la sortie de SPAN l'est déjà.
   if (reuse_.ungraded_of == buf && !reuse_.plated[buf]) reuse_.ungraded_of.reset();
@@ -352,12 +383,11 @@ std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
   if (!reuse_.plated[buf] && span_graded_[buf ^ 1U] && keeps_ungraded(setup_, reuse_)) {
     if (auto ok = keep_ungraded(*setup_.backend, spanned_[buf]->tensor(), buf, reuse_); !ok) return ok;
   }
-  const GradedSource source{.epoch = head_.epoch,
-                            .pts_us = head_.pts_us,
-                            .effects = setup_.live
-                                           ? setup_.live->effect_book().for_source(head_.epoch, head_.pts_us)
-                                           : std::nullopt};
-  auto graded = setup_.grader->grade(*setup_.backend->kernels(), spanned_[buf]->tensor(), debanded_, source);
+  const GradedSource source{
+      .epoch = at.epoch,
+      .pts_us = at.pts_us,
+      .effects = setup_.live ? setup_.live->effect_book().for_source(at.epoch, at.pts_us) : std::nullopt};
+  auto graded = setup_.grader->grade(*setup_.backend->kernels(), spanned_[buf]->tensor(), debanded, source);
   if (!graded) {
     log_channel("gpu")->warn("grade avant le warp : {} {} ; l'écran reprend le grade",
                              name(graded.error().code), graded.error().detail);

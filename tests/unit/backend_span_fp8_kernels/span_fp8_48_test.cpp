@@ -95,8 +95,8 @@ span_fp8::Package random_package(Random& random, int real = kReal, int blocks = 
   return package;
 }
 
-// Un lancement de net sur in, la sortie 3 × 2H × 2W en double.
-std::vector<double> launch_once(SpanFp8Net& net, const DeviceBytes& in) {
+// Un lancement de net sur in, la sortie 3 × 2H × 2W avec ses bits FP16 d'origine.
+std::vector<__half> launch_half(SpanFp8Net& net, const DeviceBytes& in) {
   DeviceBytes out(kInCount * 4 * sizeof(__half));
   std::string error;
   REQUIRE(net.launch(nullptr, in.data, out.data, error));
@@ -104,16 +104,22 @@ std::vector<double> launch_once(SpanFp8Net& net, const DeviceBytes& in) {
   std::vector<__half> half(kInCount * 4);
   REQUIRE(cudaMemcpy(half.data(), out.data, half.size() * sizeof(__half), cudaMemcpyDeviceToHost) ==
           cudaSuccess);
+  return half;
+}
+
+std::vector<double> launch_once(SpanFp8Net& net, const DeviceBytes& in) {
+  const auto half = launch_half(net, in);
   std::vector<double> values(half.size());
   for (std::size_t i = 0; i < half.size(); ++i) values[i] = static_cast<double>(__half2float(half[i]));
   return values;
 }
 
 std::unique_ptr<SpanFp8Net> make_net(const span_fp8::Package& package, SpanFp8Width width,
-                                     bool fp16 = false) {
+                                     bool fp16 = false, bool native_relu = false) {
   SpanFp8Weights weights = span_fp8_view(package);
   weights.width48 = width;
   weights.fp16 = fp16;
+  weights.native_relu = native_relu;
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string error;
   std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, kHeight, kWidth, status, error);
@@ -126,8 +132,8 @@ std::unique_ptr<SpanFp8Net> make_net(const span_fp8::Package& package, SpanFp8Wi
 // doit être finie, et la sortie rendue est celle d'après le passage au f32 (Acc16Policy::kFrames images
 // débordées de suite, puis un lancement en f32).
 std::vector<double> run(const span_fp8::Package& package, SpanFp8Width width, const DeviceBytes& in,
-                        bool fp16 = false, bool* overflowed = nullptr) {
-  const std::unique_ptr<SpanFp8Net> net = make_net(package, width, fp16);
+                        bool fp16 = false, bool* overflowed = nullptr, bool native_relu = false) {
+  const std::unique_ptr<SpanFp8Net> net = make_net(package, width, fp16, native_relu);
   DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
   net->bind(workspace.data);
   std::vector<double> values = launch_once(*net, in);
@@ -217,6 +223,12 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
   warn_non_finite(padded, "en 64 dont 16 nuls");
   INFO("en 64 dont 16 nuls, la référence de ce test, doit rester finie");
   warn_non_finite(native, "K à plat");
+  bool hybrid_over = false;
+  const auto hybrid = run(package, SpanFp8Width::Native, in, false, &hybrid_over, true);
+  warn_non_finite(hybrid, "ReLU natives");
+  const double native_relu_db = snr_db(native, hybrid);
+  INFO("SNR ReLU natives contre K à plat CUTLASS " << native_relu_db << " dB");
+  CHECK(native_relu_db >= 45.0);
   const double flat = snr_db(padded, native);
   if (acc16) {
     // K par position n'a pas d'accumulateur f16 (NaN mesurés) : refusé à la création.
@@ -287,6 +299,104 @@ TEST_CASE("SPAN FP8 acc16 : une image débordée reste finie, puis le réseau pa
   }
   CHECK(net->poll_accumulator() == SpanFp8AccChange::None);  // en f32 pour kCooldown lancements
   CHECK(net->overflow_frames() == span_fp8::Acc16Policy::kFrames);
+}
+
+TEST_CASE("SPAN FP8 : une ReLU native C48 peut faire passer sa voie au f32", "[cuda][span_fp8]") {
+  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  span_fp8::Package package = span_fp8::testing::synthetic(0.F, 2);
+  package.real_channels = kReal;
+  package.acc16 = true;
+  package.scales.fill(1.F / 448.F);
+  package.first.bias[0] = 1.F;
+  // Seul c1 travaille : 9 produits 448 × 28 sur le canal 0 font déborder sa somme au centre.
+  auto& first = package.blocks[0].conv[0].weights;
+  for (int tap = 0; tap < 9; ++tap) first[static_cast<std::size_t>(tap * kStored)] = 0x3400;
+  const std::vector<__half> image(kInCount, __float2half(0.F));
+  DeviceBytes in(kInCount * sizeof(__half));
+  REQUIRE(cudaMemcpy(in.data, image.data(), kInCount * sizeof(__half), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
+  bool overflowed = false;
+  const auto out = run(package, SpanFp8Width::Native, in, false, &overflowed, true);
+  CHECK(overflowed);
+  CHECK(std::ranges::all_of(out, [](double x) { return std::isfinite(x); }));
+}
+
+TEST_CASE("SPAN FP8 : les ReLU C48 gardent les bits de CUTLASS sur une mire saturée",
+          "[cuda][span_fp8][fp8_staged]") {
+  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  const bool acc16 = GENERATE(false, true);
+  INFO("acc16 " << acc16);
+  const auto half = [](float x) { return __half_as_ushort(__float2half_rn(x)); };
+  span_fp8::Package package = span_fp8::testing::synthetic(0.F, 2);
+  package.real_channels = kReal;
+  package.acc16 = acc16;
+  // En unités E4M3, c1 reçoit aux pas K 0, 32 et 64 : ε, +L, −L.
+  // f16 : ε=1, L=448×28. f32 : ε=2⁻¹⁰, L=448×448. Dans les deux cas, ε+L arrondit à L.
+  // L'ordre CUTLASS ε+(L−L) conserve ε. Une somme continue donne zéro en pleine zone rouge.
+  const float epsilon = acc16 ? 0.125F : 0x1p-14F;  // après multiplication par les échelles
+  package.scales.fill(epsilon);
+  package.scales[0] = 0.5F;
+  package.first.bias[0] = acc16 ? 0.5F : 0x1p-6F;
+  for (const std::size_t channel : {16U, 32U})
+    package.first.weights[(channel * 9 + 4) * span_fp8::kUnshuffledPadded] = half(224.F);
+  auto& block = package.blocks[0];
+  constexpr std::size_t kProbe = 7;  // le saut du canal vaut zéro
+  const std::size_t base = kProbe * 9 * kStored;
+  const float large = acc16 ? 7.F : 56.F;
+  block.conv[0].weights[base] = half(acc16 ? 0.25F : 0x1p-8F);
+  block.conv[0].weights[base + 32] = half(large);
+  block.conv[0].weights[base + kStored + 16] = half(-large);
+  block.conv[1].weights[base + 4 * kStored + kProbe] = half(1.F);
+  block.conv[2].weights[base + 4 * kStored + kProbe] = half(1.F);
+  block.attention.bias[kProbe] = 8.F;
+  // La tranche 2 de la concaténation donne le canal du premier bloc au premier pixel du plan rouge.
+  package.concat.weights[2 * kStored + kProbe] = half(1.F);
+  package.pixel.weights[4 * kStored] = half(1.F);
+
+  std::vector<__half> image(kInCount, __float2half_rn(0.F));
+  for (int y = 0; y < kHeight; ++y)
+    for (int x = 0; x < kWidth; ++x) {
+      const std::size_t i = static_cast<std::size_t>(y * kWidth + x);
+      const bool red = (x / 16 + y / 16) % 2 == 0;
+      image[i] = __float2half_rn(red ? 1.F : 0.F);
+      image[i + std::size_t{kHeight} * kWidth] = __float2half_rn(red ? 0.F : 1.F);
+    }
+  DeviceBytes in(kInCount * sizeof(__half));
+  REQUIRE(cudaMemcpy(in.data, image.data(), kInCount * sizeof(__half), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
+  const auto evaluate = [&](bool native_relu) {
+    const auto net = make_net(package, SpanFp8Width::Native, false, native_relu);
+    DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
+    net->bind(workspace.data);
+    const auto out = launch_half(*net, in);  // une seule passe dans le mode d'accumulation choisi
+    CHECK(net->overflow_frames() == 0);
+    return out;
+  };
+  const auto want = evaluate(false);
+  const auto got = evaluate(true);
+  constexpr std::size_t kAt = 8 * (2 * kWidth) + 8;  // tranche rouge en (2,2) à la résolution du bloc
+  REQUIRE(__half_as_ushort(want[kAt]) == half(epsilon));
+  CHECK(__half_as_ushort(got[kAt]) == half(epsilon));
+  CHECK(std::memcmp(want.data(), got.data(), want.size() * sizeof(__half)) == 0);
+}
+
+TEST_CASE("Les ReLU natives du SPAN FP8 refusent les autres formes", "[span_fp8]") {
+  SpanFp8Weights weights;
+  weights.native_relu = true;
+  SpanFp8Status status = SpanFp8Status::Ok;
+  std::string error;
+  CHECK(SpanFp8Net::create(weights, kHeight, kWidth, status, error) == nullptr);
+  CHECK(error.find("48 canaux en K à plat") != std::string::npos);
+  weights.channels = kReal;
+  for (const auto width : {SpanFp8Width::Padded, SpanFp8Width::PerTap}) {
+    weights.width48 = width;
+    CHECK(SpanFp8Net::create(weights, kHeight, kWidth, status, error) == nullptr);
+    CHECK(error.find("48 canaux en K à plat") != std::string::npos);
+  }
+  weights.width48 = SpanFp8Width::Native;
+  weights.fp16 = true;
+  CHECK(SpanFp8Net::create(weights, kHeight, kWidth, status, error) == nullptr);
+  CHECK(error.find("48 canaux en K à plat") != std::string::npos);
 }
 
 TEST_CASE("SPAN FP8 à 48 canaux : la zone de travail rétrécit", "[cuda][span_fp8]") {

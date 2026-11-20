@@ -29,7 +29,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
@@ -82,6 +84,34 @@ struct SceneFlowTiles {
   std::vector<SceneTileSums> tiles;  // cols × rows
 };
 
+// Une grille de désaccord sur les mêmes tuiles que la carte de la scène. Dans chaque sens (ancré en a
+// puis en b), nombre de cellules visibles, non fermées et non fermées avec écart de luma sous le flot.
+// Une mesure de désaccord seulement : une texture ambiguë peut aussi en produire.
+struct SceneRoundtripTile {
+  std::uint8_t visible_a = 0;
+  std::uint8_t open_a = 0;
+  std::uint8_t photo_a = 0;
+  std::uint8_t visible_b = 0;
+  std::uint8_t open_b = 0;
+  std::uint8_t photo_b = 0;
+};
+static_assert(sizeof(SceneRoundtripTile) == 6);
+
+struct SceneRoundtripTiles {
+  std::uint64_t ticket = 0;  // le ticket de l'aller, jamais celui de la caméra
+  int flow_width = 0;
+  int flow_height = 0;
+  int divisor = 1;
+  std::vector<SceneRoundtripTile> tiles;
+
+  bool matches(std::uint64_t pair, int width, int height, int factor) const {
+    return ticket == pair && width >= kSceneFlowMinSide && height >= kSceneFlowMinSide && factor > 0 &&
+           flow_width == width && flow_height == height && divisor == factor &&
+           tiles.size() == static_cast<std::size_t>(scene_flow_tiles(width)) *
+                               static_cast<std::size_t>(scene_flow_tiles(height));
+  }
+};
+
 // Classe d'une tuile. Uncertain : le flux ne permet pas de trancher (aplat qui change ou dont le vecteur
 // contredit la caméra, vecteurs sans correspondance sans effet, mouvement sans caméra ajustée). Un aplat qui
 // suit la caméra et ne change guère est décor : rien n'y bouge de visible. Caméra affinée, c'est l'écart
@@ -119,8 +149,11 @@ struct SceneMotion {
   int tile_px = 0;  // côté d'une tuile, pixels de travail
   int cols = 0;
   int rows = 0;
-  std::vector<SceneTile> tiles;  // cols × rows, lissées dans le temps (ref::SceneHistory)
-  double unmatched = 0.0;        // part des vecteurs sans correspondance
+  std::vector<SceneTile> tiles;                  // cols × rows, lissées dans le temps (ref::SceneHistory)
+  std::optional<SceneRoundtripTiles> roundtrip;  // relue à temps pour cette seule paire, hors coupe et fondu
+  // Une tuile mesurée où des bords nets restent après la caméra affinée de cette paire, dans le repère de a.
+  std::vector<std::uint8_t> roundtrip_photo_edge_a;
+  double unmatched = 0.0;  // part des vecteurs sans correspondance
   // Rien ne bouge hors de la caméra : au plus kDrawingHeldShare des tuiles en dessin ou en effet (classes
   // brutes) ; sans caméra ajustée, au plus cette part de tuiles changées. Faux sur une coupe ou un fondu.
   bool drawing_held = false;

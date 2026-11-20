@@ -323,7 +323,9 @@ class Net final : public TfixNativeNet {
   std::int64_t encoder_workspace_bytes() const override { return encoder_bytes(); }
   std::int64_t workspace_bytes() const override {
     std::int64_t most = encoder_bytes();
-    for (std::size_t i = 1; i < pieces_.size(); ++i) most = std::max(most, pieces_[i].bytes());
+    for (std::size_t i = 1; i < pieces_.size(); ++i) {
+      if (!uses_fused_head(i)) most = std::max(most, pieces_[i].bytes());
+    }
     return most;
   }
   RifeNativeSums sums() const override { return sums_; }
@@ -343,8 +345,7 @@ class Net final : public TfixNativeNet {
   cudaError_t window(cudaStream_t stream, int k, const void* x, void* y, void* workspace) const override {
     if (k < 0 || k > kernels::kTfixLevels) return cudaErrorInvalidValue;
     const auto index = static_cast<std::size_t>(k) + 1;
-    if (k == kernels::kTfixLevels && head_ != nullptr && index < pieces_.size() &&
-        !pieces_[index].layers.empty()) {
+    if (uses_fused_head(index)) {
       const Layer& first = pieces_[index].layers.front();
       return head_->run(stream, x, y, first.ih, first.iw, pieces_[index].batch);
     }
@@ -354,6 +355,12 @@ class Net final : public TfixNativeNet {
   void fuse_head(std::unique_ptr<TfixHead> head) { head_ = std::move(head); }
 
  private:
+  // La tête fondue écrit directement dans la sortie, sans les tampons du plan de repli.
+  bool uses_fused_head(std::size_t index) const {
+    return index == static_cast<std::size_t>(kernels::kTfixLevels) + 1 && head_ != nullptr &&
+           index < pieces_.size() && !pieces_[index].layers.empty();
+  }
+
   // Tranche des canaux d'entrée, tuile des canaux de sortie, poids rangés, lancement, K découpé.
   bool build(const RifeNativeConv& conv, Layer& layer, bool last, int batch, std::int64_t& partial,
              std::string& error) {

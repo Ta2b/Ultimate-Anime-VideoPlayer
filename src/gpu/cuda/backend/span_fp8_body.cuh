@@ -13,6 +13,7 @@
 #include "gpu/cuda/backend/span_fp8_kernels.cuh"
 #include "gpu/cuda/backend/span_fp8_layout.cuh"
 #include "gpu/cuda/backend/span_native16_edges.cuh"
+#include "gpu/cuda/backend/span_native8_relu.cuh"
 #include "gpu/span_fp8/acc16_policy.h"
 #include "gpu/span_fp8/quantize.h"
 
@@ -68,6 +69,7 @@ class Body final : public SpanFp8Body {
   static constexpr int kBlocks = SpanFp8Weights::kBlocks;
   static constexpr int kConcat = 4 * Ch;
   static constexpr int kScaleCount = SpanFp8Weights::kScales;
+  static constexpr bool kNativeRelu = Ch == span_native8::kC && BlockAlg == Alg::kFewChannels;
 
   // Blocs : entrée FP8, Ch canaux. Hors blocs : entrée FP16, accumulateur f32.
   template <class Acc>
@@ -174,6 +176,9 @@ class Body final : public SpanFp8Body {
   LC1 c1_;
   std::array<L8, kBlocks> la_, lb_;
   std::array<LT, kBlocks> lc_;
+  // Les deux convolutions avec ReLU du chemin C48, aux mêmes adresses que CUTLASS.
+  std::array<std::array<span_native8::Params, 2>, kNativeRelu ? kBlocks : 0> relu_{};
+  bool native_relu_ = false;
   LCAT cat_;
   LPIX pix_;
   LCATH cat16_;
@@ -197,6 +202,7 @@ bool Body<Ch, BlockAlg>::upload(const SpanFp8Weights& weights, SpanFp8Status& st
   used_ = weights.blocks;
   acc16_ = weights.acc16;
   native_edges_ = weights.native_edges;
+  native_relu_ = kNativeRelu && weights.native_relu;
   scales_.fill(1.F);
   for (std::size_t i = 0; i < static_cast<std::size_t>(1 + 3 * used_); ++i) scales_[i] = weights.scales[i];
 
@@ -256,9 +262,16 @@ bool Body<Ch, BlockAlg>::upload_block(std::size_t b, const SpanFp8Weights& weigh
         quantize_fp8(conv.weights, kBlockWeights, Ch, q, acc16_ ? kAcc16Headroom : 1.F);
     std::array<float, Ch> alpha{};
     for (std::size_t c = 0; c < alpha.size(); ++c) alpha[c] = act_scale(b, i) * w_scale[c];
-    if (!sent(bw.w[i].upload(q.data(), q.size()), "poids FP8") ||
-        !sent(bw.alpha[i].upload(alpha.data(), sizeof(alpha)), "échelles des poids FP8"))
-      return false;
+    if (!sent(bw.alpha[i].upload(alpha.data(), sizeof(alpha)), "échelles des poids FP8")) return false;
+    if constexpr (kNativeRelu) {
+      if (native_relu_ && i < 2) {
+        const auto packed = span_native8::pack(q);
+        if (!sent(bw.w[i].upload(packed.data(), packed.size() * sizeof(packed[0])), "poids FP8 natifs"))
+          return false;
+        continue;
+      }
+    }
+    if (!sent(bw.w[i].upload(q.data(), q.size()), "poids FP8")) return false;
   }
   const SpanFp8ConvView& att = weights.attention[b];
   return sent(bw.att_w.upload(att.weights, std::size_t{Ch} * Ch * sizeof(std::uint16_t)), "poids") &&
@@ -275,6 +288,15 @@ void Body<Ch, BlockAlg>::bind_block(std::size_t b, std::uint8_t* const (&x)[2], 
   // Les deux accumulateurs sur les mêmes poids : le passage d'un accumulateur à l'autre (poll_accumulator)
   // n'a qu'à changer de lancement.
   const auto init = [&](auto& plain, auto& half, const std::uint8_t* in, std::size_t i, const sk::KP& k) {
+    if constexpr (kNativeRelu) {
+      if (native_relu_ && i < 2) {
+        sk::KP guarded = k;
+        guarded.overflow = overflow_dev_;
+        relu_[b][i] = {.input = in, .packed = bw.w[i].template as<uint4>(), .epilogue = guarded,
+                       .height = h_, .width = w_};
+        return;
+      }
+    }
     const auto* in8 = reinterpret_cast<const EB*>(in);
     plain.init(h_, w_, 3, 1, Ch, Ch, in8, bw.w[i].template as<EB>(), k);
     if (!acc16_) return;
@@ -411,15 +433,26 @@ bool Body<Ch, BlockAlg>::launch_body(cudaStream_t stream, const void* input, std
     c1_.launch(stream);
   }
   for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b) {
-    if (f16_now()) {
-      la16_[b].launch(stream);
-      lb16_[b].launch(stream);
-      lc16_[b].launch(stream);
-    } else {
-      la_[b].launch(stream);
-      lb_[b].launch(stream);
-      lc_[b].launch(stream);
+    const bool f16 = f16_now();
+    if constexpr (kNativeRelu) {
+      if (native_relu_) {
+        span_native8::launch_relu<Ch>(stream, relu_[b][0], f16);
+        span_native8::launch_relu<Ch>(stream, relu_[b][1], f16);
+      }
     }
+    if (!native_relu_) {
+      if (f16) {
+        la16_[b].launch(stream);
+        lb16_[b].launch(stream);
+      } else {
+        la_[b].launch(stream);
+        lb_[b].launch(stream);
+      }
+    }
+    if (f16)
+      lc16_[b].launch(stream);
+    else
+      lc_[b].launch(stream);
   }
   if (native_edges_)
     edges_.cat(stream, cat_in_, kConcat, cat_out_, f16_now(), overflow_dev_);

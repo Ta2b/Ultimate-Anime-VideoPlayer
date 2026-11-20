@@ -54,6 +54,25 @@ struct Event {
   }
 };
 
+// Une variante d'un morceau : une option (0 TensorRT, 1 + n le réseau n), et pour un réseau qui sait refaire
+// l'entrée du bloc à la volée, sans elle (après la colle à part, par la forme réglée de sa première couche).
+struct Variant {
+  std::size_t option = 0;
+  bool apart = false;
+};
+
+// Les variantes de chacun des count morceaux : chaque option, puis chaque réseau sans la colle à la volée
+// là où il sait la faire.
+std::vector<std::vector<Variant>> variants_of(std::size_t count, std::span<RifeNativeNet* const> nets) {
+  std::vector<std::vector<Variant>> variants(count);
+  for (std::size_t p = 0; p < count; ++p) {
+    for (std::size_t o = 0; o <= nets.size(); ++o) variants[p].push_back({.option = o});
+    for (std::size_t n = 0; p > 0 && n < nets.size(); ++n)
+      if (nets[n]->can_glue(static_cast<int>(p) - 1)) variants[p].push_back({.option = n + 1, .apart = true});
+  }
+  return variants;
+}
+
 }  // namespace
 
 RifeNativeTrial::RifeNativeTrial(RifeFusedEngine& engine, cudaStream_t stream,
@@ -177,33 +196,23 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
   std::vector<const RifeNativeNet*> options{nullptr};
   options.insert(options.end(), nets.begin(), nets.end());
   const auto count = static_cast<std::size_t>(pieces());
-  const int block = pieces() - 2;  // le dernier bloc
-  // Les variantes de chaque morceau : chaque option, et pour le dernier bloc chaque réseau qui sait refaire
-  // son entrée à la volée, sans elle (après la colle à part, par la forme réglée de sa première couche).
-  struct Variant {
-    std::size_t option = 0;
-    bool apart = false;
-  };
-  std::vector<std::vector<Variant>> variants(count);
-  for (std::size_t p = 0; p < count; ++p)
-    for (std::size_t o = 0; o < options.size(); ++o) variants[p].push_back({.option = o});
-  for (std::size_t n = 0; n < nets.size(); ++n)
-    if (nets[n]->can_glue(block)) variants.back().push_back({.option = n + 1, .apart = true});
-  // Une capture ou un lot d'une variante : son réseau, s'il sait refaire l'entrée du dernier bloc, avec ou
-  // sans la colle à la volée selon la variante le temps de l'appel, puis dans l'état d'avant.
-  const auto as = [&](const Variant& v, auto&& step) {
+  const std::vector<std::vector<Variant>> variants = variants_of(count, nets);
+  // Une capture ou un lot d'une variante du morceau p : son réseau, s'il sait refaire l'entrée de ce bloc,
+  // avec ou sans la colle à la volée selon la variante le temps de l'appel, puis dans l'état d'avant.
+  const auto as = [&](std::size_t p, const Variant& v, auto&& step) {
+    const int block = static_cast<int>(p) - 1;
     RifeNativeNet* const net =
-        v.option > 0 && nets[v.option - 1]->can_glue(block) ? nets[v.option - 1] : nullptr;
+        v.option > 0 && block >= 0 && nets[v.option - 1]->can_glue(block) ? nets[v.option - 1] : nullptr;
     const bool before = net != nullptr && net->glues(block);
-    if (net != nullptr) net->use_glue(!v.apart);
+    if (net != nullptr) net->use_glue(block, !v.apart);
     auto result = step();
-    if (net != nullptr) net->use_glue(before);
+    if (net != nullptr) net->use_glue(block, before);
     return result;
   };
   std::vector<std::vector<Exec>> execs(count);
   for (std::size_t p = 0; p < count; ++p)
     for (const Variant& v : variants[p]) {
-      auto exec = as(v, [&] {
+      auto exec = as(p, v, [&] {
         return capture(static_cast<int>(p), options[v.option], variant_name(names, v.option, v.apart));
       });
       if (!exec) return std::unexpected(std::move(exec.error()));
@@ -217,7 +226,7 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
         const std::size_t v =
             round % 2 == 0 ? i : variants[p].size() - 1 - i;  // dans l'ordre, puis l'inverse
         const Variant& at = variants[p][v];
-        auto ms = as(at, [&] { return time(static_cast<int>(p), options[at.option], execs[p][v].get()); });
+        auto ms = as(p, at, [&] { return time(static_cast<int>(p), options[at.option], execs[p][v].get()); });
         if (!ms) return std::unexpected(std::move(ms.error()));
         rounds[p][v].push_back(*ms);
       }
@@ -226,7 +235,7 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
     std::vector<double> medians(variants[p].size());
     std::ranges::transform(rounds[p], medians.begin(), median);
     out[p].assign(medians.begin(), medians.begin() + static_cast<std::ptrdiff_t>(options.size()));
-    // Un réseau garde la colle à part si elle le rend plus rapide sur le dernier bloc.
+    // Un réseau garde la colle à part si elle le rend plus rapide sur ce bloc.
     for (std::size_t v = options.size(); v < variants[p].size(); ++v) {
       const std::size_t o = variants[p][v].option;
       const bool apart = medians[v] < out[p][o];
@@ -234,7 +243,7 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
           std::format("RIFE natif {}, {} : colle à la volée {:.3f} ms, colle à part {:.3f} ms ({})",
                       names[o - 1], piece_name(static_cast<int>(p)), out[p][o], medians[v],
                       apart ? "à part gardée" : "à la volée gardée"));
-      nets[o - 1]->use_glue(!apart);
+      nets[o - 1]->use_glue(static_cast<int>(p) - 1, !apart);
       if (apart) out[p][o] = medians[v];
     }
   }

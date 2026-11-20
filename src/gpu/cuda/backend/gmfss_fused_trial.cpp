@@ -6,13 +6,18 @@
 // celles de FeatureNet.
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <cuda_fp16.h>
+#include <format>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/fused_graphs.h"
 #include "gpu/cuda/backend/gmfss_fused_engine.h"
+#include "gpu/cuda/backend/gmfss_mix.h"
 #include "gpu/cuda/backend/gmfss_trial.h"
 
 namespace kirari::gpu::cuda {
@@ -45,8 +50,63 @@ std::vector<__half> test_input(const Shape& shape, int input, float shift) {
 
 }  // namespace
 
+std::expected<std::string, Refusal> GmfssFusedEngine::try_ifnet(
+    const std::array<RifeNativePiece, 4>& pieces, cudaStream_t stream,
+    const std::shared_ptr<SharedActivations>& shared, std::span<const Tensor> inputs,
+    const Tensor& out, double min_db) {
+  std::string error;
+  native_ifnet_ = GmfssIfnetNative::create(pieces, height_, width_, stream, error);
+  if (!native_ifnet_) {
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(lost_refusal(lost, "GMFSS natif : réglage de l'IFNet"));
+    return "GMFSS natif, IFNet : " + error;
+  }
+  const auto down = 3U * static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_);
+  const auto pass = [&](std::size_t v) { return enqueue_ifnet(stream, shared, inputs, v != 0); };
+  const auto fetch = [&](const void* addr, std::size_t count)
+      -> std::expected<std::vector<__half>, Refusal> {
+    if (auto ok = cuda_check(cudaStreamSynchronize(stream), "GMFSS natif : essai IFNet"); !ok)
+      return std::unexpected(std::move(ok.error()));
+    std::vector<__half> host(count);
+    if (auto ok = cuda_check(cudaMemcpy(host.data(), addr, count * sizeof(__half), cudaMemcpyDeviceToHost),
+                             "GMFSS natif : copie IFNet"); !ok)
+      return std::unexpected(std::move(ok.error()));
+    return host;
+  };
+  if (auto ok = pass(0); !ok) return std::unexpected(std::move(ok.error()));
+  auto reference = fetch(rife_, down);
+  if (!reference) return std::unexpected(std::move(reference.error()));
+  if (auto ok = pass(1); !ok) return std::unexpected(std::move(ok.error()));
+  auto candidate = fetch(rife_, down);
+  if (!candidate) return std::unexpected(std::move(candidate.error()));
+  const double db = gmfss_trial::output_db(*reference, *candidate);
+  const auto ms = gmfss_trial::times(stream, 2, pass);
+  if (!ms) return std::unexpected(ms.error());
+
+  double fusion_db = db;
+  if (db >= min_db) {
+    const Tensor outputs[]{out};
+    if (auto ok = full_->enqueue(stream, shared, inputs, outputs); !ok)
+      return std::unexpected(std::move(ok.error()));
+    auto full = fetch(fused_address(out), 4 * down);
+    if (!full) return std::unexpected(std::move(full.error()));
+    if (auto ok = enqueue_native(stream, shared, inputs, out); !ok)
+      return std::unexpected(std::move(ok.error()));
+    auto fused = fetch(fused_address(out), 4 * down);
+    if (!fused) return std::unexpected(std::move(fused.error()));
+    fusion_db = gmfss_trial::output_db(*full, *fused);
+  }
+  const bool keep = db >= min_db && fusion_db >= min_db && gmfss_mix::beats((*ms)[0], (*ms)[1]);
+  if (!keep) native_ifnet_.reset();
+  return std::format("GMFSS natif, IFNet {} sur {}×{} : {:.2f} dB seul, {:.2f} dB en fusion "
+                     "(seuil {:.0f} dB) ; TensorRT {:.3f} ms, CUDA {:.3f} ms",
+                     keep ? "retenu" : "écarté", width_, height_, db, fusion_db, min_db,
+                     (*ms)[0], (*ms)[1]);
+}
+
 std::expected<std::vector<std::string>, Refusal> GmfssFusedEngine::try_native(
-    const prepare::GmfssGrid& grid, const std::shared_ptr<SharedActivations>& shared, double min_db) {
+    const prepare::GmfssGrid& grid, const std::shared_ptr<SharedActivations>& shared, double min_db,
+    const std::array<RifeNativePiece, 4>* ifnet) {
   gmfss_trial::Scratch scratch;
   const auto upload = [&](const std::vector<__half>& host) -> std::expected<Tensor, Refusal> {
     void* device = nullptr;
@@ -83,10 +143,14 @@ std::expected<std::vector<std::string>, Refusal> GmfssFusedEngine::try_native(
     return std::unexpected(std::move(ok.error()));
   // Quoi qu'il arrive, l'essai laisse la fusion à TensorRT ou au natif retenu.
   native_.reset();
+  native_ifnet_.reset();
   native_on_ = false;
   const auto started = std::chrono::steady_clock::now();
   std::string error;
-  std::unique_ptr<GmfssNativeNet> net = GmfssNativeNet::create(grid, height_, width_, scratch.stream, error);
+  const char* packed = std::getenv("KIRARI_AB_GMFSS_PACKED_SPLATS");  // env: banc
+  features_c8_ = packed != nullptr && std::string_view(packed) == "2";
+  std::unique_ptr<GmfssNativeNet> net =
+      GmfssNativeNet::create(grid, height_, width_, scratch.stream, error, features_c8_);
   if (!net) {
     if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
       return std::unexpected(lost_refusal(lost, "GMFSS natif : réglage de la fusion"));
@@ -124,6 +188,49 @@ std::expected<std::vector<std::string>, Refusal> GmfssFusedEngine::try_native(
   if (!outcome || !outcome->keep) native_.reset();
   native_on_ = native_ != nullptr;
   if (!outcome) return std::unexpected(std::move(outcome.error()));
+  if (native_on_ && ifnet != nullptr) {
+    auto tested = try_ifnet(*ifnet, scratch.stream, shared, inputs, *out, min_db);
+    if (tested) {
+      outcome->lines.push_back(std::move(*tested));
+    } else {
+      native_ifnet_.reset();
+      if (tested.error().code == RefusalCode::DeviceLost)
+        return std::unexpected(std::move(tested.error()));
+      outcome->lines.push_back("GMFSS natif, IFNet : " + tested.error().detail);
+    }
+  }
+  if (native_on_ && native_->join_ready()) {
+    const auto bytes = elements * sizeof(__half);
+    const auto pass = [&](int marker) -> std::expected<std::vector<__half>, Refusal> {
+      if (auto ok = cuda_check(cudaMemsetAsync(fused_address(*out), marker, bytes, scratch.stream),
+                               "GMFSS natif : préparation de la sortie des anneaux"); !ok)
+        return std::unexpected(std::move(ok.error()));
+      auto launched = enqueue_native(scratch.stream, shared, inputs, *out);
+      if (auto ok = cuda_check(cudaStreamSynchronize(scratch.stream), "GMFSS natif : essai des anneaux"); !ok)
+        return std::unexpected(std::move(ok.error()));
+      if (!launched) return std::unexpected(std::move(launched.error()));
+      return unit.fetch(0);
+    };
+    const auto check_bits = [&]() -> std::expected<bool, Refusal> {
+      auto reference = pass(0xff);
+      if (!reference) return std::unexpected(std::move(reference.error()));
+      native_->use_join(true);
+      auto candidate = pass(0x7e);
+      if (!candidate) return std::unexpected(std::move(candidate.error()));
+      return std::memcmp(reference->data(), candidate->data(), bytes) == 0;
+    };
+    const auto same = check_bits();
+    if (!same || !*same) native_->use_join(false);
+    if (!same) {
+      if (same.error().code == RefusalCode::DeviceLost) return std::unexpected(same.error());
+      if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+        return std::unexpected(lost_refusal(lost, "GMFSS natif : essai des anneaux"));
+      outcome->lines.push_back("GMFSS natif, anneaux C64 avec addition écartés : " + same.error().detail);
+    } else {
+      outcome->lines.emplace_back(*same ? "GMFSS natif, anneaux C64 avec addition retenus (FP16 identique)"
+                                       : "GMFSS natif, anneaux C64 avec addition écartés (sortie FP16 différente)");
+    }
+  }
   return std::move(outcome->lines);
 }
 

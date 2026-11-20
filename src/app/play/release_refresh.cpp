@@ -19,24 +19,27 @@ ReleaseRefresh start_release_refresh(const PlayOptions& options, const PlayerPat
   ReleaseRefresh refresh{.cache = paths::data_root(paths) / "engines-nvidia.lock"};
   refresh.before = read_release_index(refresh.cache);
   // « Jamais » coupe les vérifications de version, pas le catalogue des moteurs : l'index apporte le paquet
-  // TensorRT de la version installée. Il se relit alors une fois par version (copie ou 404 sans limite
-  // d'âge), pas chaque jour (C26-02).
+  // TensorRT de la version installée. Une copie validée suffit alors pour toute la version (C26-02).
   const bool online = !options.data_dir;
   const bool never = saved.update_mode == UpdateMode::Never;
-  if (!online || release_repo().empty() || !release_index_due(refresh.cache, installed_version(), never))
-    return refresh;
+  if (!online || release_repo().empty()) return refresh;
+  auto keys = update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys);
+  if (!release_index_due(refresh.cache, installed_version(), keys, never)) return refresh;
   // Une copie gardée d'une autre version (le lecteur vient d'être remplacé) ne sert à rien : traitée comme
   // absente, le lancement attend la neuve plutôt que de rester sans le paquet TensorRT de cette version
   // (C26-01).
-  if (release_index_tag(refresh.before.text) != std::format("v{}", installed_version())) refresh.before = {};
+  if (release_index_tag(refresh.before.text) != std::format("v{}", installed_version()) ||
+      !release_index_signed(refresh.before.text, refresh.before.signature, keys))
+    refresh.before = {};
   auto done = std::make_shared<std::atomic<bool>>(false);
   auto started = start_thread(
       "release-index", ThreadReport([done](const Refusal& refused) {
         log_channel("app")->warn("moteurs de la release : {}", refused.detail);
         done->store(true);
       }),
-      [cache = refresh.cache, done](const std::stop_token& stop, const ThreadReport&) {
-        refresh_release_index(cache, release_repo(), installed_version(), UpdateFetch(fetch_https), stop);
+      [cache = refresh.cache, done, keys = std::move(keys)](const std::stop_token& stop, const ThreadReport&) {
+        refresh_release_index(cache, release_repo(), installed_version(), keys, UpdateFetch(fetch_https),
+                              stop);
         done->store(true);
       });
   if (!started) {
@@ -58,7 +61,8 @@ EngineCatalog engine_catalog(const PlayerPaths& paths, const PlaySettings& saved
     // (16 s au plus, curl borné), la fenêtre pompée. Avec une copie, elle sert ce lancement-ci, et la neuve
     // le suivant.
     // La fermeture de la fenêtre coupe l'attente (C26-08).
-    if (copy.text.empty()) {
+    const bool wait_for_copy = copy.text.empty();
+    if (wait_for_copy) {
       const auto started = std::chrono::steady_clock::now();
       while (!refresh.done->load() && !window_close_requested() &&
              std::chrono::steady_clock::now() - started < std::chrono::seconds(20)) {
@@ -70,8 +74,10 @@ EngineCatalog engine_catalog(const PlayerPaths& paths, const PlaySettings& saved
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started)
               .count());
     }
-    if (refresh.done->load()) copy = read_release_index(refresh.cache);
-    if (!refresh.done->load()) refresh.thread.request_stop();  // curl coupé, la copie neuve attendra
+    if (refresh.done->load())
+      copy = read_release_index(refresh.cache);
+    else if (wait_for_copy)
+      refresh.thread.request_stop();  // fenêtre fermée ou délai dépassé sans copie
   }
   merge_release_copy(catalog, copy, release_repo(),
                      update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys),

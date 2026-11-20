@@ -69,6 +69,7 @@ void compose_pixel(RgbImage& out, const std::array<const RgbImage*, 2>& images, 
   std::array<bool, 2> inside{};
   std::array<float, 3> sum{};
   float total = 0.0F;
+  float source_mask = 1.0F;
   for (std::size_t i = 0; i < static_cast<std::size_t>(params.count); ++i) {
     const auto& s = params.sources[i].shift;
     const float qx = fx + (s[0] + s[1] * fx + s[2] * fy);
@@ -76,7 +77,10 @@ void compose_pixel(RgbImage& out, const std::array<const RgbImage*, 2>& images, 
     inside[i] = qx >= 0.0F && qx <= wmax && qy >= 0.0F && qy <= hmax;
     if (!inside[i]) continue;
     float wi = params.sources[i].weight;
-    if (i == 0 && params.source_grid.cols != 0) wi *= layer_mask(params.source_grid, qx, qy);
+    if (i == 0 && params.source_grid.cols != 0) {
+      source_mask = layer_mask(params.source_grid, qx, qy);
+      wi *= source_mask;
+    }
     for (std::size_t c = 0; c < 3; ++c) {
       const PlaneF& plane = images[i]->planes[c];
       value[i][c] = params.cubic ? catmull_rom_sample(plane, qx, qy) : bilinear(plane, qx, qy);
@@ -90,12 +94,15 @@ void compose_pixel(RgbImage& out, const std::array<const RgbImage*, 2>& images, 
   if (params.count == 2 && inside[0] && inside[1]) {
     d = std::fabs(luma(value[0]) - luma(value[1]));
   } else if (params.count == 1) {
-    d = std::fabs(luma(value[0]) - luma(here));
+    // La plaque : l'écart le plus grand des trois canaux, pas la luma seule. Un trait violet resté dans
+    // l'image clé a presque la luma du ciel bleu qui l'a remplacé ; comparée en luma, la plaque le recollait.
+    for (std::size_t c = 0; c < 3; ++c) d = std::fmax(d, std::fabs(value[0][c] - here[c]));
   }
   const float k =
       1.0F - std::clamp((d - params.guard_low) / (params.guard_high - params.guard_low), 0.0F, 1.0F);
+  const float opacity = m * k * (params.count == 1 ? source_mask : 1.0F);
   for (std::size_t c = 0; c < 3; ++c) {
-    out.planes[c].at(x, y) = std::clamp(here[c] + m * k * (sum[c] / total - here[c]), 0.0F, 1.0F);
+    out.planes[c].at(x, y) = std::clamp(here[c] + opacity * (sum[c] / total - here[c]), 0.0F, 1.0F);
   }
 }
 

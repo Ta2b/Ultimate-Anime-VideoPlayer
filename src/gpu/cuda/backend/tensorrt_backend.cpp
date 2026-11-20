@@ -157,7 +157,10 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->span_native_ = (init.trials & kTrialSpanNative) != 0;
   backend->rife_native_ = (init.trials & kTrialRifeNative) != 0;
   backend->gmfss_native_ = (init.trials & kTrialGmfssNative) != 0;
+  backend->gmfss_feature_reuse_ = (init.trials & kTrialGmfssFeatureReuse) != 0;
+  backend->span_fp8_native_blocks_ = (init.trials & kTrialSpanFp8NativeBlocks) != 0;
   backend->tfix_native_ = (init.trials & kTrialTfixNative) != 0;
+  backend->nvof_roundtrip_ = (init.trials & kTrialNvofRoundtrip) != 0;
   backend->trtexec_ = std::move(trtexec);
   if (!backend->trtexec_.empty()) {
     // Son empreinte d'ouverture, revérifiée avant chaque construction (A05-05).
@@ -262,6 +265,10 @@ TensorRtBackend::~TensorRtBackend() {
   // la fin de create_lanes.
   if (!any_lane()) return;
   cudaSetDevice(device_);
+  if (scene_flow_) {
+    if (const std::string report = scene_flow_->finish_roundtrip(); !report.empty())
+      log(BackendLogLevel::Info, report);
+  }
   scene_flow_.reset();  // sa file finie, avant les voies et le profil
   destroy_textures();
   log_profile();

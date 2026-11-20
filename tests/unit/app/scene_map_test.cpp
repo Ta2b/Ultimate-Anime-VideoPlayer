@@ -29,6 +29,7 @@ using kernels::SceneCameraRefined;
 using kernels::SceneCameraRequest;
 using kernels::SceneFlowTiles;
 using kernels::SceneMotion;
+using kernels::SceneRoundtripTiles;
 namespace ref = kernels::ref;
 
 constexpr int kWidth = 256;  // image du flux : 16 × 9 tuiles
@@ -85,6 +86,9 @@ class Ops : public gpu::KernelOps {
   // Affinage rendu faux de 4 pixels (un départ qui a glissé ailleurs) : la vérification de chaque tuile
   // voit ces 4 pixels.
   std::map<std::uint64_t, bool> off;
+  std::map<std::uint64_t, bool> photo_edges;
+  std::map<std::uint64_t, std::optional<SceneRoundtripTiles>> roundtrips;
+  bool fail_flow = false;
 
   void done_flow(std::uint64_t ticket) { flows_.at(ticket).done = true; }
   void done_refine(std::uint64_t ticket) { refines_.at(ticket).done = true; }
@@ -116,9 +120,18 @@ class Ops : public gpu::KernelOps {
     return flow_tickets_;
   }
   std::expected<std::optional<SceneFlowTiles>, Refusal> scene_flow_take(std::uint64_t ticket) override {
+    if (fail_flow) return refuse(RefusalCode::DeviceLost, "retour du flot factice refusé");
     const Started& s = flows_.at(ticket);
     if (!s.done) return std::optional<SceneFlowTiles>{};
     return std::optional(s.flow.tiles);
+  }
+  std::expected<std::optional<SceneRoundtripTiles>, Refusal> scene_roundtrip_take(
+      std::uint64_t ticket) override {
+    auto it = roundtrips.find(ticket);
+    if (it == roundtrips.end()) return refuse(RefusalCode::FormatUnsupported, "sans retour");
+    auto out = std::move(it->second);
+    if (out) roundtrips.erase(it);
+    return out;
   }
   std::expected<std::uint64_t, Refusal> scene_camera_start(std::uint64_t flow_ticket,
                                                            const SceneCameraRequest& request) override {
@@ -135,6 +148,14 @@ class Ops : public gpu::KernelOps {
     if (off.contains(r.flow)) {
       refined->model[0] += 4.0;
       for (kernels::SceneTileCheck& c : refined->tiles) c.sx -= 4.0F;
+    }
+    if (photo_edges.contains(r.flow)) {
+      refined->tiles[0].pixels = 64.0F;
+      refined->tiles[0].sharp = 0.025F;
+      refined->tiles[1].pixels = 63.0F;
+      refined->tiles[1].sharp = 0.5F;
+      refined->tiles[2].pixels = 64.0F;
+      refined->tiles[2].sharp = 0.02F;
     }
     return std::optional(std::move(*refined));
   }
@@ -165,6 +186,25 @@ double camera_x(const SceneMotion& m) {
 }
 
 }  // namespace
+
+TEST_CASE("Carte de scène : une ancienne époque et un flot refusé ne laissent aucun état réutilisable",
+          "[app][scene]") {
+  Ops ops;
+  ops.queue = {translated(1, 0), translated(1, 0), translated(1, 0)};
+  SceneMap map(true);
+  const gpu::Tensor tensor;
+  map.start(ops, tensor, tensor, SourceId{1}, SourceId{2}, 1);
+  ops.done_flow(1);
+  REQUIRE(map.for_pair(ops, SourceId{1}, SourceId{2}, 1));
+  map.start(ops, tensor, tensor, SourceId{2}, SourceId{3}, 2);
+  CHECK_FALSE(map.latest());
+  CHECK_FALSE(map.for_pair(ops, SourceId{1}, SourceId{2}, 1));
+  ops.fail_flow = true;
+  map.start(ops, tensor, tensor, SourceId{3}, SourceId{4}, 2);
+  CHECK_FALSE(map.on());
+  CHECK_FALSE(map.latest());
+  CHECK(ops.queue.size() == 1);  // la panne relue au lancement a déjà arrêté la carte
+}
 
 TEST_CASE("carte de la scène : l'affinage derrière le flux, et relu après sa paire", "[scene_map]") {
   Ops ops;
@@ -268,6 +308,70 @@ TEST_CASE("carte de la scène : l'affinage derrière le flux, et relu après sa 
   ops.queue.push_back(translated(-2.0, 0.0));
   map.start(ops, t, t, id(6), id(7), 0);
   CHECK(ops.asked.size() == 6);
+}
+
+TEST_CASE("carte de la scène : le retour ne sert qu'à sa paire et peut manquer", "[scene_map]") {
+  Ops ops;
+  SceneMap map(true, true);
+  const gpu::Tensor t;
+  const SceneRoundtripTiles first{.ticket = 1,
+                                  .flow_width = kWidth,
+                                  .flow_height = kHeight,
+                                  .divisor = kDivisor,
+                                  .tiles = std::vector<kernels::SceneRoundtripTile>(16 * 9)};
+  ops.queue.push_back(translated(3.0, 0.5));
+  map.start(ops, t, t, id(1), id(2), 7);
+  ops.done_flow(1);
+  const auto no_return = map.for_pair(ops, id(1), id(2), 7);
+  REQUIRE(no_return);
+  CHECK_FALSE(no_return->roundtrip);
+  CHECK(no_return->roundtrip_photo_edge_a.empty());
+  ops.roundtrips[1] = std::nullopt;
+  CHECK_FALSE(map.for_pair(ops, id(1), id(2), 7)->roundtrip);
+  auto bad_shape = first;
+  bad_shape.tiles.pop_back();
+  ops.roundtrips[1] = bad_shape;
+  CHECK_FALSE(map.for_pair(ops, id(1), id(2), 7)->roundtrip);
+  ops.roundtrips[1] = first;
+  const auto old_pair = map.for_pair(ops, id(1), id(2), 7);
+  REQUIRE(old_pair);
+  REQUIRE(old_pair->roundtrip);
+  CHECK(old_pair->roundtrip->ticket == 1);
+  CHECK_FALSE(old_pair->camera_refined);
+  CHECK(old_pair->roundtrip_photo_edge_a.empty());
+
+  // Une nouvelle époque peut reprendre les mêmes identifiants source, avec un nouveau ticket.
+  CHECK(map.started(id(1), id(2), 7));
+  CHECK_FALSE(map.started(id(1), id(2), 8));
+  CHECK_FALSE(map.for_pair(ops, id(1), id(2), 8));
+  ops.queue.push_back(translated(3.0, 0.5));
+  map.start(ops, t, t, id(1), id(2), 8);
+  ops.done_flow(2);
+  map.advance(ops);
+  ops.photo_edges[2] = true;
+  ops.done_refine(2);
+  ops.roundtrips[2] = first;  // le backend rendrait le résultat d'une autre paire
+  const auto stale = map.for_pair(ops, id(1), id(2), 8);
+  REQUIRE(stale);
+  CHECK_FALSE(stale->roundtrip);
+  CHECK(stale->camera_refined);
+  CHECK(stale->roundtrip_photo_edge_a.empty());
+  auto second = first;
+  second.ticket = 2;
+  ops.roundtrips[2] = second;
+  const auto new_pair = map.for_pair(ops, id(1), id(2), 8);
+  REQUIRE(new_pair);
+  REQUIRE(new_pair->roundtrip);
+  CHECK(new_pair->roundtrip->ticket == 2);
+  REQUIRE(new_pair->roundtrip_photo_edge_a.size() == 16 * 9);
+  CHECK(new_pair->roundtrip_photo_edge_a[0] == 1);
+  CHECK(new_pair->roundtrip_photo_edge_a[1] == 0);
+  CHECK(new_pair->roundtrip_photo_edge_a[2] == 0);
+  map.cut(id(1), id(2), 8);
+  const auto cut = map.for_pair(ops, id(1), id(2), 8);
+  REQUIRE(cut);
+  CHECK_FALSE(cut->roundtrip);
+  CHECK(cut->roundtrip_photo_edge_a.empty());
 }
 
 }  // namespace kirari::app::play

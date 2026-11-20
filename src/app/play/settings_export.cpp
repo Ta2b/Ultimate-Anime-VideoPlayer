@@ -111,7 +111,7 @@ void chain_headers(ExportJob& job, const SettingsChoices& choices) {
 }
 
 // Le codec, la qualité et la cadence fixe du fichier exporté.
-void encoding_section(ExportJob& job) {
+void encoding_section(ExportJob& job, double source_fps) {
   section(i18n::tr("Encoding"));
   if (panel::combo(i18n::tr("Codec"), codec_label(job.codec))) {
     for (int i = 0; i < exporter::kCodecCount; ++i) {
@@ -134,7 +134,7 @@ void encoding_section(ExportJob& job) {
     note(i18n::tr(
         "Very high aims for a picture identical to playback; High and Standard make smaller files."));
   // Sans interpolation, chaque image source sort telle quelle : la cadence est fixe de toute façon.
-  const Factor exported = factor_of(export_chain(job.chain));
+  const Factor exported = export_factor(job.chain, source_fps);
   ImGui::BeginDisabled(exported.num <= exported.den);
   ImGui::Checkbox(i18n::tr("Constant frame rate"), &job.constant_rate);
   ImGui::EndDisabled();
@@ -194,7 +194,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   }
 
   panel::next_box();
-  encoding_section(job);
+  encoding_section(job, choices.source_fps);
 
   panel::end_boxes();
   ImGui::Spacing();
@@ -205,7 +205,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   chain_headers(job, choices);
 
   section(i18n::tr("File"));
-  const media::Rational rate = export_rate(choices.source_rate, factor_of(export_chain(job.chain)));
+  const media::Rational rate = export_rate(choices.source_rate, export_factor(job.chain, choices.source_fps));
   if (rate.den > 0 && rate.num > 60 * rate.den) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
     panel::wrapped(i18n::tr_format("{:.0f} fps: many TVs and phones refuse or stutter above 60.",

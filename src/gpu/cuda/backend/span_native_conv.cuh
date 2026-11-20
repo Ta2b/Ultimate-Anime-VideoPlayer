@@ -58,21 +58,27 @@ __device__ __forceinline__ void accumulate_shared(Frag<A> (&acc)[kMF][Cout / 8],
   }
 }
 
+template <int Cout, Acc A, bool CacheV = false, bool Rolling = false>
+__device__ __forceinline__ void gate_tile(const Frag<A> (&acc)[kMF][Cout / 8], __half* s, const Params& p,
+                                          int ty0, int tx0, int warp, int lane, bool& hit) {
+  // x de la tuile au pas Cout + 8, puis la 1×1 rangée (Cout² demi-flottants) juste après.
+  const std::uint32_t w1s = smem_u32(s) + static_cast<std::uint32_t>(kTH * kTW * (Cout + 8) * 2);
+  load_nhwc<Cout, 0, false, kTH, Rolling>(s, p.skip, Cout, p.fh, p.fw, ty0, tx0, p.skip_row_mask);
+  for (int i = static_cast<int>(threadIdx.x); i < Cout * Cout / 8; i += kThreads)
+    cp_async16(w1s + static_cast<std::uint32_t>(i * 16), p.w1 + i, true);
+  cp_async_wait_all();
+  __syncthreads();
+  gate<Cout, A, CacheV>(acc, s, w1s, p, warp, lane, hit);
+}
+
 // La fin d'une convolution, une fois les sommes dans acc et la mémoire partagée libre : épilogue (porte ou
 // biais et Relu) vers s, puis l'écriture. Commune à conv_kernel et à wino_kernel (span_native_wino.cuh).
-template <int Cout, Mode M, bool Relu, Acc A>
+template <int Cout, Mode M, bool Relu, Acc A, bool CacheV = false, bool Rolling = false>
 __device__ __forceinline__ void finish(const Frag<A> (&acc)[kMF][Cout / 8], __half* s, const Params& p,
                                        int ty0, int tx0, int warp, int lane) {
   bool hit = false;  // une somme f16 débordée (sums)
   if constexpr (M == Mode::kGate) {
-    // x de la tuile au pas Cout + 8, puis la 1×1 rangée (Cout² demi-flottants) juste après.
-    const std::uint32_t w1s = smem_u32(s) + static_cast<std::uint32_t>(kTH * kTW * (Cout + 8) * 2);
-    load_nhwc<Cout, 0>(s, p.skip, Cout, p.fh, p.fw, ty0, tx0);
-    for (int i = static_cast<int>(threadIdx.x); i < Cout * Cout / 8; i += kThreads)
-      cp_async16(w1s + static_cast<std::uint32_t>(i * 16), p.w1 + i, true);
-    cp_async_wait_all();
-    __syncthreads();
-    gate<Cout, A>(acc, s, w1s, p, warp, lane, hit);
+    gate_tile<Cout, A, CacheV, Rolling>(acc, s, p, ty0, tx0, warp, lane, hit);
   } else {
     plain<Cout, Relu, A>(acc, s, p.bias, warp, lane, hit);
   }
@@ -83,12 +89,13 @@ __device__ __forceinline__ void finish(const Frag<A> (&acc)[kMF][Cout / 8], __ha
   if constexpr (M == Mode::kPixel)
     store_pixel(s, p, ty0, tx0);
   else
-    store_nhwc<Cout>(s, p, ty0, tx0);
+    store_nhwc<Cout, kTH, Rolling>(s, p, ty0, tx0);
 }
 
 // Une convolution entière. Sources : 1 (kImage, ou une NHWC), ou 4 (conv_cat, K = 4 · Cin). Shared : les
 // poids partagés (accumulate_shared), leurs deux pas juste après la tuile.
-template <int Cin, int Cout, int Taps, int Sources, Src From, Mode M, bool Relu, Acc A, bool Shared = false>
+template <int Cin, int Cout, int Taps, int Sources, Src From, Mode M, bool Relu, Acc A, bool Shared = false,
+          bool CacheV = false, bool Rolling = false>
 __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
   static_assert(Cin % 16 == 0 && Cout % 16 == 0, "canaux par 16");
   static_assert(M != Mode::kGate || Cin == Cout, "la porte suit une conv carrée");
@@ -96,9 +103,12 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
   extern __shared__ __align__(16) unsigned char smem_raw[];
   auto* s = reinterpret_cast<__half*>(smem_raw);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
-  const int ty0 = p.y0 + static_cast<int>(blockIdx.y) * kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
+  const int first = Rolling && p.mask != nullptr ? p.y0 & ~(kTH - 1) : p.y0;
+  const int ty0 = first + static_cast<int>(blockIdx.y) * kTH,
+            tx0 = static_cast<int>(blockIdx.x) * kTW;
   if (p.mask != nullptr) {  // tout le bloc sort ensemble, avant la première barrière
-    const unsigned tile = blockIdx.y * gridDim.x + blockIdx.x;
+    const unsigned tile_row = Rolling ? static_cast<unsigned>(ty0 / kTH) : blockIdx.y;
+    const unsigned tile = tile_row * gridDim.x + blockIdx.x;
     if (((__ldg(p.mask + (tile >> 5U)) >> (tile & 31U)) & 1U) == 0U) return;
   }
 
@@ -116,7 +126,12 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
     } else {
       // Pas p.in[src] : un indice inconnu à la compilation copie le tableau des paramètres sur la pile.
       const __half* from = src == 0 ? p.in[0] : src == 1 ? p.in[1] : src == 2 ? p.in[2] : p.in[3];
-      load_nhwc<Cin, kHalo, Shared>(s, from, p.in_ld != 0 ? p.in_ld : Cin, p.fh, p.fw, ty0, tx0);
+      int row_mask = -1;
+      if constexpr (Rolling)
+        row_mask = src == 0 ? p.input_row_mask[0] : src == 1 ? p.input_row_mask[1]
+                            : src == 2 ? p.input_row_mask[2] : p.input_row_mask[3];
+      load_nhwc<Cin, kHalo, Shared, kTH, Rolling>(s, from, p.in_ld != 0 ? p.in_ld : Cin,
+                                               p.fh, p.fw, ty0, tx0, row_mask);
       cp_async_wait_all();
     }
     __syncthreads();
@@ -129,7 +144,7 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
     }
   }
   __syncthreads();  // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
-  finish<Cout, M, Relu, A>(acc, s, p, ty0, tx0, warp, lane);
+  finish<Cout, M, Relu, A, CacheV, Rolling>(acc, s, p, ty0, tx0, warp, lane);
 }
 
 }  // namespace kirari::gpu::cuda::span_native

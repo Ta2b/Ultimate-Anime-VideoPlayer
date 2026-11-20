@@ -201,7 +201,7 @@ std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboSc
 // de référence du contenu (203 nits : le PQ passe tel quel, comme sous Windows).
 std::expected<void, Refusal> FrameExport::open_grade(pl_gpu gpu) {
   if (!setup_.grade) return {};
-  auto grade = render::Grade::create(gpu);
+  auto grade = render::Grade::create(gpu, render::Grade::Target::Yuv);
   if (!grade) return std::unexpected(std::move(grade.error()));
   if (auto set = grade->set_looks(setup_.looks); !set) return std::unexpected(std::move(set.error()));
   const render::GradeParams& params = *setup_.grade;
@@ -333,7 +333,7 @@ FrameExport::Converted FrameExport::render(const RingFrame& frame, std::span<con
   // à une image que SPAN a déjà nettoyée. Tramage vers la profondeur de la sortie.
   pl_render_params params = pl_render_high_quality_params;
   params.deband_params = nullptr;
-  // Anime4K de la chaîne sur MAIN, puis le grade sur OUTPUT, dans l'ordre de l'écran.
+  // Anime4K de la chaîne sur MAIN, puis le grade sur le RGB de sortie avant le codage YCbCr.
   std::array<const pl_hook*, 16> hooks{};
   std::size_t count = 0;
   const auto add = [&](std::span<const pl_hook* const> some) {

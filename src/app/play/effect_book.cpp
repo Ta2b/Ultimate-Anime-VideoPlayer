@@ -105,19 +105,24 @@ void EffectTally::keep(Moment moment) {
   std::ranges::sort(moments_, std::ranges::greater{}, &Moment::effect);
 }
 
-bool EffectFollower::show(const std::optional<EffectNote>& note, std::int64_t pts_us) {
-  if (!note || !note->tiles) {
+bool EffectFollower::show(const std::optional<EffectNote>& note, std::int64_t pts_us,
+                          std::optional<std::uint32_t> frame_epoch) {
+  const std::uint64_t before = mask_.serial();
+  if (frame_epoch) {
+    if (epoch_ && *epoch_ != *frame_epoch) reset();
+    epoch_ = frame_epoch;
+  }
+  if (!note || !note->tiles || (frame_epoch && note->epoch != *frame_epoch)) {
     // Pas de carte pour l'image montrée : vers le neutre, au temps écoulé entre deux images montrées (une
     // image représentée ne compte pas ; un pts inconnu ou qui recule, comme une image à 23,976 i/s).
     seen_ = false;
     if (mask_.neutral()) {
       last_pts_ = pts_us;
-      return false;
+      return mask_.serial() != before;
     }
     if (last_pts_ && *last_pts_ == pts_us) return false;
     const std::int64_t span = last_pts_ && pts_us > *last_pts_ ? pts_us - *last_pts_ : 0;
     last_pts_ = pts_us;
-    const std::uint64_t before = mask_.serial();
     mask_.relax(span);
     return mask_.serial() != before;
   }
@@ -130,7 +135,6 @@ bool EffectFollower::show(const std::optional<EffectNote>& note, std::int64_t pt
   from_us_ = note->from_us;
   to_us_ = note->to_us;
   seen_ = true;
-  const std::uint64_t before = mask_.serial();
   mask_.update(*note->tiles);
   return mask_.serial() != before;
 }

@@ -49,6 +49,7 @@ struct QkvParams {
   long tokens = 0;           // jetons d'une image
   int batch = 0;
   int key_shift = 0;  // 0, ou lot / 2 (cross-attention)
+  const float* bias = nullptr;  // Projection de propagation seule, 128 sorties.
 };
 
 // La géométrie des fenêtres d'une échelle : jetons height × width par image, splits × splits fenêtres de wh ×
@@ -119,7 +120,7 @@ __device__ __forceinline__ int token_of(const Grid& g, int window, int t, int& r
 
 // La GEMM QKV : un bloc de 64 jetons et une partie (q, k ou v : blockIdx.y), 16 jetons par warp sur les 128
 // sorties de la partie. Les jetons dans la mémoire partagée (cp.async), les poids lus en L1.
-template <Acc A>
+template <Acc A, bool kProjection = false>
 __global__ void __launch_bounds__(kThreads) qkv_kernel(QkvParams p) {
   __shared__ __align__(16) __half s[kRows * kLds];
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
@@ -161,15 +162,21 @@ __global__ void __launch_bounds__(kThreads) qkv_kernel(QkvParams p) {
   for (int nt = 0; nt < 2 * kPairs; ++nt)
 #pragma unroll
     for (int h = 0; h < 2; ++h) {
-      const float2 v = acc[nt].pair(h);
+      float2 v = acc[nt].pair(h);
+      if constexpr (kProjection) {
+        const float2 b = __ldg(reinterpret_cast<const float2*>(p.bias + nt * 8 + 2 * t));
+        v.x += b.x;
+        v.y += b.y;
+      }
       *reinterpret_cast<__half2*>(s + (warp * 16 + g + 8 * h) * kLds + nt * 8 + 2 * t) =
           rn::to_half2(v.x, v.y);
     }
   __syncthreads();
-  __half* out = p.out + static_cast<long>(batch) * p.tokens * kQkv + part * kD;
+  constexpr int kOut = kProjection ? kD : kQkv;
+  __half* out = p.out + static_cast<long>(batch) * p.tokens * kOut + part * kD;
   for (int row = static_cast<int>(threadIdx.x) >> 4; row < kRows; row += kThreads / 16) {
     if (first + row >= p.tokens) continue;
-    *reinterpret_cast<uint4*>(out + (first + row) * kQkv + chunk * 8) =
+    *reinterpret_cast<uint4*>(out + (first + row) * kOut + chunk * 8) =
         *reinterpret_cast<const uint4*>(s + row * kLds + chunk * 8);
   }
 }
@@ -314,6 +321,14 @@ __device__ __forceinline__ void finish(rn::Frag<Acc::kF32> (&o)[2 * kPairs], con
     }
 #pragma unroll
     for (int nt = 0; nt < 2 * kPairs; ++nt) y[nt].promote();
+  }
+  // TensorRT écrit le résultat Half de merge avant les statistiques FP32 de LayerNorm.
+  if constexpr (A != Acc::kF16) {
+#pragma unroll
+    for (auto& tile : y) {
+#pragma unroll
+      for (float& value : tile.r) value = __half2float(__float2half_rn(value));
+    }
   }
   const int t = lane & 3;
 #pragma unroll

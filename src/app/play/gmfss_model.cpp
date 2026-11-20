@@ -1,6 +1,7 @@
 #include "app/play/gmfss_model.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <string>
 #include <string_view>
@@ -30,6 +31,10 @@ std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height) {
 
 }  // namespace
 
+int gmfss_frame_limit(double source_fps, bool half) {
+  return source_fps > 0.0 ? static_cast<int>(std::ceil(source_fps * (half ? 2.5 : 2.0))) : 0;
+}
+
 std::vector<std::filesystem::path> gmfss_places(std::span<const std::filesystem::path> dirs) {
   std::vector<std::filesystem::path> places;
   const auto add = [&places](const std::filesystem::path& dir) {
@@ -44,22 +49,32 @@ std::vector<std::filesystem::path> gmfss_places(std::span<const std::filesystem:
   return places;
 }
 
-std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs) {
+namespace {
+
+std::optional<GmfssModels> models_at(const std::filesystem::path& dir) {
   std::error_code error;
+  GmfssModels found{.fusion = dir / kGmfssFusionFile};
+  if (!std::filesystem::is_regular_file(found.fusion, error)) return std::nullopt;
+  if (std::filesystem::is_regular_file(dir / kGmfssPairFile, error)) found.pair = dir / kGmfssPairFile;
+  if (std::filesystem::is_regular_file(dir / kGmfssHalfPairFile, error))
+    found.half_pair = dir / kGmfssHalfPairFile;
+  if (found.pair.empty() && found.half_pair.empty()) return std::nullopt;
+  return found;
+}
+
+}  // namespace
+
+std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs) {
   for (const std::filesystem::path& dir : gmfss_places(dirs)) {
-    GmfssModels found{.pair = dir / kGmfssPairFile, .fusion = dir / kGmfssFusionFile};
-    if (std::filesystem::is_regular_file(found.pair, error) &&
-        std::filesystem::is_regular_file(found.fusion, error)) {
-      if (std::filesystem::is_regular_file(dir / kGmfssHalfPairFile, error))
-        found.half_pair = dir / kGmfssHalfPairFile;
-      return found;
-    }
+    if (auto found = models_at(dir)) return found;
   }
   return std::nullopt;
 }
 
 GmfssModels gmfss_chosen(const GmfssModels& found, bool half) {
-  return {.pair = half && !found.half_pair.empty() ? found.half_pair : found.pair, .fusion = found.fusion};
+  return {.pair = !found.half_pair.empty() && (half || found.pair.empty()) ? found.half_pair : found.pair,
+          .fusion = found.fusion,
+          .half_pair = found.half_pair};
 }
 
 std::expected<void, Refusal> gmfss_pair_current(const std::filesystem::path& pair) {
@@ -88,6 +103,52 @@ std::expected<GmfssModels, Refusal> gmfss_usable(const GmfssModels& found, bool 
   dropped = std::move(current.error().detail);
   chosen.pair = other;
   return chosen;
+}
+
+std::expected<GmfssModels, Refusal> find_usable_gmfss(std::span<const std::filesystem::path> dirs, bool half,
+                                                      std::string& dropped) {
+  std::optional<Refusal> first_bad;
+  for (const auto& dir : gmfss_places(dirs)) {
+    const auto found = models_at(dir);
+    if (!found) continue;
+    auto usable = gmfss_usable(*found, half, dropped);
+    if (usable) {
+      if (first_bad && dropped.empty()) dropped = first_bad->detail;
+      return usable;
+    }
+    if (!first_bad) first_bad = std::move(usable.error());
+  }
+  if (first_bad) return std::unexpected(std::move(*first_bad));
+  return refuse(RefusalCode::ModelUnreadable,
+                "GMFSS union : fusion et paire (flot entier ou demi-flot) introuvables "
+                "(--gmfss-dir, dossiers de RIFE et leurs voisins gmfss)");
+}
+
+GmfssAvailability gmfss_availability(std::span<const std::filesystem::path> dirs) {
+  std::string dropped;
+  const auto models = find_usable_gmfss(dirs, true, dropped);
+  if (!models) return {};
+  return {.available = true, .half_flow = models->pair == models->half_pair};
+}
+
+GmfssAvailability GmfssMenuProbe::read(std::span<const std::filesystem::path> dirs) {
+  std::vector<File> files;
+  for (const auto& dir : gmfss_places(dirs)) {
+    for (std::string_view name : {kGmfssPairFile, kGmfssHalfPairFile, kGmfssFusionFile}) {
+      const auto path = dir / name;
+      std::error_code error;
+      if (!std::filesystem::is_regular_file(path, error)) continue;
+      const auto size = std::filesystem::file_size(path, error);
+      if (error) continue;
+      const auto modified = std::filesystem::last_write_time(path, error);
+      if (!error) files.push_back({.path = path, .size = size, .modified = modified});
+    }
+  }
+  if (files != files_) {
+    available_ = gmfss_availability(dirs);
+    files_ = std::move(files);
+  }
+  return available_;
 }
 
 std::expected<GmfssModels, Refusal> static_gmfss(const GmfssModels& models, int padded_width,

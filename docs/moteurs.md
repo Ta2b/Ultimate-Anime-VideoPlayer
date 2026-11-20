@@ -213,13 +213,16 @@ la variante en sommes float reste proposée à côté de chacune.
   (`trt-package.yml` pour Linux, job `tensorrt` de `release-windows.yml`), le publie, puis le reprend dans
   l'`engines.lock` du lecteur. Les tests sur GPU restent au poste NVIDIA.
 - Un paquet joint **après** la release sert aussi : le lecteur relit `engines-nvidia.lock` de la release de sa
-  version au lancement (au plus une fois par jour, `src/app/play/engine_online.h`). Il ne le croit que signé
+  version au lancement (`src/app/play/engine_online.h`). Une copie signée de la bonne version sert immédiatement
+  et le rafraîchissement périodique se poursuit en arrière-plan. En mode « Jamais », une copie signée suffit
+  pour cette version. Un actif absent est réessayable après deux heures. Le texte et sa signature sont
+  vérifiés ensemble avant publication de la copie locale. Le lecteur ne le croit que signé
   (`engines-nvidia.lock.sig`, clé des mises à jour, A26-02) : le job « Publier » de `release.yml` l'écrit
   (`tools/release/nvidia-index.sh`) et le signe (`tools/release/sign-file.sh`). Après un `attach-nvidia-*`, relancer
   Release sur l'étiquette pour le signer.
 - Un moteur de l'index n'est cru que pour une archive du dépôt des releases et des fichiers de `pypi.nvidia.com`.
-  Aucune version du lecteur n'est inscrite dans l'index signé : un ancien index signé rejoué ne peut proposer qu'un
-  module d'une autre version, que le contrôle d'ABI refuse (Vulkan prend la suite).
+  L'étiquette de l'index signé doit correspondre à la version du lecteur. Le module est également vérifié
+  par le contrôle d'ABI au chargement.
 - Aucun fichier NVIDIA n'est dans nos archives : `engines.lock` décrit chaque bibliothèque (`[[vendor_file]]`,
   plage HTTP dans la roue NVIDIA, SHA-256) et le lecteur la télécharge après l'accord de licence.
 - Un module d'une version précédente (empreinte binaire différente, `gpu::check_backend_abi`) se réinstalle

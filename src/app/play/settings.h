@@ -439,9 +439,13 @@ struct PlaySettings {
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };
 
-// Les poses gardées en effet : « Lisser les dessins tenus » fait l'inverse, et l'emporte.
+// Le choix reste enregistré quand un autre moteur est sélectionné.
+inline bool smooth_drawings_requested(const PlaySettings& s) {
+  return s.motion_engine == MotionEngine::Rife && s.smooth_drawings;
+}
+
 inline bool poses_kept(const PlaySettings& s) {
-  return s.keep_poses && !s.smooth_drawings;
+  return s.keep_poses && !smooth_drawings_requested(s);
 }
 
 // Le curseur « Blanc des surfaces », en % (PlaySettings::surface_white).
@@ -471,6 +475,11 @@ inline constexpr core::Range<int> kSharpness{0, 100};
 // Le facteur d'interpolation des réglages.
 inline Factor factor_of(const PlaySettings& s) {
   return {.num = s.rife_factor, .den = s.rife_factor_den};
+}
+
+inline bool smooth_motion_rife(const PlaySettings& s) {
+  const Factor factor = factor_of(s);
+  return s.motion_engine == MotionEngine::Rife && factor.num >= 2 * factor.den;
 }
 
 // SPAN tourne-t-il, et à quelle taille la chaîne travaille-t-elle, pour une source de cette taille ? Les

@@ -35,6 +35,32 @@ TEST_CASE("Mode Rapide : les copies ne comptent pas dans le temps de service", "
   CHECK(all_computed > 900);
 }
 
+TEST_CASE("Mode Rapide : une écriture relue hors ordre ne compte pas deux fois", "[app][free]") {
+  LiveSettings live;
+  live.set_free(true, 1000, 0);
+  constexpr std::int64_t start = 20'000'000;
+  live.auto_expect(2, 3, 0);
+  live.auto_written(1, 2, start + 1000, start + 6000);
+  live.auto_written(1, 2, start + 2000, start + 4000);
+  live.auto_written(2, 2, start + 3000, start + 8000);
+  // La première écriture couvre 5 ms, la seconde est incluse dans cet intervalle, la troisième ajoute 2 ms.
+  CHECK(live.free_info(start + 8000).service_us == 2333);
+}
+
+TEST_CASE("Mode Rapide : la fenêtre avant soumission au ring et une paire entièrement passée ne sont pas mesurées",
+          "[app][free]") {
+  LiveSettings live;
+  live.set_free(true, 1000, 0);
+  constexpr std::int64_t start = 20'000'000;
+  live.auto_expect(2, 2, 0);
+  // 8 ms hors de l'anneau (réservation du slot, SPAN anticipé, ou les deux).
+  live.auto_written(1, 2, start + 8000, start + 10'000);
+  live.auto_written(2, 2, start + 10'000, start + 12'000);
+  live.auto_expect(3, 2, 0);
+  live.auto_unexpect(3, 2);
+  CHECK(live.free_info(start + 20'000).service_us == 2000);
+}
+
 TEST_CASE("Mode Rapide : la grille des vblanks mesurée prime sur la phase estimée", "[app][free][present]") {
   LiveSettings live;
   live.set_free(true, 6061, 0);

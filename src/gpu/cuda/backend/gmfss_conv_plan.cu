@@ -7,11 +7,16 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "gpu/cuda/backend/gmfss_conv_plan.cuh"
+#include "gpu/cuda/backend/gmfss_grid_join.cuh"
+#include "gpu/cuda/backend/gmfss_grid_ring.cuh"
+#include "gpu/cuda/backend/gmfss_grid_rgb.cuh"
 
 namespace kirari::gpu::cuda::gmfss_plan {
 namespace {
@@ -80,9 +85,57 @@ rn::Dense dense_of(const prepare::GmfssGridStep& step, const Layer& layer) {
 }
 
 bool same_geometry(const Layer& a, const Layer& b) {
-  return a.kind == b.kind && a.cin == b.cin && a.cout == b.cout && a.ih == b.ih && a.iw == b.iw &&
+  return a.kind == b.kind && a.blocked8 == b.blocked8 && a.cin == b.cin && a.cout == b.cout && a.ih == b.ih && a.iw == b.iw &&
          a.oh == b.oh && a.ow == b.ow && a.in_ld == b.in_ld && a.out_ld == b.out_ld &&
-         (a.skip >= 0) == (b.skip >= 0) && a.skip_ld == b.skip_ld && a.activation == b.activation;
+         (a.skip >= 0) == (b.skip >= 0) && a.skip_ld == b.skip_ld && a.activation == b.activation &&
+         (a.in_slope != 1.F) == (b.in_slope != 1.F);
+}
+
+bool direct_ring_shape(const Shape& shape) {
+  const rn::Config& c = shape.cfg;
+  return c.kc == 64 && c.ct == 64 && (c.rows == 1 || c.rows == 2) && c.ksplit == 1 && c.bands == 0 &&
+         shape.launch != nullptr &&
+         shape.launch == rn::pick_for(RifeNativeSums::kF16, Kind::kSame, c.kc, c.ct, c.rows, c.ahead);
+}
+
+bool same_c64(const Layer& layer, int height, int width) {
+  return layer.kind == Kind::kSame && layer.phases == 1 && !layer.blocked8 &&
+         layer.cin == 64 && layer.cout == 64 && layer.in_ld == 64 && layer.out_ld == 64 &&
+         layer.ih == height && layer.oh == height && layer.iw == width && layer.ow == width;
+}
+
+bool join_shape(const Layer& layer, int kc, int rows, bool ahead) {
+  constexpr auto f16 = RifeNativeSums::kF16;
+  const Shape& shape = layer.shapes[sums_index(f16)];
+  const rn::Config& c = shape.cfg;
+  return c.kc == kc && c.ct == 64 && c.rows == rows && c.ahead == ahead && c.ksplit == 1 &&
+         c.bands == 0 && shape.launch != nullptr &&
+         shape.launch == rn::pick_for(f16, layer.kind, c.kc, c.ct, c.rows, c.ahead);
+}
+
+bool up_c64(const Layer& up, int height, int width) {
+  return up.kind == Kind::kPhase && up.phases == 4 && !up.blocked8 && up.cin == 128 &&
+         up.in_ld == 128 && up.cout == 64 && up.out_ld == 64 && 2 * up.ih == height &&
+         2 * up.iw == width && up.oh == up.ih && up.ow == up.iw && up.skip < 0 && !up.activation;
+}
+
+bool separate(const Placed& zone, std::int64_t bytes, const Placed& t) {
+  return t.external < 0 && (zone.offset + bytes <= t.offset || t.offset + t.bytes <= zone.offset);
+}
+
+bool on_ada() {
+  int device = 0, major = 0, minor = 0;
+  return cudaGetDevice(&device) == cudaSuccess &&
+         cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, device) == cudaSuccess &&
+         cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, device) == cudaSuccess &&
+         major == 8 && minor == 9;
+}
+
+std::string ring_shape_name(const Shape& shape) {
+  const rn::Config& c = shape.cfg;
+  return "Kc" + std::to_string(c.kc) + "/CT" + std::to_string(c.ct) + "/R" + std::to_string(c.rows) +
+         (c.ahead ? "/avance" : "") + (c.ksplit > 1 ? "/K découpé" : "") +
+         (c.bands > 0 ? "/flux" : "");
 }
 
 // « convolution i (genre cin→cout sur ow×oh), sommes … : », le début d'une note du réglage.
@@ -90,6 +143,38 @@ std::string label(const Layer& layer, std::size_t index, std::size_t s) {
   return "convolution " + std::to_string(index) + " (" + kind_name(layer.kind) + " " +
          std::to_string(layer.cin) + "→" + std::to_string(layer.cout) + " sur " + std::to_string(layer.ow) +
          "×" + std::to_string(layer.oh) + "), sommes " + rn::sums_name(kSums[s]) + " : ";
+}
+
+template <rn::Acc A>
+void launch_rgb(cudaStream_t stream, const Shape& shape, rn::Params p) {
+  switch (shape.cfg.kc) {
+    case 16:
+      gmfss_grid_rgb::conv_rgb<16, 2, A><<<shape.grid, rn::kThreads, shape.smem, stream>>>(p);
+      break;
+    case 32:
+      gmfss_grid_rgb::conv_rgb<32, 2, A><<<shape.grid, rn::kThreads, shape.smem, stream>>>(p);
+      break;
+    case 64:
+      gmfss_grid_rgb::conv_rgb<64, 2, A><<<shape.grid, rn::kThreads, shape.smem, stream>>>(p);
+      break;
+  }
+}
+
+bool supports_rgb(const Layer& layer, const Shape& shape) {
+  const rn::Config& cfg = shape.cfg;
+  return layer.rgb && cfg.ct == 16 && cfg.rows == 2 && cfg.ksplit == 1 && cfg.bands == 0 && !cfg.ahead &&
+         (cfg.kc == 16 || cfg.kc == 32 || cfg.kc == 64);
+}
+
+void enqueue_rgb(cudaStream_t stream, const Shape& shape, RifeNativeSums sums, const rn::Params& p) {
+  switch (sums) {
+    case RifeNativeSums::kF16:
+      return launch_rgb<rn::Acc::kF16>(stream, shape, p);
+    case RifeNativeSums::kMixed:
+      return launch_rgb<rn::Acc::kMixed>(stream, shape, p);
+    case RifeNativeSums::kF32:
+      return launch_rgb<rn::Acc::kF32>(stream, shape, p);
+  }
 }
 
 }  // namespace
@@ -152,6 +237,8 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
     error = "réseau vide, ou morceaux pour une autre liste de convolutions";
     return false;
   }
+  join_tensors_.clear();
+  join_on_ = false;
   place(grid, io);
   layers_ = std::vector<Layer>(grid.steps.size());
   for (std::size_t i = 0; i < grid.steps.size(); ++i) {
@@ -162,6 +249,8 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
       error = "convolution " + std::to_string(i) + " : " + error;
       return false;
     }
+    // Les autres couches lisent encore leur sortie au format NHWC.
+    layer.rgb = layer.rgb && i + 1 == grid.steps.size();
     for (std::size_t s = 0; s < kSums.size(); ++s) {
       const Shape& shape = layer.shapes[s];
       if (shape.rejected > 0)
@@ -170,12 +259,130 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
       if (!shape.stream.empty()) tuner.tuning.notes.push_back(label(layer, i, s) + shape.stream);
     }
   }
+  static const bool try_ring = [] {
+    const char* value = std::getenv("KIRARI_AB_GMFSS_GRID_RING");  // env: banc
+    return value != nullptr && std::string_view(value) == "1";
+  }();
+  const bool try_join = io.rgb >= 0 && grid.steps.size() == 45 && width_ == 960 && height_ == 576 && on_ada();
+  const auto residual_pair = [&](std::size_t i) {
+    const Layer& a = layers_[i];
+    const Layer& b = layers_[i + 1];
+    const Placed& temp = tensor(a.to);
+    const auto now = static_cast<int>(i);
+    return a.piece == 0 && b.piece == 0 && same_c64(a, height_, width_) && same_c64(b, height_, width_) &&
+           a.skip < 0 && a.activation && !b.activation && b.skip == a.from && b.skip_ld == 64 &&
+           b.from == a.to && b.in_slope == 1.F && a.to != b.to && temp.external < 0 && temp.first == now &&
+           temp.last == now + 1;
+  };
+  if (try_ring && io.rgb >= 0 && height_ >= gmfss_grid_ring::kRingRows) {
+    constexpr auto f16 = sums_index(RifeNativeSums::kF16);
+    for (std::size_t i = 0; i + 1 < layers_.size(); ++i) {
+      Layer& a = layers_[i];
+      const Layer& b = layers_[i + 1];
+      if (!residual_pair(i)) continue;
+      a.ring_next = direct_ring_shape(a.shapes[f16]) && direct_ring_shape(b.shapes[f16]);
+      tuner.tuning.notes.push_back("anneau C64, convolutions " + std::to_string(i) + "–" +
+                                   std::to_string(i + 1) + " : " + ring_shape_name(a.shapes[f16]) + ", " +
+                                   ring_shape_name(b.shapes[f16]) +
+                                   (a.ring_next ? " : forme compatible en sommes f16" : " : forme directe gardée"));
+    }
+  }
+  if (try_join) {
+    const auto bytes = std::int64_t{gmfss_grid_join::kWorkspaceRows} * width_ * 64 * 2;
+    std::vector<std::size_t> candidates;
+    for (std::size_t i = 0; i + 3 < layers_.size(); ++i) {
+      const Layer& a = layers_[i];
+      const Layer& b = layers_[i + 1];
+      const Layer& up = layers_[i + 2];
+      const Layer& add = layers_[i + 3];
+      if (!residual_pair(i) || up.piece != 0 || add.piece != 0 || !up_c64(up, height_, width_) ||
+          !same_c64(add, height_, width_) || up.to != add.from || b.to != add.skip ||
+          add.skip_ld != 64 || add.activation)
+        continue;
+
+      // Le résiduel J n'est lu que par l'addition. Son allocation existante peut garder les trois anneaux.
+      const int now = static_cast<int>(i);
+      const Placed& j = tensor(b.to);
+      const Placed& t = tensor(up.to);
+      const Placed& residual_in = tensor(a.from);
+      const Placed& up_in = tensor(up.from);
+      const Placed& out = tensor(add.to);
+      const bool fits = j.external < 0 && j.first == now + 1 && j.last == now + 3 && j.bytes >= bytes &&
+                        t.external < 0 && t.first == now + 2 && t.last == now + 3 &&
+                        residual_in.first < now && up_in.first < now && out.first == now + 3;
+      constexpr auto f16 = sums_index(RifeNativeSums::kF16);
+      const auto& ac = a.shapes[f16].cfg;
+      const auto& bc = b.shapes[f16].cfg;
+      const auto& uc = up.shapes[f16].cfg;
+      const auto& dc = add.shapes[f16].cfg;
+      const bool shape = join_shape(a, 64, 2, ac.ahead) && (bc.kc == 32 || bc.kc == 64) &&
+                         join_shape(b, bc.kc, 1, false) &&
+                         (uc.kc == 32 || uc.kc == 64) && (uc.rows == 1 || uc.rows == 2) &&
+                         join_shape(up, uc.kc, uc.rows, false) && join_shape(add, 64, 2, dc.ahead);
+      if (fits && shape) candidates.push_back(i);
+      tuner.tuning.notes.push_back("anneaux C64 avec addition, convolutions " + std::to_string(i) + "–" +
+                                   std::to_string(i + 3) + " : " + ring_shape_name(b.shapes[f16]) + ", " +
+                                   ring_shape_name(up.shapes[f16]) + ", " +
+                                   ring_shape_name(add.shapes[f16]) +
+                                   (fits && shape ? " : forme compatible en sommes f16" : " : forme réglée gardée"));
+    }
+    if (!candidates.empty()) {
+      auto original_tensors = tensors_;
+      const auto original_bytes = zone_bytes_;
+      for (const auto i : candidates) {
+        // B et I doivent rester intacts jusqu'à la dernière bande. Sans cela le plan initial peut partager
+        // la même adresse entre B et la sortie J2 dans laquelle l'addition écrit maintenant dès le début.
+        for (const int from : {layers_[i].from, layers_[i + 2].from}) {
+          Placed& t = tensors_[static_cast<std::size_t>(from)];
+          t.last = std::max(t.last, static_cast<int>(i + 3));
+        }
+      }
+      pack();
+      bool safe = zone_bytes_ <= original_bytes;
+      for (const auto i : candidates) {
+        const Placed& j = tensor(layers_[i + 1].to);
+        const Placed& b = tensor(layers_[i].from);
+        const Placed& up_in = tensor(layers_[i + 2].from);
+        const Placed& out = tensor(layers_[i + 3].to);
+        safe = safe && separate(j, bytes, b) && separate(j, bytes, up_in) && separate(j, bytes, out) &&
+               separate(out, out.bytes, b) && separate(out, out.bytes, up_in);
+      }
+      if (safe) {
+        join_tensors_ = std::move(tensors_);
+        for (const auto i : candidates) layers_[i].join_next = true;
+      } else {
+        tuner.tuning.notes.emplace_back("anneaux C64 avec addition : zone incompatible, anneau résiduel gardé");
+      }
+      // Le mélange de précisions et l'IFNet sont choisis avec les adresses ordinaires et sans joints.
+      tensors_ = std::move(original_tensors);
+      zone_bytes_ = original_bytes;
+    }
+  }
   tuner.tuning.layers += static_cast<int>(layers_.size());
   return true;
 }
 
 bool ConvNet::has_head(int piece) const {
   return std::ranges::any_of(layers_, [&](const Layer& l) { return l.piece == piece && l.head; });
+}
+
+bool ConvNet::joins_at(std::size_t i) const {
+  constexpr auto f16 = RifeNativeSums::kF16;
+  return layers_[i].join_next && layers_[i].sums == f16 && layers_[i + 1].sums == f16 &&
+         layers_[i + 2].sums == f16 && layers_[i + 3].sums == f16;
+}
+
+bool ConvNet::join_ready() const {
+  if (join_tensors_.empty()) return false;
+  for (std::size_t i = 0; i + 3 < layers_.size(); ++i)
+    if (joins_at(i)) return true;
+  return false;
+}
+
+void ConvNet::use_join(bool enabled) {
+  if (join_on_ == enabled || join_tensors_.empty()) return;
+  tensors_.swap(join_tensors_);
+  join_on_ = enabled;
 }
 
 void ConvNet::use(std::span<const RifeNativePrecision> precisions) {
@@ -192,17 +399,51 @@ void ConvNet::trim() {
       if (k != pack_index(layer.shape().cfg.ct)) layer.packs[k].release();
 }
 
-void ConvNet::run(cudaStream_t stream, void* zone, float* partial, std::span<const void* const> bound,
-                  int piece) const {
-  for (const Layer& layer : layers_) {
-    if (piece >= 0 && layer.piece != piece) continue;
+bool ConvNet::run(cudaStream_t stream, void* zone, float* partial, std::span<const void* const> bound,
+                  int piece, __half* rgb) const {
+  const auto parameters = [&](const Layer& layer, __half* out) {
     const Shape& shape = layer.shape();
     const __half* skip = layer.skip >= 0 ? address(layer.skip, zone, bound) : nullptr;
-    enqueue(layer, shape, stream,
-            params_of(layer, {.ih = layer.ih, .oh = layer.oh}, shape, address(layer.from, zone, bound),
-                      address(layer.to, zone, bound), skip, partial,
-                      layer.packs[pack_index(shape.cfg.ct)].as<const void>()));
+    return params_of(layer, {.ih = layer.ih, .oh = layer.oh}, shape, address(layer.from, zone, bound), out,
+                     skip, partial, layer.packs[pack_index(shape.cfg.ct)].as<const void>());
+  };
+  bool written = false;
+  for (std::size_t i = 0; i < layers_.size(); ++i) {
+    const Layer& layer = layers_[i];
+    if (piece >= 0 && layer.piece != piece) continue;
+    const Shape& shape = layer.shape();
+    const bool direct = rgb != nullptr && supports_rgb(layer, shape);
+    const rn::Params p = parameters(layer, direct ? rgb : address(layer.to, zone, bound));
+    constexpr auto f16 = RifeNativeSums::kF16;
+    if (piece == -1 && join_on_ && joins_at(i)) {
+      const Layer& b = layers_[i + 1];
+      const Layer& up = layers_[i + 2];
+      const Layer& add = layers_[i + 3];
+      const auto ring = std::int64_t{gmfss_grid_join::kRingRows} * width_ * 64;
+      auto* const storage = address(b.to, zone, bound);
+      gmfss_grid_join::Join args{p, parameters(b, storage + ring), parameters(up, storage + 2 * ring),
+                                parameters(add, address(add.to, zone, bound))};
+      args.residual_first.out = storage;
+      args.residual_second.in = storage;
+      args.up_second.in = storage + 2 * ring;
+      args.up_second.skip = storage + ring;
+      const auto& uc = up.shape().cfg;
+      const gmfss_grid_join::Config cfg{shape.cfg.ahead, b.shape().cfg.kc, uc.kc, uc.rows, add.shape().cfg.ahead};
+      gmfss_grid_join::join(args, cfg, stream);
+      i += 3;
+    } else if (layer.ring_next && layer.sums == f16 && layers_[i + 1].sums == f16) {
+      const Layer& second = layers_[++i];
+      const auto& c = second.shape().cfg;
+      const auto q = parameters(second, address(second.to, zone, bound));
+      gmfss_grid_ring::enqueue_residual(p, q, shape.cfg.rows, shape.cfg.ahead, c.rows, c.ahead, stream);
+    } else if (direct) {
+      enqueue_rgb(stream, shape, layer.sums, p);
+      written = true;
+    } else {
+      enqueue(layer, shape, stream, p);
+    }
   }
+  return written;
 }
 
 __half* ConvNet::address(int id, void* zone, std::span<const void* const> bound) const {
@@ -247,6 +488,11 @@ void ConvNet::place(const prepare::GmfssGrid& grid, const Io& io) {
   for (std::size_t e = 0; e < io.external.size(); ++e)
     tensors_[static_cast<std::size_t>(io.external[e])].external = static_cast<int>(e);
   lifetimes(grid, io);
+  pack();
+}
+
+void ConvNet::pack() {
+  zone_bytes_ = 0;
   std::vector<std::size_t> order;
   for (std::size_t i = 0; i < tensors_.size(); ++i) {
     if (tensors_[i].external < 0) order.push_back(i);
@@ -280,6 +526,11 @@ bool ConvNet::layout(const prepare::GmfssGridStep& step, const Io& io, Layer& la
   const Placed& to = tensor(step.to);
   const bool image = step.from == io.image;
   layer.kind = kind_of(step, image);
+  layer.blocked8 = io.features_c8 && step.from > 0 && step.from < prepare::kGmfssGridInputs;
+  if (layer.blocked8 && (layer.kind != Kind::kSame || conv.cin < 128 || conv.cin % 8 != 0)) {
+    error = "entrée des caractéristiques GridNet par groupes de huit";
+    return false;
+  }
   if (image && (conv.stride != 2 || conv.cin > 3 || conv.transposed || step.shuffle)) {
     error = "l'image ne se lit qu'en 3 × 3 de pas 2";
     return false;
@@ -303,6 +554,8 @@ bool ConvNet::layout(const prepare::GmfssGridStep& step, const Io& io, Layer& la
   layer.ow = phases ? from.width : to.width;
   layer.in_slope = conv.in_slope;
   layer.activation = conv.out_slope != 1.F;
+  layer.rgb = step.to == io.rgb && layer.head && layer.kind == Kind::kSame && conv.cin == 64 &&
+              conv.cout == 3 && layer.out_ld == 8 && step.skip < 0 && !layer.activation;
   const int scale = phases ? 2 : 1;
   if (layer.cin != layer.in_ld || to.height != scale * layer.oh || to.width != scale * layer.ow ||
       (rn::stride_of(layer.kind) == 2 && (from.height != 2 * to.height || from.width != 2 * to.width))) {

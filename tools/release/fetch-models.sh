@@ -14,6 +14,8 @@
 #                  export-interpolation-models.yml (tools/drba/export_distil_drba.py, depuis
 #                  routineLife1/DistilDRBA db51bde, weights/v2_lite.pkl), depuis la release
 #                  models-interp-1 du dépôt des releases ; DistilDRBA est sous licence MIT
+#                  GMFSS Fortuna Union en fp16 (paire entière, paire au demi-flot et fusion), exporté
+#                  depuis vsgmfss_fortuna 1.0.0 et pris dans models-interp-1 ; licences à côté
 #   <dest>/temporalfix/  TemporalFix s1, s2 et s3 en fp16 (la stabilisation temporelle, Légère, Normale,
 #                  Forte), depuis pifroggi/vs_temporalfix à un commit fixé ; licence Apache 2.0, son texte
 #                  à côté
@@ -56,6 +58,9 @@ INTERP=(
   "40bda3486348dd1ad33f728eeb669f5178e73051bd64ea10c767e0ab8cd17a50 distil_drba_v2_lite.onnx"
   "2a254537b573ff5777d7fe62336818c850313db8ab8b8e896ba496e06e5ea648 distil_drba_v2_lite_s05.onnx"
   "124c2e158f626f81d762256b2b130fe609ce28119221b3adcd471e6e0b75bf92 rife_v4.25_lite.onnx"
+  "8a156ed4745a0bab614bb98eb7e9a55d0ab8b3cd745be9d996ec0f06f0bd7272 gmfss_fortuna_union_pair.onnx"
+  "7b8e76826304da62aaefd58fb6c9ae205bda0b6c1db67598ec8ff8fe72c921a6 gmfss_fortuna_union_s05_pair.onnx"
+  "8b50ad681f7c32ece405bd6a950f2e509931b0acc62f0064ef8efaa0b988e4b3 gmfss_fortuna_union_fusion.onnx"
 )
 
 check() {  # sha256 fichier
@@ -95,13 +100,14 @@ done
 # La licence MIT demande son texte avec chaque copie : il voyage à côté des modèles.
 cp "$ARTCNN_DIR/ArtCNN-LICENSE.txt" "$DEST/onnx/"
 
-# Les autres fichiers de models-interp-1 ne sont pas pris : GMFSS est retiré du lecteur (0.10.0), et les graphes FP8
-# de DistilDRBA, plus lents que le fusionné, restent facultatifs.
+# Les graphes facultatifs FP8 de DistilDRBA restent hors paquet.
 for entry in "${INTERP[@]}"; do
   read -r sha name <<<"$entry"
   curl -fsSL --retry 5 --retry-delay 5 -o "$DEST/rife/$name" "$INTERP_URL/$name"
   check "$sha" "$DEST/rife/$name"
 done
+GMFSS_LICENCES="$(cd "$(dirname "${BASH_SOURCE[0]}")/../gmfss/licenses" && pwd)"
+cp "$GMFSS_LICENCES/"*.txt "$DEST/rife/"
 
 # TemporalFix (docs/temporalfix.md) : les trois forces que le menu propose ; s0, plus faible que s1, n'est pas
 # prise. La licence Apache 2.0 demande son texte avec chaque copie.
@@ -133,6 +139,11 @@ rife/  RIFE 4.26, 4.25, 4.22 lite et 4.25 lite (Practical-RIFE, hzwer), conversi
        https://github.com/hzwer/Practical-RIFE
        DistilDRBA v2 lite (routineLife1, « neko »), converti en ONNX fp16 par kirari : licence MIT.
        https://github.com/routineLife1/DistilDRBA
+       GMFSS Fortuna Union (98mxr, port VapourSynth de HolyWu, GMFlow de Haofei Xu),
+       converti en ONNX fp16 par kirari. Licences MIT et Apache 2.0, textes complets dans rife/.
+       https://github.com/98mxr/GMFSS_Fortuna
+       https://github.com/HolyWu/vs-gmfss_fortuna
+       https://github.com/haofeixu/gmflow
 temporalfix/  TemporalFix s1, s2 et s3 (pifroggi), tels que publiés : licence Apache 2.0
        (texte complet dans temporalfix/LICENSE.txt).
        https://github.com/pifroggi/vs_temporalfix

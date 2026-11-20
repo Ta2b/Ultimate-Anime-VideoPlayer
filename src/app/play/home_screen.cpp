@@ -32,7 +32,9 @@
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
+#include "app/play/chain_choices.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/interp_retired.h"
 #include "app/play/home_idle.h"
 #include "app/play/host_choices.h"
 #include "app/play/host_facts.h"
@@ -155,7 +157,6 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const std::vector<std::filesystem::path> places = motion_model_dirs(h.paths, rife, h.options.gmfss_dir);
   const std::optional<DrbaModel> drba_file = find_distil_drba(places);
   const bool drba = drba_file.has_value();
-  const std::optional<GmfssModels> gmfss = find_gmfss(places);
   // Sans moteur chargé, le FP8 se présume d'après le nom de la carte, avec la règle du moteur : TensorRT le
   // calcule dès Ada (sm 8.9), pas sur une RTX 20 ou 30 (A37-02) ni 50 (B08-07) ; Vulkan sur une RDNA 4. Le
   // moteur le confirme à l'ouverture.
@@ -174,6 +175,12 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .capability = rdna4 || (kSpanFp8Here && gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
                               span_fp8_presumed(gpu_facts(h.screen).name) &&
                               tensorrt_backend_present(h.catalog, h.paths))};
+  // Le moteur effectif n'est connu qu'à l'ouverture. Vérifier les fichiers seulement si TensorRT est choisi.
+  const bool gmfss_supported = gmfss_kept() && fp8_facts.tensorrt_present &&
+                               fp8_facts.vendor == GpuVendor::Nvidia &&
+                               chosen(st.engines, core::EngineId::TensorRt);
+  GmfssMenuProbe probe;
+  const GmfssAvailability gmfss = gmfss_supported ? probe.read(places) : GmfssAvailability{};
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = window_display(h.screen.window());
   SettingsChoices choices{
@@ -193,12 +200,14 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_tiers = rife ? sibling_tiers(rife->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = drba,
-      .gmfss_half_flow_available = gmfss && !gmfss->half_pair.empty(),
-      .gmfss_available = gmfss.has_value(),  // le moteur n'est pas encore ouvert
+      .gmfss_half_flow_available = gmfss.half_flow,
+      .gmfss_available = gmfss.available,
       .rife_loaded = false,
       .rife_models = rife ? rife->available : std::vector<std::string>{},
       .default_rife_model = rife ? rife->default_name : std::string(),
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
+      .refresh_motion_models = motion_models_refresh(h.options, h.paths, gpu_facts(h.screen), fp8_engine,
+                                                     gmfss_supported, std::move(probe)),
       .hdr_output = hdr_wanted(running.hdr_mode, h.options.sdr, content_peak_nits(h.screen.window())),
       .auto_peak = auto_peak_nits(content_peak_nits(h.screen.window())),
       .engines = engine_badges(h.paths.engines, {}),

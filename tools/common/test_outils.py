@@ -58,6 +58,54 @@ class Hdr(unittest.TestCase):
             self.assertEqual(hdr.read_ppm16(path, strict16=False).shape, (1, 1, 3))
 
 
+class GlowDirectional(unittest.TestCase):
+    def test_couronne_coloree_et_aplat(self):
+        probe = load("probe_glow", "grade/emitters/probe_glow.py")
+        y, x = np.indices((256, 256), dtype=np.float32)
+        d = np.hypot(x - 128, y - 128)
+        ring = np.exp(-np.maximum(d - 5, 0) ** 2 / (2 * 32 ** 2))[..., None]
+        core = np.exp(-np.maximum(d - 3, 0) ** 2 / (2 * 12 ** 2))[..., None]
+        halo = np.array([0.23, 0.12, 0.22]) + ring * [0.76, 0.48, 0.68]
+        halo += core * (0.98 - halo)
+
+        edge = np.maximum(np.abs(x - 128) - 30, np.abs(y - 128) - 26)
+        plain = np.array([0.26, 0.14, 0.24]) + np.exp(-np.maximum(edge, 0) / 40)[..., None] * [0.42, 0.10, 0.33]
+        plain[edge <= 0] = 0.98
+        self.assertGreater(np.count_nonzero(probe.directional_map(halo, 16).scores), 0)
+        self.assertEqual(np.count_nonzero(probe.directional_map(plain, 16).scores), 0)
+        np.testing.assert_array_equal(probe.directional_map(halo, 16, radial_profile=True).scores,
+                                      probe.directional_map(halo, 16).scores)
+
+    def test_profil_du_plateau_colore_au_bord(self):
+        probe = load("probe_glow", "grade/emitters/probe_glow.py")
+        y, x = np.indices((256, 640), dtype=np.float32)
+        distance = 184 + 0.32 * y - x
+        green = np.where(distance < 0, 0.985, 0.25 + 0.73 * np.exp(-(np.maximum(distance, 0) / 25)**1.25))
+        window = np.clip((170 - y) / 90, 0, 1) * np.clip((x - 14) / 70, 0, 1) * np.clip((604 - x) / 100, 0, 1)
+        plateau = np.stack((np.full_like(x, 0.98), green, np.full_like(x, 0.975)), axis=-1)
+        rgb = plateau * window[..., None] + [0.12, 0.08, 0.12] * (1 - window[..., None])
+        self.assertTrue(probe.directional_map(rgb, 16).scores.any())
+        self.assertFalse(probe.directional_map(rgb, 16, radial_profile=True).scores.any())
+
+    def test_confirmation_depuis_la_meme_teinte_et_sans_trainee(self):
+        probe = load("probe_glow", "grade/emitters/probe_glow.py")
+
+        def make(row, col, pq=0.5, hue=(1.0, 0.0)):
+            score = np.zeros((4, 4))
+            score[row, col] = 0.6
+            color = np.zeros((4, 4, 2))
+            color[row, col] = hue
+            return probe.GlowMap(np.full((4, 4), pq), score, color, np.empty(0), np.empty(0))
+
+        previous = make(1, 1)
+        moved = make(1, 2)
+        self.assertFalse(probe.confirm_directional(moved, None)[0].any())
+        np.testing.assert_array_equal(probe.confirm_directional(moved, previous)[0], moved.scores)
+        self.assertFalse(probe.confirm_directional(make(1, 2, hue=(0.0, 1.0)), previous)[0].any())
+        self.assertFalse(probe.confirm_directional(make(1, 2, pq=0.6), previous)[0].any())
+        self.assertFalse(probe.confirm_directional(make(3, 3), previous)[0].any())
+
+
 class Banding(unittest.TestCase):
     def gradient(self, nits, steps=40, plateau=20, height=4):
         """Des plateaux d'un code 10 bits de pas, autour du niveau `nits`."""
@@ -187,12 +235,36 @@ class WrapLumaRgb(unittest.TestCase):
 
 
 class BancResume(unittest.TestCase):
+    def test_cadence_joint_les_confirmations_par_identifiant(self):
+        resume = load("banc_resume", "bench/banc_resume.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "banc.tsv")
+            path.with_suffix(".screen.tsv").write_text(
+                "\t".join(resume.SCREEN_COLUMNS) + "\n"
+                "14\t30000\t5000000\t104\t0x7\n"
+                "12\t15000\t5000000\t101\t0x7\n"
+                "11\t10000\t5000000\t100\t0x7\n"
+                "13\t0\t0\t0\t0x0\n",
+                encoding="utf-8",
+            )
+            rows = [{"present_id": str(seq), "fresh": str(int(seq != 12)), "feedback_id": "99"}
+                    for seq in range(11, 16)]
+            stats = resume.visible_stats(path, rows)
+            self.assertEqual(stats["images_neuves_s"], 50.0)
+            self.assertEqual(stats["visible_p95_ms"], 20.0)
+            self.assertEqual(stats["repetitions_confirmees"], 1)
+            self.assertEqual(stats["abandons_compositeur"], 1)
+            self.assertEqual(stats["sans_retour"], 1)
+            self.assertIsNone(resume.visible_stats(Path(tmp, "ancien.tsv"), rows))
+
     def test_bruit_des_deux_cotes_et_nombre_de_tours(self):
         resume = load("banc_resume", "bench/banc_resume.py")
         calme = [10.0, 10.1, 10.0, 9.9, 10.0]
-        self.assertEqual(resume.verdict(calme, [11.0, 15.0, 7.0, 13.0, 9.0]), "bruit")
-        self.assertTrue(resume.verdict([10.0, 10.1, 10.0], [12.0, 12.1, 12.0]).startswith("à confirmer"))
-        self.assertEqual(resume.verdict(calme, [12.0, 12.1, 12.0, 11.9, 12.0]), "gain acquis")
+        self.assertEqual(resume.verdict(calme, [11.0, 15.0, 7.0, 13.0, 9.0], higher_is_better=False), "bruit")
+        self.assertTrue(resume.verdict([10.0, 10.1, 10.0], [12.0, 12.1, 12.0],
+                                       higher_is_better=False).startswith("à confirmer"))
+        self.assertEqual(resume.verdict(calme, [12.0, 12.1, 12.0, 11.9, 12.0],
+                                        higher_is_better=False), "régression")
 
 
 class BancGpuResume(unittest.TestCase):
@@ -294,11 +366,26 @@ class AuditE16Scripts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             t = Path(tmp)
             kirari = t / "kirari"
-            kirari.write_text('#!/bin/bash\nfor a in "$@"; do case $a in --data-dir=*) echo "${a##*data-}" >> "%s";; esac; done\n' % (t / "ordre.txt"))
+            resume = load("banc_resume", "bench/banc_resume.py")
+            rows = ["\t".join(resume.COLUMNS),
+                    "1\t1000\t0\t1\t0\t100\t0\t0\t0\ti\t0\t0\t0\t0",
+                    "2\t1001000\t41667\t1\t0\t100\t0\t41667\t0\ti\t0\t0\t0\t0"]
+            kirari.write_text(f'''#!/usr/bin/env python3
+import sys
+from pathlib import Path
+for arg in sys.argv[1:]:
+    if arg.startswith("--data-dir="):
+        with Path({str(t / "ordre.txt")!r}).open("a") as file:
+            print(arg.rsplit("data-", 1)[1], file=file)
+    if arg.startswith("--stats="):
+        Path(arg.split("=", 1)[1]).write_text({chr(10).join(rows) + chr(10)!r})
+''')
             kirari.chmod(0o755)
             (t / "e.tsv").write_text("video.mkv\t0\n")
-            self.run_script([str(TOOLS / "bench/banc.sh"), "--a=-a", "--b=-b", f"--extraits={t / 'e.tsv'}",
-                             f"--sortie={t / 'out'}", "--tours=2", "--secondes=1", f"--kirari={kirari}"], os.environ)
+            run = self.run_script([str(TOOLS / "bench/banc.sh"), "--a=-a", "--b=-b", f"--extraits={t / 'e.tsv'}",
+                                   f"--sortie={t / 'out'}", "--tours=2", "--secondes=1", f"--kirari={kirari}"],
+                                  os.environ)
+            self.assertEqual(run.returncode, 0, run.stderr)
             ordre = (t / "ordre.txt").read_text().split()[2:]  # sans les deux passages de préchauffage
             self.assertEqual("".join(ordre), "ABABBABA")
 

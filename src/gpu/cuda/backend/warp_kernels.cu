@@ -1,9 +1,12 @@
 // Noyaux du warp (warp_kernels.h), calqués sur kernels/ref/warp.cpp.
+#include <algorithm>
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <type_traits>
 
 #include "gpu/cuda/backend/bilinear.cuh"
+#include "gpu/cuda/backend/layer_mix_bound.h"
+#include "gpu/cuda/backend/layer_sample.cuh"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "gpu/cuda/backend/warp_kernels.h"
 #include "kernels/spec/poses.h"
@@ -101,10 +104,19 @@ __device__ void blend_images(const WarpBlendParams& p, int x, int y, const Shift
   const float fx = static_cast<float>(x);
   const float fy = static_cast<float>(y);
   using Image = std::conditional_t<kCubic, CatmullRom, S>;
-  for (int c = 0; c < 3; ++c) {
-    const float va = Image::sample(a, c, fx + sx * m.ax, fy + sy * m.ay);
-    const float vb = Image::sample(b, c, fx + sx * m.bx, fy + sy * m.by);
-    rgb[c] = va * m.weight + vb * (1.0F - m.weight);
+  if constexpr (kCubic && std::is_same_v<S, Exact>) {
+    float va[3];
+    float vb[3];
+    Image::sample_n(a, 0, fx + sx * m.ax, fy + sy * m.ay, va);
+    Image::sample_n(b, 0, fx + sx * m.bx, fy + sy * m.by, vb);
+#pragma unroll
+    for (int c = 0; c < 3; ++c) rgb[c] = va[c] * m.weight + vb[c] * (1.0F - m.weight);
+  } else {
+    for (int c = 0; c < 3; ++c) {
+      const float va = Image::sample(a, c, fx + sx * m.ax, fy + sy * m.ay);
+      const float vb = Image::sample(b, c, fx + sx * m.bx, fy + sy * m.by);
+      rgb[c] = va * m.weight + vb * (1.0F - m.weight);
+    }
   }
 }
 
@@ -205,15 +217,103 @@ __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
   blend_images<S, kCubic>(p, x, y, Shift{.ax = ax, .ay = ay, .bx = bx, .by = by, .weight = weight}, rgb);
 }
 
-// Les noyaux de Catmull-Rom ont leur propre borne : ses 16 lectures par canal ne tiennent pas dans les
-// registres de la borne lourde (nvcc débordait de 8 octets en mémoire locale, --warn-on-spills), et le
-// chemin bilinéaire, celui par défaut, garde la sienne.
+// Le chemin à textures garde deux blocs par SM en Catmull-Rom. Le chemin exact lit les plans RVB
+// l'un après l'autre avec des poids partagés et tient trois blocs, comme le bilinéaire.
 inline constexpr int kCubicBlocksPerSm = 2;
 template <bool kCubic>
 inline constexpr int kWarpBlocksPerSm = kCubic ? kCubicBlocksPerSm : kHeavyBlocksPerSm;
 
+template <bool Mask>
+__global__ void certify_layer_warp(const unsigned short* data, std::size_t count, unsigned* outside) {
+  const std::size_t thread = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::size_t step = static_cast<std::size_t>(gridDim.x) * blockDim.x;
+  bool bad = false;
+  for (std::size_t i = thread; i < count; i += step) {
+    const unsigned bits = data[i];
+    const unsigned magnitude = bits & 0x7fffU;
+    if constexpr (Mask)
+      bad |= magnitude > layer::kUnitHalf || ((bits & 0x8000U) != 0U && magnitude != 0U);
+    else
+      bad |= magnitude > layer::kSourceBoundHalf;
+  }
+  if (__syncthreads_or(bad) && threadIdx.x == 0) atomicOr(outside, 1U);
+}
+
+__device__ __forceinline__ bool no_outliers(const unsigned* outside) {
+  return outside != nullptr && __ldg(outside) == 0;
+}
+
+__device__ __forceinline__ bool unique_rounding(float target, __half& rounded) {
+  if (!(target > layer::kMixUncertainty && target <= 1.0F)) return false;
+  const float lo = __fsub_rd(target, layer::kMixUncertainty);
+  const float hi = fminf(__fadd_ru(target, layer::kMixUncertainty), 1.0F);
+  rounded = __float2half_rn(lo);
+  return __half_as_ushort(rounded) == __half_as_ushort(__float2half_rn(hi));
+}
+
+template <bool Cubic, bool Count, bool Ring>
+__global__ void __launch_bounds__(kPixelThreads, 2)
+    warp_blend_layers(WarpBlendParams p, LayerArgs layers, LayerWarpBounds bounds, unsigned* shortcut_count) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  bool shortcut = false;
+  if (x < p.width && y < p.height) {
+    const layer::Pixel v = layer::sample<true>(layers, x, y);
+    const float mk = layer::mix_weight(layers, v, v.d, 1.0F);
+    const float inv = v.m > 0.0F ? 1.0F / v.total : 0.0F;
+    __half rgb[3];
+    // Au milieu, la sigmoïde du warp emploie un masque borné et un instant fini. Dans le chemin direct,
+    // le masque brut doit être certifié. Sans pan pendant cet essai. Les positions, même NaN, sont bornées
+    // avant lecture par fminf/fmaxf. Les sources certifiées restent finies et dans [-2,2] en sortie FP16.
+    if (mk == 1.0F && p.pan == nullptr && no_outliers(bounds.a_outside) && no_outliers(bounds.b_outside) &&
+        (p.from_middle || no_outliers(bounds.mask_outside))) {
+      shortcut = true;
+#pragma unroll
+      for (int c = 0; c < 3; ++c) shortcut &= unique_rounding(__fmul_rn(v.sum[c], inv), rgb[c]);
+    }
+    if (!shortcut) {
+      float here[3];
+      warp_pixel<Exact, Cubic>(p, x, y, here);
+#pragma unroll
+      for (int c = 0; c < 3; ++c) {
+        // Le tenseur du warp allait en FP16 avant la composition séparée.
+        rgb[c] = __float2half_rn(here[c]);
+        if (!(mk <= 0.0F)) rgb[c] = layer::finish(__half2float(rgb[c]), mk, v.sum[c], inv);
+      }
+    }
+    if constexpr (Ring) {
+      store_ring(p.surface, x, y, rgb[0], rgb[1], rgb[2]);
+    } else {
+      auto* out = static_cast<__half*>(p.out);
+      const std::int64_t plane = static_cast<std::int64_t>(p.width) * p.height;
+      const std::int64_t at = static_cast<std::int64_t>(y) * p.width + x;
+#pragma unroll
+      for (int c = 0; c < 3; ++c) out[c * plane + at] = rgb[c];
+    }
+  }
+  if constexpr (Count) {
+    const int n = __syncthreads_count(shortcut);
+    if (threadIdx.x == 0 && threadIdx.y == 0 && n != 0) atomicAdd(shortcut_count, static_cast<unsigned>(n));
+  }
+}
+
+template <bool Ring>
+void launch_layers(dim3 grid, dim3 block, const WarpBlendParams& p, const LayerArgs& layers,
+                   LayerWarpBounds bounds, unsigned* count, cudaStream_t stream) {
+  if (count != nullptr) {
+    if (p.cubic)
+      warp_blend_layers<true, true, Ring><<<grid, block, 0, stream>>>(p, layers, bounds, count);
+    else
+      warp_blend_layers<false, true, Ring><<<grid, block, 0, stream>>>(p, layers, bounds, count);
+  } else if (p.cubic) {
+    warp_blend_layers<true, false, Ring><<<grid, block, 0, stream>>>(p, layers, bounds, nullptr);
+  } else {
+    warp_blend_layers<false, false, Ring><<<grid, block, 0, stream>>>(p, layers, bounds, nullptr);
+  }
+}
+
 template <bool kCubic>
-__global__ void __launch_bounds__(kPixelThreads, kWarpBlocksPerSm<kCubic>) warp_blend(WarpBlendParams p) {
+__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(WarpBlendParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;
@@ -417,6 +517,53 @@ cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream
     else
       warp_blend<false><<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);
   }
+  return cudaGetLastError();
+}
+
+cudaError_t launch_certify_layer_warp(const void* data, std::size_t elements, bool mask, unsigned* outside,
+                                      cudaStream_t stream) {
+  if (data == nullptr || outside == nullptr || elements == 0) return cudaErrorInvalidValue;
+  const cudaError_t clear = cudaMemsetAsync(outside, 0, sizeof(*outside), stream);
+  if (clear != cudaSuccess) return clear;
+  constexpr unsigned kThreads = 256, kMaxBlocks = 2048;
+  const auto blocks =
+      static_cast<unsigned>(std::min((elements - 1) / kThreads + 1, static_cast<std::size_t>(kMaxBlocks)));
+  const auto* bits = static_cast<const unsigned short*>(data);
+  if (mask)
+    certify_layer_warp<true><<<blocks, kThreads, 0, stream>>>(bits, elements, outside);
+  else
+    certify_layer_warp<false><<<blocks, kThreads, 0, stream>>>(bits, elements, outside);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_warp_blend_layers(const WarpBlendParams& p, const LayerArgs& layers,
+                                     LayerWarpBounds bounds, unsigned* shortcut_count, cudaStream_t stream) {
+  const auto& g = layers.grid;
+  const bool ring = p.surface.object != 0;
+  if ((ring ? p.out != nullptr : p.out == nullptr) || p.a == nullptr || p.b == nullptr || p.flow == nullptr ||
+      p.mask == nullptr || p.out == p.a || p.out == p.b || p.out == p.flow || p.out == p.mask ||
+      p.textures.a != 0 || p.textures.b != 0 || p.textures.flow != 0 || p.textures.mask != 0 ||
+      layers.a != p.a || layers.b != p.b || layers.out != p.out || layers.count != 2 ||
+      layers.source_grid.cols != 0 || layers.width != p.width || layers.height != p.height || p.width < 1 ||
+      p.width > 16384 || p.height < 1 || p.height > 16384 || p.plane_width < 1 || p.plane_height < 1 ||
+      p.window_width < 1 || p.window_height < 1 || p.window_x < 0 || p.window_y < 0 ||
+      p.window_width > p.plane_width - p.window_x || p.window_height > p.plane_height - p.window_y ||
+      (!ring && p.out == p.previous_flow) || g.cols < 1 || g.cols > kernels::kLayerMaxCols || g.rows < 1 ||
+      g.rows > kernels::kLayerMaxRows ||
+      !(g.tile_w > 0.0F && g.tile_h > 0.0F && layers.guard_high > layers.guard_low && p.time > 0.0F &&
+        p.time < 1.0F))
+    return cudaErrorInvalidValue;
+  // Aux instants extrêmes, le rapport (1−t)/t de la sigmoïde peut déborder.
+  if (p.time < 0x1p-16F || p.time > 1.0F - 0x1p-16F) bounds = {};
+  const dim3 grid = grid_for(p.width, p.height), block(kBlock, kBlock);
+  if (shortcut_count != nullptr) {
+    const cudaError_t clear = cudaMemsetAsync(shortcut_count, 0, sizeof(*shortcut_count), stream);
+    if (clear != cudaSuccess) return clear;
+  }
+  if (ring)
+    launch_layers<true>(grid, block, p, layers, bounds, shortcut_count, stream);
+  else
+    launch_layers<false>(grid, block, p, layers, bounds, shortcut_count, stream);
   return cudaGetLastError();
 }
 

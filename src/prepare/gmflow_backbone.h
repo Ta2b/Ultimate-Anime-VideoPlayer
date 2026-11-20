@@ -57,11 +57,13 @@ inline constexpr int kGmflowMaxChannels = 128;  // les statistiques d'une lectur
 inline constexpr int kGmflowStemTaps = 7 * 7 * 3;
 inline constexpr int kGmflowStemK = 160;  // les 147 produits de la 7 × 7 sur trois plans, par 16
 
-// Le squelette : CNNEncoder de GMFlow (num_output_scales = 2). L'image entre telle quelle, trois plans FP16
-// dans [0, 1] : sa normalisation (x - moyenne) / écart est rangée dans la 7 × 7 (poids × 1/écart de leur
-// plan, biais -Σ poids · moyenne), et un pixel hors de l'image vaut la moyenne de son plan (pad, arrondie en
-// FP16), soit zéro une fois normalisé, comme le bord de la convolution du graphe. Aucun arrondi de l'image
-// normalisée.
+// Normalisation des trois plans d'entrée FP16. Le banc peut ranger la normalisation dans les poids et le
+// biais de la 7 × 7 (kFolded). La normalisation à la lecture (kNormalizeF16) garde les poids ONNX.
+enum class GmflowStemInput { kFolded, kNormalizeF16, kAlreadyNormalized };
+
+// Le squelette : CNNEncoder de GMFlow (num_output_scales = 2). pad est la moyenne FP16 par plan, utilisée
+// comme valeur de bord en kFolded. Avec des poids ONNX d'origine, le halo vaut zéro. La normalisation se
+// fait dans le stem en kNormalizeF16, ou à la réduction de l'image en kAlreadyNormalized.
 struct GmflowBackbone {
   std::array<float, 3> pad{};
   float epsilon = 1e-5F;  // des InstanceNorm, toutes sans paramètres
@@ -72,6 +74,8 @@ struct GmflowBackbone {
   int image = 0;     // le tenseur d'entrée
   int quarter = -1;  // les sorties, 128 caractéristiques au quart (trident de pas 1) et au huitième (pas 2)
   int eighth = -1;
+  GmflowStemInput stem_input = GmflowStemInput::kFolded;
+  std::array<float, 3> deviation{};  // écarts FP16 convertis en float pour la division du stem
 };
 
 }  // namespace kirari::prepare

@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <mutex>
@@ -18,6 +19,7 @@
 #include <SDL3/SDL_vulkan.h>
 #include <libplacebo/log.h>
 #include <libplacebo/renderer.h>
+#include <libplacebo/shaders/colorspace.h>
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
 
@@ -195,6 +197,28 @@ void PlaceboScreen::Impl::keep_pass_times(bool graded_now) const {
 std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image, const pl_frame& target) {
   KIRARI_TRACE("composition");
   pl_render_params params = pl_render_default_params;
+  // Banc A/B : le grade source a déjà borné le PQ. La mesure de pic de l'écran
+  // peut imposer une relecture synchrone entre deux passes de la composition.
+  enum class GradedPeak { Default, Off, Delayed };
+  static const GradedPeak graded_peak = [] {
+    const char* value = std::getenv("KIRARI_AB_GRADED_PQ_PEAK");  // env: banc
+    const std::string_view mode = value != nullptr ? std::string_view(value) : std::string_view{};
+    if (mode == "off") return GradedPeak::Off;
+    if (mode == "delayed") return GradedPeak::Delayed;
+    return GradedPeak::Default;
+  }();
+  if (graded_peak != GradedPeak::Default && frame_graded && image != nullptr &&
+      target.color.transfer == PL_COLOR_TRC_PQ && target.color.hdr.max_luma > 0.0F &&
+      std::isfinite(target.color.hdr.max_luma) && pl_color_space_equal(&image->color, &target.color)) {
+    static const pl_peak_detect_params delayed_peak = [this, &target] {
+      channel->info("banc pic PQ après grade : mode {}, cible {:.0f} nits",
+                    graded_peak == GradedPeak::Off ? "off" : "delayed", target.color.hdr.max_luma);
+      pl_peak_detect_params peak = pl_peak_detect_default_params;
+      peak.allow_delayed = true;
+      return peak;
+    }();
+    params.peak_detect_params = graded_peak == GradedPeak::Off ? nullptr : &delayed_peak;
+  }
   switch (final_scaler) {
     case FinalScaler::Default:
       break;

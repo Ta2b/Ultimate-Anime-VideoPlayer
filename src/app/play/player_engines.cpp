@@ -517,11 +517,10 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
 
 // La lecture du fichier : décodeur du moteur, langues, sortie audio et pistes gardées d'une réouverture.
 PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const std::filesystem::path& file,
-                               const std::string& backend_name) {
+                               const ChainEngines& engines) {
   return {.file = file,
-          .decoder = decoder_options(backend_name, p.screen.device(), p.screen.shared_devices(),
-                                     {.smooth_drawings = settings.smooth_drawings,
-                                      .temporal_fix = settings.temporal_fix != TemporalFix::Off}),
+          .decoder = decoder_options(engines.backend_name, p.screen.device(), p.screen.shared_devices(),
+                                     engines.held_extras()),
           .languages = {.presets = settings.language_presets},
           .audio_device = settings.audio_device,
           .audio_fallback_delay_us = audio_fallback_delay_us(settings),

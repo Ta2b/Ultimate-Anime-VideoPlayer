@@ -125,6 +125,9 @@ TEST_CASE("Smooth Motion : grisé hors RTX 40 et 50 et sous le pilote 580.82.07 
   using kirari::app::play::SmoothMotionBlock;
   CHECK(smooth_motion_block("NVIDIA GeForce RTX 4070 Ti", "580.82.07") == SmoothMotionBlock::None);
   CHECK(smooth_motion_block("NVIDIA GeForce RTX 5090", "590.44.01") == SmoothMotionBlock::None);
+  CHECK(smooth_motion_block("NVIDIA GeForce RTX 5090", "580.65.06") == SmoothMotionBlock::None);
+  CHECK(smooth_motion_block("NVIDIA GeForce RTX 5090", "580.65.05") == SmoothMotionBlock::Driver);
+  CHECK(smooth_motion_block("NVIDIA GeForce RTX 4070 Ti", "580.65.06") == SmoothMotionBlock::Driver);
   CHECK(smooth_motion_block("NVIDIA RTX 2000 Ada Generation", "580.95.05") == SmoothMotionBlock::None);
   CHECK(smooth_motion_block("NVIDIA RTX PRO 6000 Blackwell", "580.95.05") == SmoothMotionBlock::None);
   CHECK(smooth_motion_block("NVIDIA GeForce RTX 3060", "580.95.05") == SmoothMotionBlock::Gpu);

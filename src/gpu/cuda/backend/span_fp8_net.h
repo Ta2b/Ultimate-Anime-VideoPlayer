@@ -82,6 +82,10 @@ struct SpanFp8Weights {
   // FP8 seulement : conv_1 (dégroupage fondu), conv_cat et to_pixel par les noyaux du FP16 natif
   // (span_native16_edges.cuh) au lieu de CUTLASS ; les blocs restent en CUTLASS FP8. --span-native-edges.
   bool native_edges = false;
+  // Banc FP8 C48 K à plat : c1 et c2 en E4M3 natif, la porte c3 reste en CUTLASS.
+  bool native_relu = false;
+  // Zone de travail compacte du SPAN FP16 C64, demandée après un refus de mémoire au chargement.
+  bool compact_workspace = false;
 };
 
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.

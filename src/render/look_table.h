@@ -32,7 +32,8 @@ inline constexpr int kLookTableSize = 129;
 class LookTable {
  public:
   // Refus si le GPU n'a pas de format rgba32f lisible en trilinéaire et inscriptible par une passe de calcul.
-  static std::expected<std::unique_ptr<LookTable>, Refusal> create(pl_gpu gpu);
+  static std::expected<std::unique_ptr<LookTable>, Refusal> create(pl_gpu gpu,
+                                                                   pl_hook_stage stage = PL_HOOK_OUTPUT);
   ~LookTable();
   LookTable(const LookTable&) = delete;
   LookTable& operator=(const LookTable&) = delete;

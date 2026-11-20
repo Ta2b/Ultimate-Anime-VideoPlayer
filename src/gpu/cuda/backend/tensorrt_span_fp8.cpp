@@ -58,8 +58,10 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   const std::optional<Shape> shape = span_fp8_artifact_shape(artifact.cache_key);
   const std::optional<std::uint32_t> crc = span_fp8_artifact_crc(artifact.cache_key);
   if (!shape || !crc) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : clé d'artefact illisible");
+  const bool native_blocks =
+      span_fp8_native_blocks_ && SpanFp8Net::supported_device(properties_.major, properties_.minor);
   auto engine = SpanFp8Engine::load(artifact.path, *crc, static_cast<int>(shape->dims[2]),
-                                    static_cast<int>(shape->dims[3]), arena(), span_native_);
+                                    static_cast<int>(shape->dims[3]), arena(), span_native_, native_blocks);
   if (!engine) return std::unexpected(std::move(engine.error()));
   if ((*engine)->fp16())
     log(BackendLogLevel::Info,
@@ -67,8 +69,12 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
                     (*engine)->sums() == SpanNativeSums::F32 ? "f32" : "f16"));
   else
     log(BackendLogLevel::Info,
-        std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}{}", shape->dims[3], shape->dims[2],
-                    (*engine)->native_edges() ? ", bords natifs" : ""));
+        std::format("SPAN FP8 ({}) chargé : {}×{}{}",
+                    (*engine)->native_blocks() ? "ReLU natives C48" : "noyaux CUTLASS", shape->dims[3],
+                    shape->dims[2], (*engine)->native_edges() ? ", bords natifs" : ""));
+  if (const auto notice = (*engine)->native_blocks_notice(); !notice.empty()) log(BackendLogLevel::Info, notice);
+  if (span_fp8_native_blocks_ && !native_blocks)
+    log(BackendLogLevel::Info, "SPAN FP8 : option des ReLU natives disponible sur Ada");
   if (const std::optional<double> db = (*engine)->native_check_db())
     log(BackendLogLevel::Info,
         std::format(
@@ -106,7 +112,9 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
   }
   if (auto ok = order_engine(&engine, ordered, outputs, false); !ok) return ok;
   const Shape shape = engine.input_shape();
-  GpuTiming& timing = stage_named("moteur FP8 {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]);
+  const char* precision = engine.fp16() ? "SPAN FP16 natif"
+                                        : engine.native_blocks() ? "FP8 ReLU natives" : "FP8";
+  GpuTiming& timing = stage_named("moteur {} {}×{}×{}", precision, shape.dims[1], shape.dims[2], shape.dims[3]);
   role(Role::Upscale).begin(stream_);
   timing.begin(stream_);
   // Les trois parts au profil de fin (span_parts_) : le temps du rôle en lecture, plus long qu'au banc, dit

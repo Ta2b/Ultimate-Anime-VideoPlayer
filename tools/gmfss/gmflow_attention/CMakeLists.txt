@@ -36,4 +36,16 @@ if(KIRARI_BANC_CUDA)
   target_compile_options(gmflow_attention_banc PRIVATE
                          $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo --ptxas-options=--verbose,--warn-on-spills>)
   target_link_libraries(gmflow_attention_banc PRIVATE CUDA::cudart)
+
+  add_executable(gmflow_transformer_check gmflow_transformer_check.cpp
+                 "${KIRARI_SRC}/gpu/cuda/backend/gmflow_transformer_net.cpp"
+                 "${KIRARI_SRC}/gpu/cuda/backend/gmflow_attention_net.cu"
+                 "${KIRARI_SRC}/gpu/cuda/backend/gmflow_mlp_net.cu"
+                 "${KIRARI_SRC}/prepare/gmflow_mlp.cpp" ${gmflow_attention_lecture})
+  set_target_properties(gmflow_transformer_check PROPERTIES
+                        CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON)
+  target_include_directories(gmflow_transformer_check PRIVATE "${KIRARI_SRC}")
+  target_compile_options(gmflow_transformer_check PRIVATE
+                         $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo --ptxas-options=--verbose,--warn-on-spills>)
+  target_link_libraries(gmflow_transformer_check PRIVATE CUDA::cudart)
 endif()

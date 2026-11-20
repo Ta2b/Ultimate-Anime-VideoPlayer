@@ -41,6 +41,21 @@ TEST_CASE("kirari --register et --unregister : sans fichier, l'un ou l'autre", "
   }
 }
 
+TEST_CASE("Budget GMFSS : coûts distincts en millisecondes, seulement en essai", "[app][options]") {
+  REQUIRE_FALSE(parse({"épisode.mkv"})->gmfss_budget);
+  CHECK(parse({"épisode.mkv"})->gmfss_feature_reuse);
+  CHECK_FALSE(parse({"épisode.mkv", "--no-gmfss-feature-reuse"})->gmfss_feature_reuse);
+  const auto budget = parse({"épisode.mkv", "--gmfss-budget", "22.25,32.5"});
+  REQUIRE(budget);
+  REQUIRE(budget->gmfss_budget);
+  CHECK(budget->gmfss_budget->pair_us == 22'250);
+  CHECK(budget->gmfss_budget->key_us == 32'500);
+  CHECK_FALSE(parse_play_options(std::array<std::string_view, 2>{"épisode.mkv", "--gmfss-budget=22,32"}));
+  for (std::string_view invalid : {"--gmfss-budget=0,10", "--gmfss-budget=20", "--gmfss-budget=nan,30",
+                                   "--gmfss-budget=25,inf", "--gmfss-budget=25,30,40"})
+    CHECK_FALSE(parse({"épisode.mkv", invalid}));
+}
+
 TEST_CASE("kirari play : fichier et options", "[app][options]") {
   const auto options = parse({"--model", "/m/span.onnx", "épisode.mkv", "--window=960x540", "--seconds=4.5",
                               "--fullscreen-after=2", "--start=90", "--stats=/tmp/s.tsv"});
@@ -116,10 +131,14 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   CHECK_FALSE(parse({"épisode.mkv", "--no-anime-shots"})->anime_shots);
   CHECK(options->effect_highlights);  // les lueurs vues dans l'image, par défaut
   CHECK_FALSE(options->map_effects);  // les effets de la carte, éteints pour la première release
-  CHECK(options->scene_map);          // la carte, allumée par défaut (refusée sans NVOF)
+  CHECK(options->scene_map);          // la carte est autorisée si la chaîne l'utilise
+  CHECK_FALSE(options->was_given("--scene-map"));
+  CHECK(parse({"épisode.mkv", "--scene-map"})->was_given("--scene-map"));
   CHECK(parse({"épisode.mkv", "--effect-highlights"})->map_effects);
   CHECK_FALSE(parse({"épisode.mkv", "--no-effect-highlights"})->effect_highlights);
   CHECK_FALSE(parse({"épisode.mkv", "--no-scene-map"})->scene_map);
+  CHECK_FALSE(options->nvof_roundtrip);
+  CHECK(parse({"épisode.mkv", "--nvof-roundtrip"})->nvof_roundtrip);
   CHECK_FALSE(options->effect_mask_view);  // défaut : l'image, pas le masque
   CHECK(parse({"épisode.mkv", "--effect-mask-view"})->effect_mask_view);
   CHECK_FALSE(options->pause_at_us);  // défaut : pas de pause

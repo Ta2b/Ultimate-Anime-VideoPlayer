@@ -174,7 +174,10 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
         late_instants_ += late;
         if (setup_.live) setup_.live->count_late();
       }
-      if (middles > 0 && late == middles) wanted = 1;
+      if (middles > 0 && late == middles) {
+        wanted = 1;
+        if (gmfss_only() && gmfss_.ahead_adopted) ++gmfss_.ahead_adopted_all_late;
+      }
     }
   }
   PairFacts facts{.factor = wanted,
@@ -297,6 +300,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       return std::unexpected(std::move(ok.error()));
   }
   spanned_now_ = false;  // SPAN de cette image : à sa première utilisation (span_current)
+  span_body_queued_ = false;
+  span_body_enqueued_us_ = 0;
   // Avant RIFE et SPAN de cette image : la suivante, si elle attend, ingérée et mesurée. SPAN seul, l'avance
   // ne sert qu'à la mesure : un refus attend l'arrivée de la suivante, qui le redira.
   ahead_.ticket = 0;
@@ -362,6 +367,10 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
                                                                 std::uint64_t wait_value,
                                                                 std::uint64_t signal_value) {
   KIRARI_TRACE("upscale.produce");
+  if (span_body_enqueued_us_ > 0) {
+    span_body_headroom_us_ += host_now_us() - std::exchange(span_body_enqueued_us_, 0);
+    ++span_body_seen_;
+  }
   const gpu::Tensor& now = rgb_[current_]->tensor();
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   if (late_fate_now_ && instant_late(frame, output)) ++late_computed_;  // entre fate et ici : ne doit pas
@@ -389,15 +398,23 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   middle_rank_ = middles_done_++;
   Output made{.pts_us = instant.pts_us,
               .left = previous_->id,
-              .right = smooth_first_ ? smooth_b_id_ : frame.id,
+              .right = smooth_first_ ? smooth_b_.id : frame.id,
               .debanded = debanded_};
   drba_held_ = false;
   shown_source_ = false;
   use_lane(gpu::Lane::Interpolate);
   next_middle();  // l'autre tampon : SPAN ou l'écriture du ring lit peut-être encore le précédent
   const gpu::RingTarget ring{.slot = &setup_.slots[slot], .sync = sync};
+  // Garde le tenseur en repli. Après SPAN et sans SPAN, le seul consommateur du RGB intermédiaire
+  // est write_slot. La plaque et les chemins qui agrandissent ce RGB ou l'exportent restent séparés.
+  LayerRingOutput layers_out{.target = ring};
+  LayerRingOutput* const layer_ring =
+      setup_.layers.fused && setup_.layers.layers && !setup_.layers.plate_on() && !setup_.yuv_slots
+          ? &layers_out
+          : nullptr;
   if (warps_spanned()) {
-    const Target out = ring_direct_ ? Target{.ring = &ring} : Target{.tensor = &middle_out()};
+    const Target out =
+        ring_direct_ ? Target{.ring = &ring} : Target{.tensor = &middle_out(), .layer_ring = layer_ring};
     if (smooth_first_) {
       if (auto ok = span_smooth_b(); !ok) return std::unexpected(std::move(ok.error()));
     }
@@ -408,7 +425,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
       return std::unexpected(std::move(ok.error()));
     }
     use_lane(gpu::Lane::Upscale);
-    if (out.tensor != nullptr) {
+    if (out.tensor != nullptr && !layers_out.written) {
       if (auto ok = write_slot(*out.tensor, slot, sync); !ok) return std::unexpected(std::move(ok.error()));
     }
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
@@ -428,17 +445,21 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     return held_b(made, frame, output);
   }
   if (by_motion() || drba()) {
-    auto ok = drba_motion() ? interpolate_drba_motion(output, false, Target{.tensor = &middle()})
-              : drba()
-                  ? interpolate_drba(output)
-                  : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(),
-                                          smooth_first_ ? smooth_b_rgb() : now, Target{.tensor = &middle()});
+    auto ok =
+        drba_motion() ? interpolate_drba_motion(output, false, Target{.tensor = &middle()})
+        : drba()
+            ? interpolate_drba(output)
+            : interpolate_by_motion(
+                  output, rgb_[current_ ^ 1U]->tensor(), smooth_first_ ? smooth_b_rgb() : now,
+                  Target{.tensor = &middle(), .layer_ring = setup_.engine == nullptr ? layer_ring : nullptr});
     if (!ok) return std::unexpected(std::move(ok.error()));
   } else if (auto ok = interpolate_image(instant.t); !ok) {
     return std::unexpected(std::move(ok.error()));
   }
   use_lane(gpu::Lane::Upscale);
-  if (auto ok = finish(middle(), slot, sync); !ok) return std::unexpected(std::move(ok.error()));
+  if (!layers_out.written) {
+    if (auto ok = finish(middle(), slot, sync); !ok) return std::unexpected(std::move(ok.error()));
+  }
   output_has_source_ = false;
   // ×1,5 : l'image n'est pas sur la grille de cette paire, elle sert seulement de suivante.
   if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};

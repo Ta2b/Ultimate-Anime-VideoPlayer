@@ -42,6 +42,26 @@ TEST_CASE("Rapide : le warp et l'anneau suivent l'écran, pas le facteur demand�
   CHECK(ring_depth(s, factor_of(s), 165.0, 23.976) == 4U);
 }
 
+TEST_CASE("GMFSS seul prend la taille de travail sans moteur RIFE", "[app][chain][gmfss]") {
+  ChainEngines chain;
+  chain.gmfss_use = GmfssUse::Only;
+  chain.rife_size = {.width = 960, .height = 540};  // une variante réduite réglée auparavant
+  PlaySettings settings;
+  settings.motion_engine = MotionEngine::Gmfss;
+  settings.gmfss_every_instant = true;
+  settings.work_height = 720;
+  const auto stage = chain.upscale(settings, nullptr, nullptr, 1920, 1080, {});
+  CHECK(stage.rife_motion == nullptr);
+  CHECK(stage.gmfss.use == GmfssUse::Only);
+  CHECK(stage.rife_width == stage.work_width);
+  CHECK(stage.rife_height == stage.work_height);
+  CHECK(stage.rife_height == 720);
+  settings.rife_factor = 10;
+  CHECK(chain.motion_label(settings).find("Auto") != std::string::npos);
+  settings.rife_auto = false;
+  CHECK(chain.motion_label(settings).find("×10") != std::string::npos);
+}
+
 TEST_CASE("Interpolation : seulement aux cadences d'un anime", "[app][chain]") {
   for (const double fps : {23.976, 24.0, 25.0, 29.97, 30.0, 23.975, 29.971}) CHECK(anime_rate(fps));
   for (const double fps : {12.0, 15.0, 47.952, 48.0, 50.0, 59.94, 60.0, 120.0, 24.5})
@@ -338,6 +358,8 @@ TEST_CASE("ChainEngines::upscale câble le warp de Catmull-Rom et les options à
   CHECK(setup.rife_encode_all);
   CHECK(setup.rife_at_slot);
   CHECK_FALSE(setup.late_fate);  // sans horloge de lecture
+  without_motion.smooth_drawings = true;
+  CHECK_FALSE(without_motion.held_extras().smooth_drawings);
   const UpscaleSetup plain = without_motion.upscale(s, nullptr, nullptr, 1920, 1080, {});
   CHECK_FALSE(plain.smooth_drawings);
   CHECK_FALSE(plain.rife_encode_all);

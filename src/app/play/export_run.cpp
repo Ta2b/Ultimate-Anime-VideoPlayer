@@ -167,8 +167,7 @@ struct ExportGraded {
   std::string_view label() const { return look == ExportGrade::Hdr10 ? "HDR · " : ""; }
 };
 
-ExportGraded graded_export(const Player& p, const ExportJob& job) {
-  const ColorInfo source = media::track_color(p.video).value_or(ColorInfo{});
+ExportGraded graded_export(const Player& p, const ExportJob& job, const ColorInfo& source) {
   const bool source_hdr = source.transfer == Transfer::Pq || source.transfer == Transfer::Hlg;
   ExportGraded out{.look = export_grade(job.chain, source_hdr, job.codec)};
   if (out.look == ExportGrade::None) return out;
@@ -247,14 +246,18 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   std::filesystem::path out_path = job.output;
   const ExportSize planned_size = export_size(chain_output(job.chain, video.width, video.height),
                                               {.width = video.width, .height = video.height}, job.height);
-  const media::Rational planned_rate = export_rate(video.frame_rate, factor_of(export_chain(job.chain)));
+  const media::Rational planned_rate =
+      export_rate(video.frame_rate, export_factor(job.chain, fps_of(video.frame_rate)));
   if (out_path == default_export_path(p.options.file, planned_size, planned_rate) &&
       (planned_size.width != size.width || planned_rate.num * rate.den != rate.num * planned_rate.den)) {
     out_path = default_export_path(p.options.file, size, rate);
     log->info("export : renommé {} (ce que les moteurs font)", prepare::utf8_path(out_path.filename()));
   }
-  p.screen.set_source_color(ColorInfo{});             // les images du ring, comme à la lecture
-  const ExportGraded graded = graded_export(p, job);  // HDR10, SDR gradé en H.264, ou rien (export_grade)
+  // Le RGB du ring garde le transfert et les primaires de la source. Libplacebo en a besoin pour le rendu
+  // et le redimensionnement, même quand le grade est coupé (source HDR, par exemple).
+  const ColorInfo source_color = media::track_color(video).value_or(ColorInfo{});
+  p.screen.set_source_color(source_color);
+  const ExportGraded graded = graded_export(p, job, source_color);
   // Le ring, la conversion et la file d'écriture : deux paires en vol si les voies le permettent.
   const ExportDepth depth = export_depth(c.one_lane ? 1 : c.backend->capabilities().lanes);
   show_loading(p.screen, p.ui, i18n::ui_tr("Opening the export"));

@@ -333,6 +333,9 @@ TEST_CASE("Écriture : répétitions de la cadence fixe", "[export][writer]") {
   // Une heure sans image : un saut d'horodatage, pas un dessin tenu.
   CHECK(repeats_between(0, std::int64_t{3'600} * 1'000'000, 25, 1) == 0);
   CHECK(repeats_between(0, (kMaxRepeatRun + 1) * 40'000, 25, 1) == kMaxRepeatRun);
+  const auto maximum = std::numeric_limits<std::int64_t>::max();
+  CHECK(repeats_between(0, maximum / 2, 25, 1) == 0);
+  CHECK(repeats_between(-maximum, maximum, 25, 1) == 0);
 }
 
 // 25 i/s : les instants 80, 200 et 240 ms manquent (une coupe, un dessin tenu sur deux images).
@@ -509,6 +512,21 @@ TEST_CASE("Écriture : un export refusé laisse intact le fichier qui portait d�
   std::error_code error;
   CHECK_FALSE(std::filesystem::exists(std::filesystem::path(output).concat(".partial"), error));
   std::filesystem::remove(output, error);
+}
+
+TEST_CASE("Écriture : annuler un export laisse finir l'autre vers la même destination",
+          "[export][writer]") {
+  const auto output = output_path("kirari-export-writer-overlap.mkv");
+  auto first = ExportWriter::open(config_for(output), std::make_unique<HoldingEncoder>(1));
+  REQUIRE(first);
+  auto second = ExportWriter::open(config_for(output), std::make_unique<HoldingEncoder>(1));
+  REQUIRE(second);
+  first->reset();
+  Buffers buffers;
+  push(**second, buffers.in_place(0, 0));
+  REQUIRE((*second)->finish());
+  CHECK(std::filesystem::is_regular_file(output));
+  std::filesystem::remove(output);
 }
 
 }  // namespace kirari::exporter

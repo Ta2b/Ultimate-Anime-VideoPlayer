@@ -6,6 +6,7 @@
 #include <variant>
 #include <vector>
 
+#include "media/av_util.h"
 #include "media/log.h"
 
 namespace kirari::media {
@@ -24,8 +25,8 @@ struct Overloaded : F... {
 constexpr int kMaxUntimedDrops = 120;
 bool ends_before(const DecodedFrame& frame, std::int64_t target_us) {
   if (frame.pts_us == kNoPts) return true;
-  const std::int64_t end = frame.pts_us + std::max<std::int64_t>(frame.duration_us, 1);
-  return end <= target_us;
+  const auto duration = static_cast<std::uint64_t>(std::max<std::int64_t>(frame.duration_us, 1));
+  return frame.pts_us < target_us && duration <= time_distance(frame.pts_us, target_us);
 }
 
 std::vector<PacketSink*> sinks_of(const SourceLinks& links) {

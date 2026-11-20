@@ -28,6 +28,13 @@ tient dans six noyaux.
 - L'entrée et la sortie de l'encodeur sont adressées dans l'entrée X_2 du bloc 2 (plans 0-8 et 9-56) : ces 57 canaux ne
   sont jamais copiés. Le côté choisi (image 0 ou 2) est lu sur le périphérique, dans le plan du temps de `pair01` : il
   change à chaque image.
+- Tant que les trois images restent en place dans les entrées, les moteurs fusionnés peuvent reprendre leurs réductions
+  et leurs encodages. Cela vaut aussi entre la seconde moitié de `(A, B)` et la première moitié de `(B, C)` : lorsque
+  l'arrivée de `C` a repris les trois mêmes tampons sans réingestion du trio, seuls les plans du temps sont mis à jour.
+- Le moteur fusionné ne lit l'instant que dans `pair01`. Sur un trio réutilisé, le backend n'écrit qu'une valeur
+  FP16 de `pair01` au lieu des deux plans denses, puis distingue ce format dans la clé du graphe CUDA. Le test
+  des réductions compare les deux chemins au bit près. Sur 478 passes en 1920×1088, la médiane est de 0,91 ms
+  et le total de 400 ms, contre 0,92 ms et 404 ms après la seule reprise du trio (455 ms au témoin initial).
 - Les arrondis FP16 du graphe sont reproduits aux mêmes endroits (sorties de Resize, sigmoïde, mélange) ; les Resize et
   GridSample du graphe sont en FP32 entre deux Cast. La grille des warps fait exception : la colle lit la position en
   pixels `x + flot` en FP32 (`pixel_tap`, `tap_of`), égale à la grille normalisée `base + flot × pas` du graphe ramenée en

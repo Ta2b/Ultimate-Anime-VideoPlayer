@@ -8,6 +8,7 @@
 
 extern "C" {
 #include <libavutil/channel_layout.h>
+#include <libavutil/common.h>
 #include <libavutil/frame.h>
 #include <libavutil/opt.h>
 #include <libavutil/samplefmt.h>
@@ -107,7 +108,7 @@ std::expected<PcmBlock, Refusal> PcmConverter::convert(const AVFrame& frame,
   if (const int error = append(block, &frame); error < 0) {
     return refuse(RefusalCode::AudioDecodeFailed, std::format("swr_convert : {}", av_error_text(error)));
   }
-  next_pts_us_ = block.pts_us + frames_to_us(block.frames(), output_.sample_rate);
+  next_pts_us_ = av_sat_add64(block.pts_us, frames_to_us(block.frames(), output_.sample_rate));
   return block;
 }
 
@@ -115,7 +116,7 @@ PcmBlock PcmConverter::drain() {
   PcmBlock block{.pts_us = next_pts_us_.value_or(0), .channels = output_.channels};
   if (!swr_) return block;
   append(block, nullptr);
-  next_pts_us_ = block.pts_us + frames_to_us(block.frames(), output_.sample_rate);
+  next_pts_us_ = av_sat_add64(block.pts_us, frames_to_us(block.frames(), output_.sample_rate));
   return block;
 }
 

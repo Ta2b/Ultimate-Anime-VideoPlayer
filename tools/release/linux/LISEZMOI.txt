@@ -8,9 +8,10 @@ Contenu
   engines.lock              l'index des moteurs facultatifs téléchargeables
   models/onnx/              SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced), ArtCNN C4F32 et C4F16
   models/rife/              RIFE 4.26, 4.25, 4.22 lite et 4.25 lite, DistilDRBA v2 lite et son demi-flot (fp16)
+                            GMFSS Fortuna Union, flot entier et demi-flot (fp16, TensorRT)
   models/temporalfix/       TemporalFix s1, s2 et s3 (fp16), la stabilisation temporelle (TensorRT)
   models/LICENCES.txt       licences des modèles (AnimeJaNai : CC BY-NC-SA 4.0 ; RIFE, DistilDRBA, ArtCNN : MIT ;
-                            TemporalFix : Apache 2.0)
+                            GMFSS Fortuna Union : MIT et Apache 2.0 ; TemporalFix : Apache 2.0)
 
 Paquets du système (non livrés)
   Une distribution à glibc @GLIBC@ ou plus (Ubuntu 24.04, Debian 13, Fedora et Arch récentes).
@@ -26,6 +27,7 @@ Modèles
   Livrés dans models/ : rien à installer. Une installation d'AnimeJaNai
   (~/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/ et rife/) passe devant s'il y en a une.
   Un autre fichier : --model=FICHIER.onnx et --rife-model=FICHIER.onnx.
+  GMFSS Fortuna Union se sélectionne dans Vidéo > Interpolation quand TensorRT est actif sur une carte RTX.
 
 Lancer
   ./kirari play "épisode.mkv" --fullscreen

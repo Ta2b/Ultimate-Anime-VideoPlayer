@@ -523,6 +523,8 @@ void mark_cut(SceneMotion& motion) {
   motion.background_held = false;
   motion.fade = false;
   motion.cut_likely = true;
+  motion.roundtrip.reset();
+  motion.roundtrip_photo_edge_a.clear();
   for (SceneTile& tile : motion.tiles) {
     tile.kind = SceneClass::Uncertain;
     tile.confidence = 0.0F;

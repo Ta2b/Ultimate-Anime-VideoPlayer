@@ -11,8 +11,9 @@ entraînement.
 - Cartes : NVIDIA RTX 30 et après (la carte de coût de NVOF n'existe pas sur Turing). AMD, Intel, Turing, un
   pilote sans `libnvidia-opticalflow.so.1` (ou `nvofapi64.dll`) : une ligne au journal, puis la chaîne
   exactement comme sans la carte.
-- Interrupteur : allumée par défaut depuis la première release (la caméra, le décor et l'affinage à l'heure ont
-  passé leurs mesures, pour les calques et la plaque de décor) ; `--no-scene-map` (essai) l'éteint. Les éclats
+- La lecture lance la carte lorsque les calques, la plaque, le tri des paires ou les éclats qui utilisent
+  ses tuiles sont activés. L'essai `--scene-map` la lance aussi pour le banc et `--no-scene-map` la coupe.
+  Les éclats
   sur ses effets (classe Effet) restent éteints par défaut (`--effect-highlights`, essai, les rallume) ; les
   lueurs vues dans l'image par le grade n'en dépendent pas (`docs/hdr-anime.md`).
   Chantier en pause depuis le 19 novembre (Tatoub) : la classe Effet reste calculée, mais rien ne la rallume
@@ -24,7 +25,8 @@ entraînement.
   avec SPAN ×2 et le grade HDR. Au PC de Tatoub, `--no-scene-map` le fait disparaître ; `--no-span-tiles` et
   `--no-span-reuse` ne changent rien. Cause trouvée le même jour : la **plaque de décor**, qui dépend de la carte
   et s'applique avec tous les moteurs ; `background_plate = false` seul le fait partir, la carte restant
-  allumée (détail et contournement : [`calques.md`](calques.md)).
+  allumée ; correctif : la garde de la plaque compare les trois canaux au lieu de la luma (détail :
+  [`calques.md`](calques.md)).
 - Journal de fin : `carte de la scène : N paires lancées, N relues, N posées sur leur paire ; N sautées (NVOF
   occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, dont N
   relus ensuite, N pas lancés ; N lancés derrière le flux depuis la caméra du plan, N écartés), N coupes

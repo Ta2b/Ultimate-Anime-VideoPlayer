@@ -18,6 +18,15 @@ TEST_CASE("av_util : un horodatage qui déborde reste sans horodatage, le décal
   CHECK(kirari::media::from_us(kMax, AVRational{1, 1'000'000}, 10) == kMax);
 }
 
+TEST_CASE("av_util : le seek compare les distances même entre les extrêmes", "[media]") {
+  constexpr std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
+  constexpr std::int64_t kMin = kirari::kNoPts + 1;
+  CHECK(kirari::media::time_distance(kMin, kMax) == std::numeric_limits<std::uint64_t>::max() - 1);
+  CHECK(kirari::media::time_distance(kMax, kMin) == kirari::media::time_distance(kMin, kMax));
+  CHECK(kirari::media::add_saturated(kMax - 1, 10) == kMax);
+  CHECK(kirari::media::duration_to_us(kMax / 2, AVRational{1, 1}) == 0);
+}
+
 // A15-01 : NVDEC n'est pas essayé pour une chroma au-delà du 4:2:0, que l'ingestion CUDA ne prend pas.
 TEST_CASE("av_util : chroma au-delà du 4:2:0, par le format ou, inconnu, par le profil", "[media]") {
   using kirari::media::chroma_beyond_420;

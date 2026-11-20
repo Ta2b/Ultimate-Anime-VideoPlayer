@@ -36,6 +36,15 @@ convolution), `span_native16.cu` (le réseau, derrière `SpanFp8Body`, à la pla
   tenseur de moins) ;
 - **plus de concaténation** : conv_cat lit les quatre tenseurs là où leurs convolutions les ont écrits (K
   sommé sur quatre sources) ; trois écritures de 2·C octets par pixel en moins ;
+- **porte finale et conv_cat dans un lancement**, essai `KIRARI_AB_SPAN_GATE_CAT=1` pour le Balanced
+  b8f64 et le Performance b5f48 directs en sommes FP16. Le dernier bloc garde les codes FP16 de la
+  porte en mémoire partagée.
+  Le banc ABBA vérifie la sortie entière au bit près en 1080p et sur un recadrage 642×358. Les médianes
+  du Balanced vont de 11,26–11,66 à 10,95–11,05 ms, les minima de 10,50 à 10,37–10,39 ms. Les médianes
+  du Performance à poids partagés vont de 5,03–5,04 à 4,90–4,91 ms, les minima de 4,98 à 4,86 ms.
+  En lecture 4K avec RIFE, le test du Balanced donne 156,23 et 156,26 i/s après composition sur
+  le même extrait de 7 s. Pour le Performance, le test de 6 s donne 162,99 et 163,16 i/s,
+  tandis que la médiane GPU de SPAN passe de 6,61 à 6,38 ms ;
 - **sortie en lignes entières** : chaque tuile passe par la mémoire partagée avant d'être écrite ; to_pixel y
   fait DepthToSpace et écrit la sortie NCHW et/ou l'emplacement de l'anneau (`store_ring`, au bit près de
   `write_rgba16`).
@@ -160,12 +169,24 @@ tampon de bloc (X0, X1) suit de trois lignes au moins celle qui le lit encore, q
 arrière ; conv_cat écrit sa sortie sur S0, sur place (une 1×1 ne lit que ses propres pixels, et les blocs
 ont fini de lire S0 sur ces lignes), et to_pixel la lit après la dernière bande. Une simulation de
 l'ordonnancement (chaque ligne marquée de la couche qui l'a écrite) l'a vérifié pour 2 à 8 blocs, des
-hauteurs de 1 à 540 lignes et des bandes de 1 à 1000. Les tuiles qui bougent, qui veulent la grille de
-l'image entière, se passent des bandes.
+hauteurs de 1 à 540 lignes et des bandes de 1 à 1000. Avec la zone pleine, les tuiles qui bougent se
+passent des bandes pour garder la grille de l'image entière.
 
 Le banc balaie la hauteur (`BANDS`, 0, 64, 192 et 270 en plus du défaut). Avec EXPORT, il dépose aussi la
 sortie sans bandes, que `justesse_cpu.py` compare au bit près à celle du défaut : l'ordre des bandes ne change
 aucune somme.
+
+### Repli compact après un refus de mémoire
+
+Si l'allocation d'essai ou le redimensionnement de l'arène partagée échoue par manque de mémoire, le
+chargeur peut reprendre un SPAN FP16 à 64 canaux et sommes FP16 avec des bandes de 32 lignes. S0 reste
+entier pour la queue du réseau. Les cinq autres tampons utilisent 64 lignes chacun, avec le halo. Le
+masque de tuiles reste aligné sur la grille de l'image entière et les mêmes convolutions valident le
+résultat au chargement.
+
+Sur Balanced 1920×1080, l'arène passe de 379,69 à 100,78 Mio. Les deux points de refus ont été testés dans
+le vrai chargeur avec un pool CUDA privé de 192 Mio. Les deux replis et le retour sans plafond gardent
+exactement les mêmes 24 883 200 valeurs. Le chronométrage sans pression ne montre pas de gain stable.
 
 ## Poids partagés (à 48 canaux)
 
@@ -204,7 +225,7 @@ dirait (`span-bilan.md`). Le défaut (`SpanSharedWeights::Auto`) les prend à 48
 `kirari_span_fp8_run --shared-weights` ou `--no-shared-weights` force le choix, et le banc mesure les deux
 dans les mêmes tours que le défaut.
 
-## Winograd (essai perdu, 64 canaux)
+## Winograd F(2×2, 3×3), 64 canaux
 
 Les 3×3 carrées des blocs (trois par bloc, 85 % du calcul du b8f64) passent par Winograd F(2×2, 3×3) :
 Y = Aᵀ [U ⊙ V] A, seize produits par sortie 2×2 au lieu de trente-six, soit 2,25 fois moins de mma. Le
@@ -216,12 +237,13 @@ canaux, les 12 sorties par warp ne tombent pas sur les tuiles n16).
 - U = G g Gᵀ se calcule à l'envoi, en double, arrondi en f16 (`pack_wino`), et se range comme les poids
   directs avec 16 points à la place des 9 positions : 128 Ko par couche au lieu de 72.
 - Le bloc garde la tuile 8 × 32 de `conv_kernel` (mêmes bandes, même masque des tuiles, même épilogue :
-  `finish`), soit 4 × 16 tuiles 2×2, en deux moitiés de 32 : V entier ne tient pas à côté de la tuile
-  d'entrée sous 48 Ko. Par moitié et par point ξ : tous les fils calculent V_ξ (sommes f32 de quatre termes,
-  un arrondi f16) en mémoire partagée, barrière, puis le warp w fait V_ξ · U_ξ pour ses 16 sorties (4 pas k,
-  sommes f16) et ajoute M_ξ, borné à ±65 504, aux sorties 2×2 en f32 selon Aᵀ. 64 barrières par tuile au
-  lieu de 2 : c'est le risque, après la leçon des poids partagés. 160 registres, aucun débordement sur sm 8.9
-  et 12.0, 48 960 octets de mémoire partagée (deux blocs par SM).
+  `finish`), soit 4 × 16 tuiles 2×2 en deux moitiés de 32. Le calcul réserve quatre points V d'une
+  même ligne transformée. Les fils relisent deux lignes de l'entrée, puis calculent les quatre V
+  avec les mêmes sommes f32 et l'arrondi f16 de la version précédente. Après une barrière, chaque
+  warp multiplie V par U pour ses 16 canaux de sortie. Chaque M_ξ est borné à ±65 504 avant
+  l'accumulation f32 selon Aᵀ, dans le même ordre. Deux barrières par groupe au lieu de deux par
+  point ramènent le coût des deux moitiés de 64 à 16 barrières. La zone partagée du noyau passe
+  de 48 128 à 45 056 octets.
 - Les tuiles 2×2 partent des lignes paires de l'image quelle que soit la bande (une bande qui commence à une
   ligne impaire calcule la ligne d'avant sans l'écrire) : en bandes, la sortie est celle de l'image entière
   au bit près.
@@ -236,11 +258,19 @@ test « Winograd suit le chemin direct » demande 50 dB contre le direct et la m
 Au banc (#980, RTX 4070 Ti, 1080p → 4K, Re:Zero, 3 tours ABAB) : **13,72 ms au b8f64 contre 10,64 en
 direct (+29 %)**, à 62,96 dB contre 62,83 (export jugé sur processeur contre ONNX Runtime FP32 : juste sur
 GPU aussi). Au b5f48 (48 canaux), sans effet comme prévu : 5,03 ms. Winograd reste donc éteint (Auto). La
-cause probable : les 64 barrières par tuile et le calcul de V (4 lds128 et une écriture par morceau, à
-chaque point) laissent les tensor cores attendre ; deux fois moins de mma ne suffisent pas. Le profil
-Nsight Compute le dirait. Une reprise viserait V une fois pour tous les points (transformée séparable,
-lignes puis colonnes, ou tuile plus petite qui tient V entier sans moitiés), donc moins de barrières ;
-F(4×4, 3×3) (plafond des mma à 1,8 ms) n'a de sens qu'avec elle.
+version groupée donne 13,92–14,34 ms contre 14,57–14,60 ms pour l'ancienne dans le même aller-retour
+(RTX 4070 Ti, graphe CUDA, 100 lancements par passage, entrée Re:Zero, bande de 128 lignes). Le direct
+est à 10,61–11,50 ms. Le résultat Winograd reste identique à l'octet sur cette image 4K.
+Sur une convolution d'une bande profilée avec Nsight Compute, l'indicateur d'attente de barrière
+passe de 0,28 à 0,20 cycle par instruction émise. L'occupation reste autour de 17 % et cette convolution
+isolée n'accélère pas. Il faut réduire les transferts et la pression sur les registres avant d'évaluer
+F(4×4, 3×3), dont la borne des seuls mma est de 1,8 ms et dont les arrondis sont différents.
+
+Les convolutions sans porte appliquent maintenant le biais et le ReLU directement depuis les fragments
+Winograd et écrivent chacune des deux demi-tuiles. L'aller-retour des fragments par la disposition de
+la convolution directe disparaît à cet endroit. Avec la même entrée, en bandes de 128 lignes et en ABBA
+de 70 relectures de graphe, on mesure 13,24–13,72 ms contre 13,89–14,46 ms auparavant. Les quatre sorties
+sont identiques à l'octet. Le direct garde l'avantage sur le modèle Balanced.
 
 ## Mesurer
 

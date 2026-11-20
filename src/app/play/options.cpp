@@ -53,13 +53,13 @@ std::expected<void, Refusal> window(std::string_view text, PlayOptions& options)
 }
 
 // Les options à valeur, dans l'ordre où elles se cherchent (--snapshot-at avant --snapshot).
-constexpr std::array<std::string_view, 27> kValuedOptions{
+constexpr std::array<std::string_view, 28> kValuedOptions{
     "--model",       "--window",          "--start",           "--seconds",          "--fullscreen-after",
     "--stats",       "--snapshot-at",     "--snapshot-frames", "--snapshot",         "--keys",
     "--work-height", "--rife-model",      "--anime-contrast",  "--anime-saturation", "--anime-highlights",
     "--rife",        "--truehdr-peak",    "--data-dir",        "--bake-looks",       "--bench-level",
     "--bench-out",   "--rife-calm-model", "--motion",          "--swap-mode",        "--vrr-margin",
-    "--pause-at",    "--gmfss-dir"};
+    "--pause-at",    "--gmfss-dir",       "--gmfss-budget"};
 
 // Les options qui ne donnent qu'un chemin.
 using PathMember = std::optional<std::filesystem::path> PlayOptions::*;
@@ -88,6 +88,19 @@ std::expected<void, Refusal> motion(std::string_view text, PlayOptions& options)
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("--motion: \"{}\" is not rife, drba or gmfss", text));
   options.motion = static_cast<MotionChoice>(found - kNames.begin());
+  return {};
+}
+
+std::expected<void, Refusal> gmfss_budget(std::string_view text, PlayOptions& options) {
+  const auto comma = text.find(',');
+  const auto pair = comma == std::string_view::npos ? std::nullopt : number<double>(text.substr(0, comma));
+  const auto key = comma == std::string_view::npos ? std::nullopt : number<double>(text.substr(comma + 1));
+  const auto valid = [](const std::optional<double>& ms) { return ms && *ms >= 0.001 && *ms <= 1000.0; };
+  if (!valid(pair) || !valid(key))
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("--gmfss-budget: \"{}\" is not PAIR_MS,KEY_MS (0.001 to 1000 each)", text));
+  options.gmfss_budget = PlayOptions::GmfssBudget{.pair_us = std::llround(*pair * 1000.0),
+                                                  .key_us = std::llround(*key * 1000.0)};
   return {};
 }
 
@@ -128,23 +141,25 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
 // clang-format off
-constexpr std::array<std::string_view, 56> kTrialOptions{
+constexpr std::string_view kTrialOptions[]{
     "--rife-image", "--ring-rgb10a2", "--no-ring-rgb10a2", "--hdr-metadata", "--no-hdr-metadata",
     "--probe-nvdec", "--no-probe-nvdec", "--shot-cuts", "--no-shot-cuts", "--one-lane", "--lanes",
     "--skip-held", "--anime-shots", "--no-anime-shots", "--fast-steady", "--smooth-drawings", "--ring-watcher",
     "--no-ring-watcher", "--precise-wait", "--no-precise-wait", "--audio-pll", "--no-audio-pll",
     "--vsync-index", "--no-vsync-index", "--present", "--no-present", "--no-vrr", "--rife-calm-model",
-    "--rife-warm", "--profile-dispatches", "--rife-encode-all", "--rife-at-slot", "--filtered-warp",
+    "--rife-warm", "--profile-dispatches", "--rife-encode-all", "--rife-at-slot", "--span-b-ahead", "--filtered-warp",
     "--warp-l2", "--rife-hwc8", "--no-rife-hwc8", "--no-tfix-cache", "--scene-map", "--no-tfix-fused",
     "--no-effect-highlights", "--shot-plan", "--no-span-reuse", "--no-span-tiles", "--rife-native",
     "--pair-triage", "--span-tiles-check", "--no-gmfss-native", "--no-span-native", "--span-native-edges",
     "--effect-mask-view", "--pause-at", "--span-tiles", "--tfix-native", "--no-scene-map",
-    "--effect-highlights", "--no-rife-native"};
+    "--effect-highlights", "--no-rife-native", "--nvof-roundtrip", "--fused-layers",
+    "--span-fp8-native-blocks", "--gmfss-feature-reuse", "--no-gmfss-feature-reuse",
+    "--gmfss-budget", "--nvof-layer-guard"};
 // clang-format on
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
-  return std::ranges::find(kTrialOptions, name) != kTrialOptions.end();
+  return std::ranges::find(kTrialOptions, name) != std::ranges::end(kTrialOptions);
 }
 
 bool asks_debug(std::span<const std::string_view> args) {
@@ -162,7 +177,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 60> kFlags{{
+constexpr Flag kFlags[]{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -196,17 +211,24 @@ constexpr std::array<Flag, 60> kFlags{{
     {"--span-native", &PlayOptions::span_native, true},  // le défaut, gardé pour les anciennes commandes
     {"--no-span-native", &PlayOptions::span_native, false},
     {"--span-native-edges", &PlayOptions::span_native_edges, true},
+    {"--span-fp8-native-blocks", &PlayOptions::span_fp8_native_blocks, true},
     {"--rife-native", &PlayOptions::rife_native, true},  // le défaut, gardé pour les anciennes commandes
     {"--no-rife-native", &PlayOptions::rife_native, false},
     {"--gmfss-native", &PlayOptions::gmfss_native, true},  // le défaut, gardé pour les anciennes commandes
     {"--no-gmfss-native", &PlayOptions::gmfss_native, false},
+    {"--gmfss-feature-reuse", &PlayOptions::gmfss_feature_reuse, true},
+    {"--no-gmfss-feature-reuse", &PlayOptions::gmfss_feature_reuse, false},
     {"--tfix-native", &PlayOptions::tfix_native, true},
     {"--no-tfix-fused", &PlayOptions::temporal_fix_fused, false},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},
     {"--rife-at-slot", &PlayOptions::rife_at_slot, true},
+    {"--span-b-ahead", &PlayOptions::span_b_ahead, true},
+    {"--fused-layers", &PlayOptions::fused_layers, true},
     {"--scene-map", &PlayOptions::scene_map, true},  // le défaut, gardé pour les anciennes commandes
     {"--no-scene-map", &PlayOptions::scene_map, false},
+    {"--nvof-roundtrip", &PlayOptions::nvof_roundtrip, true},
+    {"--nvof-layer-guard", &PlayOptions::nvof_layer_guard, true},
     {"--skip-held", &PlayOptions::skip_held, true},
     {"--no-span-reuse", &PlayOptions::span_reuse, false},
     {"--span-tiles", &PlayOptions::span_tiles, true},  // le défaut, gardé pour les anciennes commandes
@@ -224,7 +246,7 @@ constexpr std::array<Flag, 60> kFlags{{
     {"--no-audio-pll", &PlayOptions::audio_pll, false},
     {"--vsync-index", &PlayOptions::vsync_index, true},
     {"--no-vsync-index", &PlayOptions::vsync_index, false},
-}};
+};
 
 // --relaunched=gpu-lost|engine-updated : posé par main.cpp sur le processus relancé (B39-01).
 std::expected<RelaunchedFor, Refusal> relaunched_reason(std::string_view arg) {
@@ -265,8 +287,9 @@ std::expected<void, Refusal> tuning(std::string_view name, std::string_view text
 
 bool set_flag(std::string_view arg, PlayOptions& options) {
   const auto flag = std::ranges::find(kFlags, arg, &Flag::name);
-  if (flag == kFlags.end()) return false;
+  if (flag == std::ranges::end(kFlags)) return false;
   options.*(flag->field) = flag->value;
+  if (arg == "--scene-map") options.given.emplace_back(arg);
   return true;
 }
 
@@ -351,6 +374,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           options.*(*member) = std::filesystem::path(text);
         } else if (name == "--motion") {
           applied = motion(text, options);
+        } else if (name == "--gmfss-budget") {
+          applied = gmfss_budget(text, options);
         } else if (name == "--window") {
           applied = window(text, options);
         } else if (name == "--bench-level") {

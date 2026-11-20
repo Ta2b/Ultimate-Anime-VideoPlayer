@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <functional>
@@ -79,13 +80,13 @@ std::vector<float> reorder(const std::vector<float>& from, int cout, int cin, in
   return out;
 }
 
-// La Conv node, de poids « gmfss.flownet.backbone.<module>.weight » (et .bias si bias), qui lit input.
+// La Conv node, de poids « <prefix><module>.weight » (et .bias si bias), qui lit input.
 std::expected<GmflowConv, Refusal> read_conv(const Model& model, std::string_view node_name,
                                              std::string_view module, bool bias, int kernel, int stride,
-                                             const std::string& input) {
+                                             const std::string& input, std::string_view prefix = kWeights) {
   const onnx::Node* node = node_of(model, std::string(node_name), "Conv");
-  const std::string weight_name = std::format("{}{}.weight", kWeights, module);
-  const std::string bias_name = std::format("{}{}.bias", kWeights, module);
+  const std::string weight_name = std::format("{}{}.weight", prefix, module);
+  const std::string bias_name = std::format("{}{}.bias", prefix, module);
   if (node == nullptr) return missing(std::format("Conv {}", node_name));
   const std::vector<std::string> inputs =
       bias ? std::vector{input, weight_name, bias_name} : std::vector{input, weight_name};
@@ -150,7 +151,7 @@ std::string output_of(const Model& model, const std::string& name, std::string_v
 // constantes), et le Concat des deux qui entre dans le squelette : sa sortie, ou vide.
 struct ImageNorm {
   std::array<float, 3> mean{};
-  std::array<float, 3> inv_std{};
+  std::array<float, 3> deviation{};
 };
 std::string read_image(const Model& model, ImageNorm& b) {
   std::array<std::string, 2> divided;
@@ -165,11 +166,10 @@ std::string read_image(const Model& model, ImageNorm& b) {
     const std::vector<float>& mean = model.constants.find(sub->inputs[1])->second->floats;
     const std::vector<float>& deviation = model.constants.find(div->inputs[1])->second->floats;
     for (std::size_t c = 0; c < 3; ++c) {
-      if (!(deviation[c] > 0.0F)) return {};
-      const float inv = 1.0F / deviation[c];
-      if (side == 1 && (b.mean[c] != mean[c] || b.inv_std[c] != inv)) return {};
+      if (!(deviation[c] > 0.0F) || !std::isfinite(deviation[c]) || !std::isfinite(mean[c])) return {};
+      if (side == 1 && (b.mean[c] != mean[c] || b.deviation[c] != deviation[c])) return {};
       b.mean[c] = mean[c];
-      b.inv_std[c] = inv;
+      b.deviation[c] = deviation[c];
     }
     divided[side] = div->outputs.empty() ? std::string() : div->outputs[0];
   }
@@ -186,14 +186,14 @@ std::string read_image(const Model& model, ImageNorm& b) {
 // hors de l'image). Un pixel x donne alors poids · (x - pad) / écart ; l'écart de pad à la moyenne, constant
 // par canal à l'intérieur, l'InstanceNorm qui suit l'efface.
 void fold_image(const ImageNorm& norm, GmflowConv& stem, GmflowBackbone& b) {
-  for (std::size_t c = 0; c < 3; ++c)
-    b.pad[c] = kernels::ref::half_to_float(kernels::ref::float_to_half(norm.mean[c]));
+  std::array<float, 3> inverse;
+  for (std::size_t c = 0; c < inverse.size(); ++c) inverse[c] = 1.0F / norm.deviation[c];
   const std::size_t per_out = stem.weights.size() / static_cast<std::size_t>(stem.cout);
   for (std::size_t o = 0; o < static_cast<std::size_t>(stem.cout); ++o) {
     double bias = stem.bias[o];
     for (std::size_t i = 0; i < per_out; ++i) {
       float& w = stem.weights[o * per_out + i];
-      w *= norm.inv_std[i % 3];
+      w *= inverse[i % 3];
       bias -= static_cast<double>(w) * static_cast<double>(b.pad[i % 3]);
     }
     stem.bias[o] = static_cast<float>(bias);
@@ -322,7 +322,15 @@ std::expected<void, Refusal> read_all(Reader& r, GmflowBackbone& b) {
   auto n = conv_norm(r, std::string(kNodes), "conv1/Conv", "norm1/InstanceNormalization", "conv1", false, 7,
                      2, image, {.tensor = b.image}, r.x);
   if (!n) return std::unexpected(std::move(n.error()));
-  fold_image(norm, b.convs.back(), b);
+  const auto as_half = [](float v) {
+    return kernels::ref::half_to_float(kernels::ref::float_to_half(v));
+  };
+  for (std::size_t c = 0; c < b.pad.size(); ++c) b.pad[c] = as_half(norm.mean[c]);
+  if (b.stem_input == GmflowStemInput::kFolded) {
+    fold_image(norm, b.convs.back(), b);
+  } else {
+    for (std::size_t c = 0; c < b.deviation.size(); ++c) b.deviation[c] = as_half(norm.deviation[c]);
+  }
   r.x_name = output_of(r.model, std::string(kNodes) + "relu1/Relu", "Relu", *n);
   if (r.x_name.empty()) return missing("relu1");
   for (const BlockSpec& spec : kBlocks) {
@@ -427,14 +435,11 @@ bool output_is(const GmflowBackbone& b, const Progress& p, int id, int level) {
   const GmflowTensor& t = b.tensors[static_cast<std::size_t>(id)];
   return t.level == level && t.channels == kGmflowMaxChannels;
 }
-}  // namespace
 
-std::expected<GmflowBackbone, Refusal> gmflow_backbone(std::span<const std::byte> pair) {
-  auto parsed = onnx::read_onnx(pair);
-  if (!parsed) return std::unexpected(Refusal{RefusalCode::ModelUnreadable, parsed.error().detail});
+Model index(const onnx::Graph& graph) {
   Model model;
-  for (const onnx::Tensor& tensor : parsed->graph.initializers) model.constants.emplace(tensor.name, &tensor);
-  for (const onnx::Node& node : parsed->graph.nodes) {
+  for (const onnx::Tensor& tensor : graph.initializers) model.constants.emplace(tensor.name, &tensor);
+  for (const onnx::Node& node : graph.nodes) {
     model.nodes.emplace(node.name, &node);
     if (node.op_type != "Constant" || node.outputs.size() != 1) continue;
     for (const onnx::Attribute& a : node.attributes) {
@@ -442,11 +447,53 @@ std::expected<GmflowBackbone, Refusal> gmflow_backbone(std::span<const std::byte
         model.constants.emplace(node.outputs[0], a.tensors.data());
     }
   }
+  return model;
+}
+}  // namespace
+
+std::expected<GmflowBackbone, Refusal> gmflow_backbone(std::span<const std::byte> pair, GmflowStemInput input) {
+  auto parsed = onnx::read_onnx(pair);
+  if (!parsed) return std::unexpected(Refusal{RefusalCode::ModelUnreadable, parsed.error().detail});
+  const Model model = index(parsed->graph);
   GmflowBackbone backbone;
+  backbone.stem_input = input;
   Reader reader{.model = model, .plan = Planner(backbone)};
   if (auto ok = read_all(reader, backbone); !ok) return std::unexpected(std::move(ok.error()));
   if (auto ok = gmflow_backbone_check(backbone); !ok) return std::unexpected(std::move(ok.error()));
   return backbone;
+}
+
+std::expected<GmflowUpsampler, Refusal> gmflow_upsampler(std::span<const std::byte> pair) {
+  auto parsed = onnx::read_onnx(pair);
+  if (!parsed) return std::unexpected(Refusal{RefusalCode::ModelUnreadable, parsed.error().detail});
+  const Model model = index(parsed->graph);
+  constexpr std::string_view kPrefix = "gmfss.flownet.upsampler.";
+  const std::string first_name = "/flownet/upsampler/upsampler.0/Conv";
+  const onnx::Node* first_node = node_of(model, first_name, "Conv");
+  const onnx::Node* flow = node_of(model, "/flownet/feature_flow_attn_1/Transpose_6", "Transpose");
+  const onnx::Node* features = node_of(model, "/flownet/transformer_1/Transpose_3", "Transpose");
+  if (first_node == nullptr || first_node->inputs.empty() || flow == nullptr || flow->outputs.size() != 1 ||
+      features == nullptr || features->outputs.size() != 1)
+    return missing("upsampler : flot ou caractéristiques au quart");
+  const std::string& in = first_node->inputs.front();
+  const auto producer = std::ranges::find_if(parsed->graph.nodes, [&](const onnx::Node& node) {
+    return node.outputs == std::vector{in};
+  });
+  if (producer == parsed->graph.nodes.end() || producer->op_type != "Concat" ||
+      producer->inputs != std::vector{flow->outputs.front(), features->outputs.front()})
+    return missing("upsampler : concaténation flot xy puis caractéristiques");
+  const onnx::Attribute* axis = attribute(*producer, "axis");
+  if (axis == nullptr || axis->i != 1) return missing("upsampler : concaténation par canal");
+  auto first = read_conv(model, first_name, "0", true, 3, 1, in, kPrefix);
+  if (!first) return std::unexpected(std::move(first.error()));
+  if (first->cin != 130 || first->cout != 256) return missing("upsampler.0 : 130 → 256 canaux");
+  const std::string relu =
+      output_of(model, "/flownet/upsampler/upsampler.1/Relu", "Relu", first_node->outputs.front());
+  if (relu.empty()) return missing("upsampler.1 : Relu attendue");
+  auto mask = read_conv(model, "/flownet/upsampler/upsampler.2/Conv", "2", true, 1, 1, relu, kPrefix);
+  if (!mask) return std::unexpected(std::move(mask.error()));
+  if (mask->cin != 256 || mask->cout != 144) return missing("upsampler.2 : 256 → 144 canaux");
+  return GmflowUpsampler{.first = std::move(*first), .mask = std::move(*mask)};
 }
 
 std::expected<void, Refusal> gmflow_backbone_check(const GmflowBackbone& b) {
@@ -454,6 +501,12 @@ std::expected<void, Refusal> gmflow_backbone_check(const GmflowBackbone& b) {
       b.tensors[static_cast<std::size_t>(b.image)].level != 0 ||
       b.tensors[static_cast<std::size_t>(b.image)].channels != 3)
     return missing("l'entrée n'est pas une image de trois plans");
+  if (b.stem_input != GmflowStemInput::kFolded) {
+    for (std::size_t c = 0; c < b.pad.size(); ++c) {
+      if (!std::isfinite(b.pad[c]) || !std::isfinite(b.deviation[c]) || !(b.deviation[c] > 0.F))
+        return missing("normalisation FP16 de l'image : moyenne ou écart");
+    }
+  }
   if (b.stats < 0 || !(b.epsilon > 0.0F)) return missing("InstanceNorm");
   Progress p{.written = std::vector<bool>(b.tensors.size(), false),
              .stats_of = std::vector<int>(static_cast<std::size_t>(b.stats), -1)};

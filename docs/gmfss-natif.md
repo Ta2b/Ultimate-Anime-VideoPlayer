@@ -1,11 +1,11 @@
 # GMFSS natif
 
-Novembre 2026. GMFSS Fortuna Union ([`interpolation.md`](interpolation.md)) en temps réel sur la RTX 4070 Ti : ses
-petits réseaux de convolutions par nos noyaux CUDA, GMFlow restant sous TensorRT. Par défaut depuis le
-19 novembre 2026, une fois la paire et la fusion natives mesurées sur le PC, chacune gardée par son essai au
-chargement (TensorRT reprend le morceau qui perd) ; `--no-gmfss-native` (essai) laisse tout GMFSS à TensorRT et
-le retire du menu. Le chantier est **en pause** depuis le 19 novembre 2026 au soir, après la première release :
-l'état de chaque levier et l'ordre de reprise sont dans [`gmfss-bilan.md`](gmfss-bilan.md), partie 4.
+GMFSS Fortuna Union ([`interpolation.md`](interpolation.md)) sur la RTX 4070 Ti. Le GridNet (45 convolutions),
+FeatureNet, MetricNet et l'IFNet d'Union tournent par nos noyaux CUDA sur les formes retenues lors de la
+reprise du 20 novembre. L'essai au chargement juge la paire, la fusion, l'IFNet et GMFlow contre les moteurs
+TensorRT correspondants. GMFlow a une chaîne CUDA complète qui doit encore franchir ce contrôle de fidélité.
+`--no-gmfss-native` laisse GMFSS à TensorRT et le retire du menu. Les mesures de reprise et les anciennes
+estimations sont dans [`gmfss-bilan.md`](gmfss-bilan.md).
 
 Le chantier s'est fait par étapes, chacune derrière `--gmfss-native` :
 
@@ -51,8 +51,20 @@ partagée, sans tampon de plus. Le reste se range dans l'épilogue existant :
 - les tenseurs sont placés dans une zone par durée de vie (`gmfss_conv_plan.cuh`, partagé avec la paire) : deux
   tenseurs qui vivent ensemble ne se recouvrent pas, le résiduel n'est donc jamais la sortie.
 
-Les entrées en plans (warped*_1..3, l'image de RIFE) passent par pixel dans x0 à x3 au début, la sortie revient en
-plans à la fin : deux copies, qu'un splat écrivant par pixel supprimera.
+Sur Ada à 960×576 dans le GridNet Union de 45 convolutions, les deux groupes résiduels suivis d'une
+remontée et d'une addition peuvent enchaîner leurs quatre couches par bandes. Les trois anneaux
+réutilisent le tampon du résiduel. Les entrées des deux branches restent vivantes jusqu'à la fin de
+l'addition pour éviter d'écraser un halo par une sortie écrite en avance. Le plan garde l'ordre
+d'accumulation du réglage FP16, y compris lorsqu'il choisit deux tranches de 32 canaux.
+
+Le chargeur choisit d'abord les précisions et l'IFNet avec le plan normal. Il compare ensuite l'image
+FP16 complète avec et sans anneaux. Un écart conserve le plan normal. Sur deux groupes réels à
+960×576, la somme des médianes des groupes passe de 3,94 à 3,47 ms avec K32, à sortie bit à bit et à
+taille d'arène inchangée.
+
+Les entrées en plans (warped*_1..3, l'image de RIFE) passent par pixel dans x0 à x3. Pour les caractéristiques,
+chaque tuile lit 32 pixels consécutifs par plan et écrit 32 canaux contigus par pixel. Les trois niveaux
+sont identiques au bit près à l'ancien rangement. La sortie revient en plans à la fin.
 
 ## FeatureNet et MetricNet de la paire
 
@@ -76,8 +88,16 @@ et half1. Au chargement (`tensorrt_gmfss_pair.cpp`), les poids du FeatureNet et 
 - le MetricNet écrit tanh × 10 au troisième plan des mouvements : tel quel au niveau 1, en moyenne 2 × 2 au
   niveau 2, en moyenne des quatre pixels du centre de chaque 4 × 4 au niveau 3 (le Resize linéaire de la paire).
 
-Les caractéristiques d'une image ne dépendent que d'elle : celles de B pourraient servir de A à la paire suivante
-(un FeatureNet par paire au lieu de deux). Ce n'est pas encore fait, la paire garde ses deux jeux.
+Les caractéristiques d'une image ne dépendent que d'elle. Le chemin natif reprend les trois
+niveaux de B quand la prochaine paire prend cette même source pour A. Le lecteur vérifie le numéro d'ingestion,
+y compris lorsqu'il adopte une paire calculée en avance. Les nouvelles sorties prennent les banques libres,
+et A référence directement la banque de B. Le backend ordonne ces trois entrées en lecture seule, y compris
+sur la voie des splats. Une paire disjointe recalcule les deux côtés. L'essai `--no-gmfss-feature-reuse`
+refait le calcul complet sur toutes les paires.
+Le banc sur la RTX à 1920×1152 trouvait les mêmes codes FP16 en copiant B. Ce transfert coûtait 0,60–0,65 ms
+contre 2,71–2,78 ms pour refaire FeatureNet d'un côté. En Instantané sur Re:Zero, le journal compte 51 paires
+réemployées sans copie (21,06 ms de médiane) et 45 paires avec deux côtés calculés (24,48 ms de médiane).
+Ces durées comprennent les autres travaux de la paire et proviennent de groupes de paires différents.
 
 ## Sommes et vitesse
 

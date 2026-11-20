@@ -4,7 +4,8 @@
   python3 -I tools/bench/banc_leger_resume.py DOSSIER
   python3 -I tools/bench/banc_leger_resume.py --selftest
 
-Colonnes : images neuves par seconde, intervalle p95 entre deux images, pertes (images sautées ou manquées), temps
+Colonnes : images neuves par seconde d'après Wayland si disponible, intervalle p95 mesuré côté lecteur,
+pertes signalées par le lecteur, temps
 GPU du réseau par passe (Vulkan : « de la première estampille à la dernière » de --profile-dispatches ; TensorRT :
 la médiane de chaque étape du .gpu.tsv), et la précision que le journal dit avoir prise pour SPAN (INT8 ou non).
 Le verdict de l'Auto se lit avec les captures (capture-N-variante.ppm) : une variante légère n'entre dans
@@ -17,7 +18,7 @@ import statistics
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from banc_resume import read_stats, summarize  # noqa: E402
+from banc_resume import read_stats, summarize, visible_stats  # noqa: E402
 
 PASS = re.compile(r"extrait(\d+)-tour(\d+)-([a-z0-9-]+)\.tsv$")
 VULKAN = re.compile(r"de la première estampille à la dernière : ([0-9.]+) ms")
@@ -61,7 +62,8 @@ def collect(directory):
         match = PASS.search(os.path.basename(path))
         if not match:
             continue
-        summary = summarize(read_stats(path))
+        rows = read_stats(path)
+        summary = summarize(rows, visible=visible_stats(path, rows))
         if not summary:
             continue
         base = path[:-len(".tsv")]
@@ -81,7 +83,7 @@ def report(found):
     lines = []
     for extrait in sorted({key[0] for key in found}):
         lines.append(f"extrait {extrait}")
-        lines.append(f"  {'variante':14} {'tours':>5} {'neuves/s':>9} {'p95 ms':>8} {'pertes':>7} {'GPU ms':>8}  remarque")
+        lines.append(f"  {'variante':14} {'tours':>5} {'visibles/s':>10} {'p95 ms':>8} {'pertes':>7} {'GPU ms':>8}  remarque")
         for (e, label), runs in sorted(found.items()):
             if e != extrait:
                 continue
@@ -95,7 +97,9 @@ def report(found):
                 notes.append("TensorRT : " + ", ".join(f"{n} {mean(v):.2f}" for n, v in sorted(stages.items())))
             if label == "span-int8":
                 notes.append("INT8 pris" if all(r["int8"] for r in runs) else "INT8 absent du journal : FP16 ?")
-            lines.append(f"  {label:14} {len(runs):5d} {mean([r['images_neuves_s'] for r in runs]):9.2f} "
+            visible = [r["visible"] for r in runs]
+            rate = f"{mean([r['images_neuves_s'] for r in visible]):.2f}" if all(visible) else "-"
+            lines.append(f"  {label:14} {len(runs):5d} {rate:>10} "
                          f"{mean([r['p95_ms'] for r in runs]):8.2f} {mean([r['pertes'] for r in runs]):7.1f} "
                          f"{f'{mean(gpu):.2f}' if gpu else '-':>8}  {' ; '.join(notes)}")
     return "\n".join(lines) if lines else "aucun passage lisible"

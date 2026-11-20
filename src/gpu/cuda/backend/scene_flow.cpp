@@ -20,6 +20,7 @@ std::size_t tile_count(int cols, int rows) {
 
 SceneFlow::~SceneFlow() {
   session_.reset();  // attend la file de NVOF
+  roundtrip_.reset();
   release_grid();
   if (lumas_ready_ != nullptr) static_cast<void>(cudaEventDestroy(lumas_ready_));
   for (cudaEvent_t event : released_) {
@@ -51,7 +52,9 @@ std::expected<bool, Refusal> SceneFlow::prepare(int flow_width, int flow_height,
   if (session_ && session_->width() == flow_width && session_->height() == flow_height && divisor_ == divisor)
     return false;
   // Une autre taille : l'ancienne session finit son travail, puis tout est refait.
+  roundtrip_notice_ = finish_roundtrip();
   session_.reset();
+  roundtrip_.reset();
   released_posted_ = {};
   last_.reset();
   launched_ = {};
@@ -74,7 +77,24 @@ std::expected<bool, Refusal> SceneFlow::prepare(int flow_width, int flow_height,
     refused_ = ok.error();
     return std::unexpected(std::move(ok.error()));
   }
+  if (roundtrip_wanted_) {
+    auto reverse = SceneRoundtrip::open(flow_width, flow_height, divisor);
+    if (reverse) {
+      roundtrip_ = std::move(*reverse);
+    } else {
+      roundtrip_wanted_ = false;
+      roundtrip_notice_ += std::format(" NVOF aller-retour indisponible : {}", reverse.error().detail);
+    }
+  }
   return true;
+}
+
+std::string SceneFlow::finish_roundtrip() {
+  if (roundtrip_) {
+    if (!roundtrip_notice_.empty()) roundtrip_notice_ += '\n';
+    roundtrip_notice_ += roundtrip_->finish();
+  }
+  return std::exchange(roundtrip_notice_, {});
 }
 
 std::expected<void, Refusal> SceneFlow::allocate_grid() {
@@ -184,6 +204,16 @@ std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lu
       cuda_check(cudaMemcpyAsync(read.host, device_, bytes, cudaMemcpyDeviceToHost, own), "cudaMemcpyAsync");
   if (ready) ready = cuda_check(cudaEventRecord(read.done, own), "cudaEventRecord");
   if (!ready) return std::unexpected(std::move(ready.error()));
+  if (roundtrip_ && roundtrip_->start(*session_, lumas.a, lumas.b, ticket)) {
+    // L'aller est déjà publiable. Le retour n'emprunte ses lumas que pour les copier. Le prochain plan
+    // voit les deux événements relâchés après ces copies, y compris si un appel a refusé la suite.
+    for (const int slot : {lumas.a, lumas.b}) {
+      if (auto ok =
+              cuda_check(cudaEventRecord(released_[static_cast<std::size_t>(slot)], own), "cudaEventRecord");
+          !ok)
+        return std::unexpected(std::move(ok.error()));
+    }
+  }
 #ifdef _WIN32
   // WDDM garde les lancements dans un lot logiciel : la file de NVOF est poussée tout de suite, comme la voie
   // à chaque étape (TensorRtBackend::push_launches). « Pas prête » est la réponse normale.
@@ -195,6 +225,7 @@ std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lu
 }
 
 std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> SceneFlow::take(std::uint64_t ticket) {
+  if (roundtrip_) roundtrip_->poll();
   Read& read = reads_[ticket % reads_.size()];
   if (ticket == 0 || read.ticket != ticket || read.host == nullptr)
     return refuse(RefusalCode::SequenceOrder, std::format("scene_flow_take : ticket {} périmé", ticket));
@@ -211,6 +242,12 @@ std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> SceneFlow::take(s
   tiles.tiles.resize(tile_count(cols_, rows_));
   std::memcpy(tiles.tiles.data(), read.host, tiles.tiles.size() * sizeof(kernels::SceneTileSums));
   return std::optional(std::move(tiles));
+}
+
+std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> SceneFlow::take_roundtrip(
+    std::uint64_t ticket) {
+  if (roundtrip_) return roundtrip_->take(ticket);
+  return refuse(RefusalCode::FormatUnsupported, "scene_roundtrip : retour indisponible");
 }
 
 }  // namespace kirari::gpu::cuda

@@ -111,6 +111,7 @@ class PlaceboScreen final : public Screen {
   // Les noms de toutes les cartes Vulkan du système, pour le choix de la carte (portables à deux cartes).
   std::vector<std::string> device_names() const;
   SDL_Window* window() const;
+  int swapchain_depth() const;
   // Ce que l'écran présente : sa sortie (sRGB ou PQ) et son type, pour l'OSD.
   std::string output_description() const;
   // Faux quand le grade n'a pas pu se créer sur ce GPU (ses hooks refusés) : l'image passe sans lui.

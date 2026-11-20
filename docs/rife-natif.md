@@ -4,9 +4,9 @@ Novembre 2026. L'encodeur et les convolutions des blocs de RIFE fusionné ([`rif
 par nos propres noyaux CUDA, à la place des six moteurs TensorRT, ou de ceux d'entre eux qu'ils battent : l'essai au
 chargement choisit morceau par morceau. La colle entre blocs, les warps et la fin
 (`rife_fused_kernels.cu`, `warp_lib`) ne changent pas : le natif lit et écrit les mêmes tampons, dans les mêmes
-formats (X et Y en HWC8), sans reformatage. Seule exception, la colle du dernier bloc en pleine résolution : sa
-première couche native peut la refaire à la volée (plus bas). L'encodage d'une image reste calculé une fois pour
-deux paires, le tri des paires, l'Auto et `held_pair` ne voient aucune différence.
+formats (X et Y en HWC8), sans reformatage. La première couche native des deux derniers blocs peut
+calculer sa colle à la volée, à demi-taille ou en pleine résolution. L'encodage d'une image reste
+calculé une fois pour deux paires, le tri des paires, l'Auto et `held_pair` ne voient aucune différence.
 
 Cible : RIFE 4.25 ×2 sur la RTX 4070 Ti à 23 % d'occupation ou moins (environ 5,3 ms par image créée), contre 30 %
 aujourd'hui (6,9 ms) et 23 % pour le RIFE natif de mpv AnimeJaNai ; 50 dB ou plus contre TensorRT FP16.
@@ -71,11 +71,16 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   le flot, la sortie de la couche). La colle du dernier bloc ne passe plus quand un réseau natif fait ce bloc à la
   volée. L'essai mesure aussi chaque réseau avec la colle à part puis sa première couche réglée, et garde la plus
   rapide des deux (le journal donne les deux temps) : sur une carte où la colle à la volée perd, le dernier bloc
-  reste natif. Le relèvement réserve, par source d'échelle s, au plus `glue_capacity(s)` pixels de Y. Cette borne
+  reste natif. Le relèvement réserve, par source d'échelle s, au plus `glue_capacity(s, d)` pixels de Y. Cette borne
   est vérifiée sur 11 millions de tuiles (tailles de 32 à 2176 lignes, échelles 1 à 32) et atteinte sans être
   dépassée. La colle de TensorRT appelle les mêmes fonctions : sa SASS ne change que par l'arithmétique d'adresses,
   avec les mêmes opérations flottantes. Il existe 12 noyaux (sommes × 3 ou 4 blocs d'avant × tuile 16 ou 32), à 160
-  registres au plus (sm_120), sans débordement ;
+  registres au plus (sm_120), sans débordement pour d = 1 ;
+- **colle à demi-taille pour l'avant-dernier bloc**. L'essai du réseau compare aussi les deux chemins
+  quand d = 2. Il garde un choix indépendant et l'inscrit dans le verdict en cache avec celui du
+  dernier bloc. Sur RTX 4070 Ti avec RIFE 4.25 à 1920 × 1088, l'essai FP16 de ce bloc a donné
+  0,617 ms à la volée et 0,678 ms à part. Le seuil de la chaîne reste à 45 dB et le mélange retenu
+  a mesuré 48,5 dB. Les passages 4K HDR n'ont pas établi de gain de cadence reproductible ;
 - **fin dans la dernière couche** (`rife_native_finish.cu`). La transposée du dernier bloc écrivait Y (52 canaux,
   56 rangés, à la moitié de la pleine résolution : 58 Mo en 1920 × 1088), dont fused_finish ne relisait que les
   20 premiers (le flot du bloc et le masque, en quatre parités). Quand la forme réglée de cette couche n'a pas de

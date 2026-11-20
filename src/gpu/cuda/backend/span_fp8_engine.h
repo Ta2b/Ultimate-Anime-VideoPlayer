@@ -2,7 +2,8 @@
 // à la place d'un moteur TensorRT quand la variante du modèle est un paquet « .span8 »
 // (docs/span-fp8-cutlass.md). Les noyaux tournent sur le flux du backend ; leurs tampons intermédiaires
 // vivent dans la zone d'activation de la voie (SharedActivations), comme ceux d'un moteur TensorRT. Étape 3.3
-// : le corps du réseau est capturé en graphe CUDA par adresse d'entrée (kMaxGraphs au plus), la queue
+// : le corps du réseau est capturé en graphe CUDA par adresse d'entrée (kMaxGraphs au plus par mode
+// entier ou masqué), la queue
 // (to_pixel, DepthToSpace fondu depuis l'étape 3.4a) lancée en direct avec l'adresse de sortie : un
 // cudaGraphLaunch et un lancement par image.
 #pragma once
@@ -47,10 +48,11 @@ class SpanFp8Engine final : public Engine {
   // de zéros par les noyaux (un noyau qui ne tourne pas sur cet appareil se voit ici, au chargement, pas en
   // pleine lecture), puis prend sa zone de travail dans shared. Refus : fichier ou paquet illisible, paquet
   // réécrit depuis la construction (GraphInvalid), taille ou appareil que les noyaux ne prennent pas,
-  // mémoire. native_edges : les bords du FP8 par les noyaux du FP16 natif (SpanFp8Weights::native_edges).
+  // mémoire. native_edges : les bords du FP8 par les noyaux du FP16 natif. native_blocks : essaie les
+  // deux 3×3 avec ReLU du FP8 C48, puis compare au même réseau CUTLASS avant de les retenir.
   static std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> load(
       const std::filesystem::path& package, std::uint32_t crc, int height, int width,
-      const std::shared_ptr<SharedActivations>& shared, bool native_edges = false);
+      const std::shared_ptr<SharedActivations>& shared, bool native_edges = false, bool native_blocks = false);
   ~SpanFp8Engine() override;
   SpanFp8Engine(const SpanFp8Engine&) = delete;
   SpanFp8Engine& operator=(const SpanFp8Engine&) = delete;
@@ -82,12 +84,16 @@ class SpanFp8Engine final : public Engine {
   std::expected<void, Refusal> enqueue_tail(cudaStream_t stream, std::span<const Tensor> outputs,
                                             const SpanFp8Ring& ring);
 
-  // Le mot du moteur pour le journal (accumulateur f16 débordé, graphes coupés, plus de place), une fois ;
+  // Le mot du moteur pour le journal (accumulateur, graphes ou zone compacte), une fois ;
   // vide sinon.
   std::string take_notice() {
-    return overflow_notice_.empty() ? book_.take_notice() : std::exchange(overflow_notice_, {});
+    if (!runtime_notice_.empty()) return std::exchange(runtime_notice_, {});
+    auto notice = full_graphs_.book.take_notice();
+    return notice.empty() ? tiled_graphs_.book.take_notice() : notice;
   }
-  const GraphCounters& graph_counters() const { return book_.counters(); }
+  const GraphCounters& graph_counters(bool tiled = false) const {
+    return (tiled ? tiled_graphs_ : full_graphs_).book.counters();
+  }
   // SPAN FP16 natif : le PSNR de la carte contre le calcul du processeur au chargement (span_fp8_check.h) ;
   // vide pour un paquet FP8, ou une image trop petite pour en juger.
   std::optional<double> native_check_db() const { return native_check_db_; }
@@ -96,15 +102,17 @@ class SpanFp8Engine final : public Engine {
   bool fp16() const { return fp16_; }
   SpanNativeSums sums() const { return sums_; }
   bool native_edges() const { return native_edges_; }
+  bool native_blocks() const { return native_blocks_; }
+  std::string_view native_blocks_notice() const { return native_blocks_notice_; }
 
  private:
   SpanFp8Engine() = default;
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
   // Le corps sur stream : rejoué, capturé ou lancé en direct selon le registre.
-  std::expected<void, Refusal> body(cudaStream_t stream, const void* source);
+  std::expected<void, Refusal> body(cudaStream_t stream, const void* source, bool tiled);
   void drop_graphs();
   // Tuiles qui bougent : la demande prise pour cet appel, décalage de la sortie d'avant et masques envoyés.
-  // Vrai : le corps se lance masqué, en direct (un graphe capturé est celui de l'image entière).
+  // Vrai : le corps se lance masqué. Les masques gardent leur adresse pendant la vie du moteur.
   std::expected<bool, Refusal> start_tiles(cudaStream_t stream, std::uintptr_t output);
   bool allocate_tiles();
   void end_tiles();
@@ -127,13 +135,19 @@ class SpanFp8Engine final : public Engine {
 
   static constexpr std::size_t kMaxGraphs = 4;
   static constexpr int kCaptureAttempts = 3;
-  GraphBook<std::uintptr_t> book_{kMaxGraphs, kCaptureAttempts};
-  std::vector<cudaGraphExec_t> execs_;  // rangés par l'indice du registre
+  struct BodyGraphs {
+    GraphBook<std::uintptr_t> book{kMaxGraphs, kCaptureAttempts};
+    std::vector<cudaGraphExec_t> execs;  // rangés par l'indice du registre
+  };
+  // Un refus ou une autre adresse dans le chemin masqué ne perturbe pas les graphes de l'image entière.
+  BodyGraphs full_graphs_, tiled_graphs_;
   std::optional<double> native_check_db_;
   bool fp16_ = false;
   SpanNativeSums sums_ = SpanNativeSums::F16;
   bool native_edges_ = false;
-  std::string overflow_notice_;
+  bool native_blocks_ = false;
+  std::string native_blocks_notice_;
+  std::string runtime_notice_;
 
   std::unique_ptr<SpanFp8Net> net_;
   std::vector<std::string> inputs_{"input"};

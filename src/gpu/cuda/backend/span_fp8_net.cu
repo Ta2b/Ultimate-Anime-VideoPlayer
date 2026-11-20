@@ -97,6 +97,11 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
     return nullptr;
   }
   const bool narrow48 = weights.channels == 48 && weights.width48 != SpanFp8Width::Padded;
+  if (weights.native_relu && (weights.fp16 || !narrow48 || weights.width48 != SpanFp8Width::Native)) {
+    status = SpanFp8Status::Failed;
+    error = "les ReLU natives du FP8 demandent 48 canaux en K à plat";
+    return nullptr;
+  }
   // K par position à 48 canaux et accumulateur f16 : 7 % de NaN sur la RTX 4070 Ti, poids à queue lourde,
   // alors que K à plat et le calcul en 64 restent finis. Ce chemin ne sert qu'à la mesure et n'y gagne rien
   // (kirari_span_tile_bench : 48 canaux sans gain sur 64 en FP8) : refusé plutôt que corrigé.
@@ -120,6 +125,13 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
     sent = impl->body->upload(weights, status, error);
   }
   if (!sent) return nullptr;
+  // Les poids paginés partent sur la voie par défaut. La première inférence peut être enfilée
+  // sur une voie non bloquante qui ne rejoint pas automatiquement le transfert.
+  if (const auto e = cudaStreamSynchronize(nullptr); e != cudaSuccess) {
+    status = e == cudaErrorMemoryAllocation ? SpanFp8Status::OutOfMemory : SpanFp8Status::Failed;
+    error = cudaGetErrorString(e);
+    return nullptr;
+  }
   return std::unique_ptr<SpanFp8Net>(new SpanFp8Net(std::move(impl)));
 }
 

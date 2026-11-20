@@ -61,16 +61,15 @@ std::vector<uint32_t> caps(const NV_OF_CUDA_API_FUNCTION_LIST& calls, NvOFHandle
   return values;
 }
 
-// Une file à la priorité la plus haute (le plus petit nombre) : la réduction et la copie de la carte passent
-// devant les blocs en attente des voies, la carte arrive tôt.
-std::expected<void, Refusal> high_priority_stream(cudaStream_t& stream) {
+// L'aller et ses réductions passent devant les blocs en attente. Le retour expérimental est moins urgent.
+std::expected<void, Refusal> stream_for(cudaStream_t& stream, bool urgent) {
   int least = 0;
   int greatest = 0;
   if (auto ok =
           cuda_check(cudaDeviceGetStreamPriorityRange(&least, &greatest), "cudaDeviceGetStreamPriorityRange");
       !ok)
     return ok;
-  return cuda_check(cudaStreamCreateWithPriority(&stream, cudaStreamNonBlocking, greatest),
+  return cuda_check(cudaStreamCreateWithPriority(&stream, cudaStreamNonBlocking, urgent ? greatest : least),
                     "cudaStreamCreateWithPriority");
 }
 
@@ -131,7 +130,7 @@ struct NvofSession::Buffers {
   }
 };
 
-std::expected<std::unique_ptr<NvofSession>, Refusal> NvofSession::open(int width, int height) {
+std::expected<std::unique_ptr<NvofSession>, Refusal> NvofSession::open(int width, int height, bool urgent) {
   if (width < kernels::kSceneFlowMinSide || height < kernels::kSceneFlowMinSide) {
     return refuse(RefusalCode::ShapeInvalid,
                   std::format("flux optique : luma {}x{} trop petite", width, height));
@@ -192,7 +191,7 @@ std::expected<std::unique_ptr<NvofSession>, Refusal> NvofSession::open(int width
                   std::format("flux optique : luma {}x{} hors des tailles du pilote", width, height));
   }
 
-  if (auto ok = high_priority_stream(session->stream_); !ok) return std::unexpected(ok.error());
+  if (auto ok = stream_for(session->stream_, urgent); !ok) return std::unexpected(ok.error());
   if (const auto status = api.calls.nvOFSetIOCudaStreams(api.handle, session->stream_, session->stream_);
       status != NV_OF_SUCCESS)
     return api.failed(status, "nvOFSetIOCudaStreams");

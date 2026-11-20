@@ -50,7 +50,7 @@ constexpr std::array kVisibleTexts{
     Entry{"External · {}", "Externe · {}"},
     Entry{"External · {} · {}", "Externe · {} · {}"},
     Entry{"FP16 reference", "référence FP16"},
-    Entry{"Fast · {:.0f} fps", "Rapide · {:.0f} i/s"},
+    Entry{"Fast · {:.0f} planned fps", "Rapide · {:.0f} i/s planifiées"},
     Entry{"Installing {}", "Installation de {}"},
     Entry{"No SPAN model in use: nothing to prepare.", "Aucun modèle SPAN en service : rien à préparer."},
     Entry{"Performance mode (FP8) is for the AnimeJaNai SPAN models: ArtCNN stays in FP16.",

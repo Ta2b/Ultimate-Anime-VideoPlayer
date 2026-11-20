@@ -15,6 +15,22 @@
 #include "prepare/utf8.h"
 
 namespace kirari::app::play {
+
+TEST_CASE("Export : le menu et le nom gardent la cadence des sources non interpolées", "[app][export]") {
+  PlaySettings s;
+  s.rife_auto = true;
+  s.rife_factor = 10;
+  CHECK(export_factor(s, 24.0) == Factor{.num = 2, .den = 1});
+  CHECK(export_factor(s, 0.0) == Factor{.num = 2, .den = 1});
+  CHECK(export_factor(s, 59.94).num <= export_factor(s, 59.94).den);
+  CHECK(export_rate({.num = 60'000, .den = 1'001}, export_factor(s, 59.94)) ==
+        media::Rational{.num = 60'000, .den = 1'001});
+  s.rife_auto = false;
+  s.rife_factor = 3;
+  s.rife_factor_den = 2;
+  CHECK(export_factor(s, 30.0) == Factor{.num = 3, .den = 2});
+  CHECK(export_factor(s, 50.0).num <= export_factor(s, 50.0).den);
+}
 namespace {
 
 // Un dossier vide, effacé à la fin du test.
@@ -52,6 +68,10 @@ TEST_CASE("Export : la chaîne sans HDR adaptatif, grade ni Smooth Motion", "[ap
   CHECK(out.work_height == s.work_height);
   s.rife_auto = true;  // P3.87 : l'Auto de la lecture devient ×2
   CHECK(factor_of(export_chain(s)) == kirari::app::play::Factor{.num = 2, .den = 1});
+  CHECK(export_factor(s) == factor_of(export_chain(s)));
+  s.rife_factor = 1;
+  CHECK(export_factor(s) == kirari::app::play::Factor{.num = 1, .den = 1});
+  CHECK_FALSE(export_chain(s).rife_auto);
 }
 
 TEST_CASE("Export : la sortie de la chaîne est la taille de travail, doublée par SPAN", "[app][export]") {
@@ -190,6 +210,10 @@ TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours
   CHECK(lossless->output == std::filesystem::path("/tmp/sortie.mkv"));
   CHECK(scripted_export("export-lossless", running, video, source)->codec == exporter::Codec::Lossless);
   CHECK_FALSE(scripted_export("export-losslessly", running, video, source));
+  video.frame_rate = {.num = 60, .den = 1};
+  const auto sixty = scripted_export("export", running, video, source);
+  REQUIRE(sixty);
+  CHECK(sixty->output == dir.path / "clip [kirari 2560x1440 60fps].mkv");
 }
 
 TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {

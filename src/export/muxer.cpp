@@ -1,9 +1,11 @@
 #include "export/muxer.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <limits>
 #include <optional>
 #include <string>
@@ -12,18 +14,33 @@
 #include <utility>
 
 extern "C" {
+#include <libavutil/common.h>
 #include <libavutil/dict.h>
 #include <libavutil/mathematics.h>
 #include <libavutil/mem.h>
 }
 
 #include "core/log.h"
+#include "av/input_whitelist.h"
 
 namespace kirari::exporter {
 namespace {
 
 // Les paquets copiés passent jusqu'à 0,5 s devant la vidéo : le mux les entrelace sans attendre.
 constexpr std::int64_t kCopyLeadUs = 500'000;
+
+std::string file_url(const std::filesystem::path& path) {
+  std::error_code error;
+  const auto absolute = std::filesystem::absolute(path, error);
+  return "file:" + utf8(error ? path : absolute);
+}
+
+std::filesystem::path partial_path_for(const std::filesystem::path& output) {
+  static std::atomic<std::uint64_t> sequence = 0;
+  const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+  return output.parent_path() /
+         std::format(".kirari-export-{:x}-{:x}.partial", ticks, sequence.fetch_add(1, std::memory_order_relaxed));
+}
 
 std::int64_t to_us(std::int64_t ts, AVRational time_base) {
   return av_rescale_q(ts, time_base, kMicroseconds);
@@ -91,7 +108,7 @@ void purge_stale_partials(const std::filesystem::path& dir) {
   for (std::filesystem::directory_iterator it(dir.empty() ? "." : dir, error), end; !error && it != end;
        it.increment(error)) {
     const std::filesystem::path& path = it->path();
-    if (path.extension() != ".partial" || path.filename().string().find("[kirari ") == std::string::npos)
+    if (path.extension() != ".partial" || utf8(path.filename()).find("[kirari ") == std::string::npos)
       continue;
     std::error_code ignored;
     const auto written = std::filesystem::last_write_time(path, ignored);
@@ -110,17 +127,20 @@ std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
   m.output_path_ = output;
   // Le fichier est écrit à côté, puis renommé : annuler ou échouer laisse intact un fichier qui
   // porterait déjà ce nom. Le format est donné par son nom, non par l'extension.
-  m.partial_path_ = output;
-  m.partial_path_ += ".partial";
-  purge_stale_partials(output.parent_path());
+  m.partial_path_ = partial_path_for(output);
   const std::optional<Container> container = container_of(output);
   if (!container)
     return refuse(RefusalCode::FileUnwritable, std::format("{} : ni .mkv, ni .mp4, ni .mov", utf8(output)));
   m.container_ = *container;
   AVFormatContext* input = nullptr;
   const std::string source_text = utf8(source);
-  if (const int err = avformat_open_input(&input, source_text.c_str(), nullptr, nullptr); err < 0)
-    return refuse_av(RefusalCode::MediaUnreadable, source_text, err);
+  AVDictionary* input_options = nullptr;
+  av_dict_set(&input_options, "protocol_whitelist", "file", 0);
+  av_dict_set(&input_options, "format_whitelist", av::kAllowedDemuxers, 0);
+  av_dict_set(&input_options, "codec_whitelist", av::kAllowedDecoders, 0);
+  const int opened = avformat_open_input(&input, file_url(source).c_str(), nullptr, &input_options);
+  av_dict_free(&input_options);
+  if (opened < 0) return refuse_av(RefusalCode::MediaUnreadable, source_text, opened);
   m.input_.reset(input);
   if (const int err = avformat_find_stream_info(input, nullptr); err < 0)
     return refuse_av(RefusalCode::MediaUnreadable, std::format("{} : flux", source_text), err);
@@ -130,7 +150,7 @@ std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
       chosen ? video_stream : av_find_best_stream(input, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
   if (input->start_time != AV_NOPTS_VALUE)
     m.start_us_ = av_rescale_q(input->start_time, AV_TIME_BASE_Q, kMicroseconds);
-  const std::string output_text = utf8(m.partial_path_);
+  const std::string output_text = file_url(m.partial_path_);
   const std::string format(format_name(m.container_));
   if (const int err =
           avformat_alloc_output_context2(&m.output_, nullptr, format.c_str(), output_text.c_str());
@@ -303,10 +323,16 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
   }
 
   if ((out.oformat->flags & AVFMT_NOFILE) == 0) {
-    const std::string path = utf8(partial_path_);
-    if (const int err = avio_open(&out.pb, path.c_str(), AVIO_FLAG_WRITE); err < 0)
-      return refuse_av(RefusalCode::FileUnwritable, path, err);
+    purge_stale_partials(output_path_.parent_path());
+    // Réservation exclusive : si deux exports touchent la même destination, aucun n'ouvre le
+    // temporaire de l'autre. Le mux MP4 doit pouvoir rouvrir le sien pour déplacer l'index.
+    std::ofstream claim(partial_path_, std::ios::binary | std::ios::out | std::ios::noreplace);
+    if (!claim) return refuse(RefusalCode::FileUnwritable, utf8(partial_path_));
     opened_ = true;
+    claim.close();
+    if (!claim) return refuse(RefusalCode::FileUnwritable, utf8(partial_path_));
+    if (const int err = avio_open(&out.pb, out.url, AVIO_FLAG_WRITE); err < 0)
+      return refuse_av(RefusalCode::FileUnwritable, utf8(partial_path_), err);
   }
   AVDictionary* options = nullptr;
   if (const int timescale = video_timescale(encoder.framerate.num, encoder.framerate.den);
@@ -359,8 +385,10 @@ std::expected<void, Refusal> Muxer::write_copies(std::int64_t until_us) {
     av_packet_rescale_ts(pending_.get(), input_->streams[index]->time_base, to->time_base);
     if (choice_.audio_delay_us != 0 && to->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
       const std::int64_t shift = av_rescale_q(choice_.audio_delay_us, kMicroseconds, to->time_base);
-      if (pending_->pts != AV_NOPTS_VALUE) pending_->pts += shift;
-      if (pending_->dts != AV_NOPTS_VALUE) pending_->dts += shift;
+      if (pending_->pts != AV_NOPTS_VALUE)
+        pending_->pts = std::max<std::int64_t>(AV_NOPTS_VALUE + 1, av_sat_add64(pending_->pts, shift));
+      if (pending_->dts != AV_NOPTS_VALUE)
+        pending_->dts = std::max<std::int64_t>(AV_NOPTS_VALUE + 1, av_sat_add64(pending_->dts, shift));
     }
     pending_->stream_index = to->index;
     pending_->pos = -1;
@@ -374,7 +402,8 @@ std::expected<void, Refusal> Muxer::write_copies(std::int64_t until_us) {
 std::expected<void, Refusal> Muxer::write_video(AVPacket& packet) {
   const std::int64_t ts = packet.dts != AV_NOPTS_VALUE ? packet.dts : packet.pts;
   if (ts != AV_NOPTS_VALUE) {
-    if (auto copied = write_copies(to_us(ts, encoder_time_base_) + kCopyLeadUs); !copied) return copied;
+    if (auto copied = write_copies(av_sat_add64(to_us(ts, encoder_time_base_), kCopyLeadUs)); !copied)
+      return copied;
   }
   AVStream* video = output_->streams[0];
   av_packet_rescale_ts(&packet, encoder_time_base_, video->time_base);
@@ -384,6 +413,8 @@ std::expected<void, Refusal> Muxer::write_video(AVPacket& packet) {
   if (packet.dts != AV_NOPTS_VALUE) {
     if (packet.dts <= last_dts_) {
       if (container_ != Container::Matroska) {
+        if (last_dts_ == std::numeric_limits<std::int64_t>::max())
+          return refuse(RefusalCode::EncodeFailed, "mux : plus de pas après le dernier DTS");
         log_channel("export")->debug("dts vidéo {} après {} : décalé d'un pas", packet.dts, last_dts_);
         packet.dts = last_dts_ + 1;
         if (packet.pts != AV_NOPTS_VALUE && packet.pts < packet.dts) packet.pts = packet.dts;

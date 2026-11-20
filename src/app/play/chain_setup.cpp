@@ -136,14 +136,14 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
       estimated < work.height
           ? i18n::tr_format(" · motion estimated at {}p (speed gain not measured)", estimated)
           : std::string();
+  const std::string cadence = settings.rife_auto ? i18n::tr("Auto") : factor_text(factor_of(settings));
   if (use_drba())
-    return std::format("DistilDRBA {}{}{} · ", factor_text(factor_of(settings)),
-                       drba_fused ? i18n::tr(" fused") : "", reduced);
-  if (use_apple()) return std::format("Apple {} · VideoToolbox · ", factor_text(factor_of(settings)));
-  if (gmfss_use == GmfssUse::Only) return std::format("GMFSS union {} · ", factor_text(factor_of(settings)));
+    return std::format("DistilDRBA {}{}{} · ", cadence, drba_fused ? i18n::tr(" fused") : "", reduced);
+  if (use_apple()) return std::format("Apple {} · VideoToolbox · ", cadence);
+  if (gmfss_use == GmfssUse::Only) return std::format("GMFSS union {} · ", cadence);
   if ((rife || rife_motion) && rife_model)
-    return std::format("RIFE {} · {}{}{}{} · ", factor_text(factor_of(settings)),
-                       core::to_utf8(rife_model->stem()), rife_fused ? i18n::tr(" fused") : "",
+    return std::format("RIFE {} · {}{}{}{} · ", cadence, core::to_utf8(rife_model->stem()),
+                       rife_fused ? i18n::tr(" fused") : "",
                        gmfss_use != GmfssUse::Middle ? ""
                        : gmfss_px == 0.0F            ? i18n::tr(" + GMFSS union on every pair")
                                                      : i18n::tr(" + GMFSS union on fast motion"),
@@ -167,6 +167,10 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
   const WorkSize sized = chain_work_size(settings, width, height);
   // Plan par plan en lecture seulement (l'horloge et les plans de la pré-analyse) : l'export garde RIFE.
   const bool by_shot = drba_by_shot && clock != nullptr && live != nullptr;
+  const WorkSize motion = gmfss_use == GmfssUse::Only ? sized
+                          : rife_motion               ? rife_size
+                          : drba_motion               ? drba_size
+                                                      : WorkSize{};
   return UpscaleSetup{
       .backend = backend.get(),
       .engine = engine.get(),
@@ -186,28 +190,26 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .drba_motion = drba_motion,
       .drba_by_shot = by_shot,
       .temporal_by_shot = shot_plan && temporal_fix != nullptr && clock != nullptr,
+      .drba_fused = drba_fused,
       .rife_factor = factor_of(settings),
       .one_lane = one_lane,
       .rife_warm = rife_warm,
       .rife_encode_all = rife_encode_all,
       .rife_at_slot = rife_at_slot,
+      .span_b_ahead = span_b_ahead && clock != nullptr,
       .live = std::move(live),
       .clock = clock,
       .source_width = width,
       .source_height = height,
       .work_width = sized.width,
       .work_height = sized.height,
-      .rife_width = rife_motion   ? rife_size.width
-                    : drba_motion ? drba_size.width
-                                  : 0,
-      .rife_height = rife_motion   ? rife_size.height
-                     : drba_motion ? drba_size.height
-                                   : 0,
+      .rife_width = motion.width,
+      .rife_height = motion.height,
       .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, order_factor),
       // En lecture (horloge présente), un instant déjà passé n'est ni calculé ni écrit, en Rapide comme à pas
       // constant : l'image serait jetée par la présentation (audit F11).
       .late_fate = clock != nullptr,
-      .smooth_drawings = smooth_drawings,
+      .smooth_drawings = held_extras().smooth_drawings,
       .gmfss = {.use = gmfss_use,
                 .pair = gmfss_pair.get(),
                 .fusion = gmfss_fusion.get(),
@@ -223,7 +225,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .pan_lock = settings.pan_lock && (rife_motion || drba_motion),
       .pair_triage = pair_triage && (rife_motion || gmfss_use != GmfssUse::Off),
       .slots = std::move(slots),
-      .scene_map = scene_map};
+      .scene_map = scene_map,
+      .nvof_roundtrip = nvof_roundtrip};
 }
 
 namespace {
@@ -367,6 +370,10 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.temporal_fix_whole = o.temporal_fix_whole;
   c.rife_encode_all = o.rife_encode_all;
   c.rife_at_slot = o.rife_at_slot;
+  c.span_b_ahead = o.span_b_ahead;
+  c.fused_layers = o.fused_layers;
+  c.nvof_layer_guard = o.nvof_layer_guard;
+  c.nvof_roundtrip = o.nvof_roundtrip || o.nvof_layer_guard;
   c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
   c.span_reuse = o.span_reuse;
@@ -378,19 +385,22 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
 
 // Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches…).
 gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
-  return {.render = &p.screen.device(),
-          .cache_dir = p.paths.engines,
-          .log = backend_log(),
-          .profile_dispatches = p.options.profile_dispatches,
-          .filtered_warp = p.options.filtered_warp,
-          .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) |
-                    (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
-                    (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
-                    (p.options.span_native_edges ? gpu::kTrialSpanNative : 0U) |
-                    (p.options.rife_native ? gpu::kTrialRifeNative : 0U) |
-                    (p.options.gmfss_native ? gpu::kTrialGmfssNative : 0U) |
-                    (p.options.tfix_native ? gpu::kTrialTfixNative : 0U) |
-                    (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
+  return {
+      .render = &p.screen.device(),
+      .cache_dir = p.paths.engines,
+      .log = backend_log(),
+      .profile_dispatches = p.options.profile_dispatches,
+      .filtered_warp = p.options.filtered_warp,
+      .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) | (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
+                (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
+                (p.options.span_native_edges ? gpu::kTrialSpanNative : 0U) |
+                (p.options.span_fp8_native_blocks ? gpu::kTrialSpanFp8NativeBlocks : 0U) |
+                (p.options.rife_native ? gpu::kTrialRifeNative : 0U) |
+                (p.options.gmfss_native ? gpu::kTrialGmfssNative : 0U) |
+                (p.options.gmfss_feature_reuse ? gpu::kTrialGmfssFeatureReuse : 0U) |
+                (p.options.tfix_native ? gpu::kTrialTfixNative : 0U) |
+                ((p.options.nvof_roundtrip || p.options.nvof_layer_guard) ? gpu::kTrialNvofRoundtrip : 0U) |
+                (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
 }
 
 // Un refus de l'étage qui le rend : la chaîne peut se préparer sans lui (stage_fallback.h).
@@ -664,8 +674,9 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const media::TrackInfo& video = p.video;
   ChainEngines c;
   take_trials(c, p.options);
-  c.smooth_drawings = settings.smooth_drawings;  // --smooth-drawings compris (settings_for)
-  c.layers = settings.layers;                    // play.toml [interpolation] layers
+  c.smooth_drawings =
+      settings.rife_factor >= 2 && smooth_drawings_requested(settings) && !p.options.rife_image;
+  c.layers = settings.layers;  // play.toml [interpolation] layers
   c.work = chain_work_size(settings, video.width, video.height);
   const bool span = take_upscaler(p, c, settings);
   if (span) {
@@ -695,7 +706,6 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       told && p.notice.empty())
     p.notice = std::move(*told);
   const std::span<const std::string_view> rife_order = rife_preference(gpu);
-  // B08-14 : un seul choix du modèle, son refus gardé pour le cas où l'interpolation n'a rien d'autre.
   auto rife_found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models);
   if (rife_found) c.rife_choice = std::move(*rife_found);
   if (c.rife_choice) c.rife_model = c.rife_choice->path;
@@ -705,12 +715,13 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const bool want_drba =
       settings.rife_factor >= 2 && (settings.motion_engine == MotionEngine::DistilDrba || shots_drba);
   const bool want_apple = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Apple;
-  if (settings.rife_factor >= 2 && !c.rife_model && !(want_drba && c.drba_found) && !want_apple)
+  const bool want_gmfss_only = gmfss_wanted(settings) == GmfssUse::Only;
+  if (settings.rife_factor >= 2 && !c.rife_model && !(want_drba && c.drba_found) && !want_apple &&
+      !want_gmfss_only)
     return stage_refused(std::move(rife_found.error()), ChainStage::Motion);
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init = chain_backend_init(p, settings);
-  // C08-05 : un tour refusé rend son backend (SpareBackend), que celui-ci reprend. Les moteurs de c sont
-  // détruits avant lui : il leur survit dans p.spare_backend.
+  // En cas de refus, le backend survit à ses moteurs dans p.spare_backend.
   const struct SpareBackend {
     Player& p;
     ChainEngines& c;
@@ -730,7 +741,6 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   }
   c.backend_name = c.backend->capabilities().name;
   announce_backend(*log, *c.backend, c.backend_name, p.library->path());
-  // Sous TensorRT les copies passent par CUDA : le BAR ne joue que pour le moteur Vulkan.
   if (const std::string rebar = rebar_text(gpu);
       c.backend_name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
     log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
@@ -752,8 +762,6 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     c.drba_by_shot = shots_drba && c.drba != nullptr;  // RIFE se charge aussi
   }
   choose_rife_tier(c, settings);
-  // L'interpolation d'Apple à la place de RIFE image, à la taille de travail ; RIFE reprend sous un
-  // autre backend que Core ML, ou sur un Mac qui ne l'offre pas.
   if (want_apple) {
     auto loaded = prepare_apple(p, init, *c.backend, c.work.width, c.work.height);
     if (!loaded && watch_now(loaded.error()))
@@ -774,6 +782,15 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   auto rife = load_motion(p, init, c, settings, inner, library);
   if (!rife) return std::unexpected(std::move(rife.error()));
   if (!*rife) return std::nullopt;
+  if (want_gmfss_only && !c.interpolates())
+    return stage_refused(
+        Refusal{RefusalCode::FieldMissing, "GMFSS seul : aucun moteur GMFSS ni RIFE de repli chargé"},
+        ChainStage::Motion);
+  const auto& options = p.options;
+  c.scene_map =
+      c.scene_map && (c.plate || (c.layers && c.rife_motion) ||
+                      (c.pair_triage && (c.rife_motion || c.gmfss_use != GmfssUse::Off)) ||
+                      options.map_highlights() || c.nvof_roundtrip || options.was_given("--scene-map"));
   settle_shot_plan(c);
   return std::optional<ChainEngines>(std::move(c));
 }

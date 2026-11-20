@@ -139,7 +139,7 @@ std::string_view label(MotionEngine engine) {
     case MotionEngine::Apple:
       return "Apple (VideoToolbox, macOS 15.4)";
     case MotionEngine::Gmfss:
-      return "GMFSS union";
+      return "GMFSS Fortuna Union";
   }
   return "RIFE";
 }
@@ -565,6 +565,7 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::gmfss_half_flow);
   keep(&PlaySettings::gmfss_compose);
   keep(&PlaySettings::gmfss_every_instant);
+  keep(&PlaySettings::gmfss_light);
   keep(&PlaySettings::gmfss_key_floor);
   keep(&PlaySettings::span_precision);
   return s;
@@ -589,7 +590,18 @@ void add_shape_reasons(std::vector<std::string>& reopen, const PlaySettings& run
 // avance, ou plus), le warp de Catmull-Rom et l'échelle par paire (un second moteur).
 void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySettings& base,
                              const PlaySettings& wanted) {
-  if (wanted.rife_factor < 2 || wanted.motion_engine != MotionEngine::Rife) return;
+  if (wanted.rife_factor < 2) return;
+  const bool motion_warp =
+      wanted.motion_engine == MotionEngine::Rife || wanted.motion_engine == MotionEngine::DistilDrba;
+  if (motion_warp && base.pan_lock != wanted.pan_lock) {
+    reopen.emplace_back(wanted.pan_lock ? i18n::tr("slow pans follow the motion of the whole picture")
+                                        : i18n::tr("slow pans follow the interpolation motion alone"));
+  }
+  if (motion_warp && base.motion_720p != wanted.motion_720p) {
+    reopen.emplace_back(wanted.motion_720p ? i18n::tr("motion is estimated at 720p")
+                                           : i18n::tr("motion is estimated at the working size"));
+  }
+  if (wanted.motion_engine != MotionEngine::Rife) return;
   if (base.smooth_drawings != wanted.smooth_drawings) {
     reopen.emplace_back(wanted.smooth_drawings ? i18n::tr("held drawings are smoothed (frames read ahead)")
                                                : i18n::tr("held drawings keep their rhythm"));
@@ -598,19 +610,18 @@ void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySetting
     reopen.emplace_back(wanted.cubic_warp ? i18n::tr("the interpolation warp turns Catmull-Rom")
                                           : i18n::tr("the interpolation warp turns bilinear"));
   }
-  if (base.motion_720p != wanted.motion_720p) {
-    reopen.emplace_back(wanted.motion_720p ? i18n::tr("motion is estimated at 720p")
-                                           : i18n::tr("motion is estimated at the working size"));
-  }
-  if (base.pan_lock != wanted.pan_lock) {
-    reopen.emplace_back(wanted.pan_lock ? i18n::tr("slow pans follow the motion of the whole picture")
-                                        : i18n::tr("slow pans follow the interpolation motion alone"));
-  }
   if (base.pair_scale != wanted.pair_scale) {
     reopen.emplace_back(wanted.pair_scale ? i18n::tr("fast motion is estimated at half size (second engine)")
                                           : i18n::tr("fast motion is estimated at full size"));
   }
-  if (base.gmfss_middle != wanted.gmfss_middle) {
+}
+
+void add_gmfss_option_reasons(std::vector<std::string>& reopen, const PlaySettings& base,
+                              const PlaySettings& wanted) {
+  if (wanted.rife_factor < 2) return;
+  const bool rife = wanted.motion_engine == MotionEngine::Rife;
+  if (!rife && wanted.motion_engine != MotionEngine::Gmfss) return;
+  if (rife && base.gmfss_middle != wanted.gmfss_middle) {
     reopen.emplace_back(wanted.gmfss_middle ? i18n::tr("GMFSS union makes the middle of fast motion")
                                             : i18n::tr("RIFE alone on fast motion"));
   }
@@ -751,6 +762,7 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(i18n::tr("the interpolation engine changes"));
   add_fused_reasons(reopen, base, wanted);
   add_rife_option_reasons(reopen, base, wanted);
+  add_gmfss_option_reasons(reopen, base, wanted);
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       base.rife_model != wanted.rife_model)
     reopen.emplace_back(i18n::tr("the RIFE model loads (built the first time for this size)"));

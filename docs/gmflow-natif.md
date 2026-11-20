@@ -1,7 +1,100 @@
 # GMFlow natif : étude
 
-Étude ; le squelette CNN ([PR 1](#squelette-natif-pr-1)), l'attention du transformeur ([PR 2](#attention-native-pr-2)) et son
-MLP fondu ([PR 3](#mlp-natif-pr-3)) sont écrits, pas encore branchés. Question : calculer GMFlow (le flot du graphe « paire » de GMFSS Fortuna
+Tout le GMFlow CUDA est branché à la paire de GMFSS. Sur trois triplets d'anime en travail 1080p, au
+demi-flot, le banc GPU avec le MLP Ada mesure environ 7,3 ms au minimum en recalcul, puis environ 6,9 ms
+en réemployant le CNN de l'image commune. Les neuf sorties sont identiques bit à bit au recalcul sur les
+triplets. Le test a aussi vérifié trois reprises d'affilée et le recalcul lors d'un changement de flux CUDA.
+Le flot entier en travail 720p montrait déjà une parité au bit près sur le banc du réemploi seul,
+de 13,08 ms à 12,24–12,28 ms au minimum.
+La reprise échange les rôles des deux emplacements au quart, sans copie ni tampon de cache
+supplémentaire. Les sommes d'InstanceNorm sont déterministes grâce à un tampon de réductions partielles.
+Le noyau qui ajoute les positions au huitième lit directement les centres pairs du quart. Cette fusion
+retire un lancement et le trafic intermédiaire. Le banc isolé à 36×60 jetons passe de 5,7 à 3,2 µs,
+avec des résultats identiques au bit près sur quatre grilles dans les deux ordres physiques.
+
+Le contrôle au chargement garde le flot TensorRT FP16 avec 39,3 dB sur `motion1_1` pour 45 dB requis.
+Sur une vraie paire à fort mouvement, le même suffixe MetricNet/GridNet rend environ 50 dB dans la
+comparaison avec TensorRT. Les écarts les plus visibles restent sur le contour en mouvement. Le banc
+distingue la précision de cette image et le seuil de chaque tenseur utilisé dans le lecteur.
+
+Un moteur TensorRT de diagnostic a gardé les mêmes tactiques sur les chemins comparés et les neuf
+sorties bit à bit. Injecter son flot après le matcher au quart fait monter le pire plan de 39,32 à
+53,23 dB sur la mire du lecteur. L'injection après la propagation au quart donne 56,55 dB. Remplacer
+le flot au huitième donne 39,27 dB. La perte principale se manifeste au matcher au quart ou dans les
+données qu'il reçoit.
+
+Le rejeu des logits stockés par TensorRT reproduit les 1 399 680 poids du matcher bit à bit sur cette
+mire. Le softmax borne en FP16 le score, sa différence au maximum, son exponentielle et le
+dénominateur après la somme FP32. Le quotient est calculé en FP32 puis stocké en FP16. La fin du
+matcher somme les positions absolues avant de soustraire la position courante. Transcrire ce calcul
+seul à la chaîne CUDA donne 38,92 dB au pire sur la mire. Le natif garde son garde-fou de 45 dB.
+
+Le prototype de propagation au huitième reproduit les arrondis FP16 de TensorRT par groupes de huit
+produits, avec les mêmes arrondis du softmax. Le rendu à fort mouvement passe de 50,50 à 50,96 dB.
+L'écart maximal RGB passe de 0,278 à 0,261. Les deux autres rendus changent de moins de 0,01 dB.
+Le coût du prototype monte de 0,03 à 0,47 ms selon le passage. Dans le vrai lecteur, le seuil reste
+manqué à 39,3 dB. Le prototype reste au banc.
+
+Sur Ada, le MLP traite deux tranches cachées avec les mêmes lectures d'entrée et groupe deux chargements
+de poids par barrière. Les produits et les arrondis gardent leur ordre. En A/B intercalé, le MLP au
+quart passe de 0,401 à 0,378 ms et GMFlow complet passe de 7,65–7,69 à 7,47–7,50 ms en moyenne par
+paire pour une séquence comportant deux réemplois après un départ à froid. La séquence au flot entier
+passe de 13,30–13,34 à 13,03–13,08 ms. Les sorties testées sont identiques bit à bit. Le banc
+`KIRARI_AB_GMFLOW_MLP_PAIRS=0` rétablit la variante de comparaison.
+
+Un autre essai calcule une seule fois la corrélation des deux sens, puis fusionne des sommes
+partielles. L'étape gagne environ 0,055 ms. L'écart du flot est inférieur à 0,000031 px à cet endroit,
+mais atteint presque un pixel après les raffinements sur un triplet difficile. Les masques
+d'occlusion changent aussi. Cette variante reste au banc.
+La variante qui écrit les scores FP32 complets restitue les deux sens au bit près, mais le même banc
+passe de 0,084 à 0,114 ms à cause des transferts de la matrice de 18,66 Mo.
+
+Le [modèle de coût](../tools/gmfss/gmflow_natif_couts.py) distingue maintenant le recalcul, le réemploi et
+l'hypothèse Winograd F(2×2) avec les transformations en cache. À la même taille, pour les sommes FP32,
+le plancher modélisé descend de 5,70 à 5,19 ms avec le réemploi, puis 4,95 ms avec Winograd. Le seuil de
+90 % dans ce scénario correspond à 5,50 ms. Le banc atteint environ 72 % en prenant les minima avec
+réemploi. Le modèle utilise les pics matériels et suppose le recouvrement des calculs et des transferts
+dans une opération. La cadence en lecture et la précision d'un CNN Winograd se vérifient séparément.
+
+Sur un court rejeu de trois paires séparées par une vraie image centrale, l'écart à cette image change
+de 0,011 dB au plus entre le flot TensorRT et les prototypes CUDA. La comparaison de trois cas ne
+suffit pas pour remplacer le contrôle du lecteur.
+
+```sh
+python3 tools/gmfss/gmflow_natif_couts.py --width 1920 --height 1152 --scale 0.5 \
+  --plancher --reprise --winograd
+```
+
+Le [bilan de la reprise](gmfss-bilan.md#reprise-du-20-novembre) rassemble les résultats mesurés.
+
+Le test du matcher global strict reproduit le produit FP16 TensorRT à l'arrondi par blocs de huit,
+sur 4 665 600 produits AB d'une capture à 36×60 jetons. L'exponentielle arrondie en FP16 permet
+d'écarter un produit dont une borne sûre se trouve à plus de 17,5 logits sous le meilleur candidat
+déjà trouvé. La borne se vérifie dans les deux sens pour réutiliser la transposée. Sur trois vraies
+paires Re:Zero, la variante stricte donne 50,35, 66,96 et 68,57 dB au même suffixe, contre 50,51,
+66,99 et 68,26 dB avec le matcher natif précédent. La lecture garde sa garde de qualité.
+
+Le flux NVOF brut 4×4 fournit une graine au moteur sur le gros mouvement de la première paire.
+Avec neuf candidats par jeton, le meilleur appariement est trouvé pour 34,63 % des requêtes,
+contre 5,21 % autour de la diagonale. Une borne par centre de tuile écarte 2,84 % des produits
+dans les deux sens, contre 0,46 % avec ces neuf voisins de la diagonale. Le calcul des centres et
+des masques a un coût trop élevé pour ce gain isolé. Sur les deux autres paires, la diagonale donne
+déjà le maximum. Le 2×2 et le 1×1 trouvent plus de maxima sur la paire difficile, mais la même
+borne y écarte moins de produits avec ces graines. La piste reste un banc, sans substitution du
+flot ni nouvel entraînement.
+En imposant le rejet de tuiles entières de 8×4 jetons dans les deux sens, le flux ne permet d'en
+écarter que 0,60 % dans la scène difficile. Les deux paires simples permettent d'éliminer 28 à
+29 % des produits de tuiles sans flux avec la même borne, pour un coût arithmétique des centres
+d'environ 7 % avant les masques et les regroupements.
+
+Deux convolutions du trident utilisent les mêmes poids 3×3. Le chemin natif relit les centres pairs de
+la sortie au quart pour produire le huitième, opération vérifiée au bit près dans l'ONNX sur quatre paires.
+Le préfixe reproduit les sorties FP16 des deux Resize matérialisés par TensorRT. Dans les résiduels, les
+branches normalisées reviennent en FP16 avant leur addition. Ces frontières réduisent l'écart local mesuré
+sur les convolutions, avec un gain plus faible en sortie de la paire difficile.
+
+L'étude initiale portait sur le squelette CNN ([PR 1](#squelette-natif-pr-1)), l'attention du transformeur
+([PR 2](#attention-native-pr-2)) et son MLP fondu ([PR 3](#mlp-natif-pr-3)). Elle cherchait à calculer GMFlow (le flot du graphe « paire » de GMFSS Fortuna
 union) par nos propres noyaux CUDA, comme RIFE ([`rife-natif.md`](rife-natif.md)) et, en cours, FeatureNet,
 MetricNet et GridNet de GMFSS, pour qu'aucun moteur TensorRT ne soit plus construit pour GMFSS. Outils :
 `tools/gmfss/gmflow_natif_couts.py` (coûts et temps estimés), `tools/gmfss/gmflow_natif_reseau.py` (GMFlow découpé

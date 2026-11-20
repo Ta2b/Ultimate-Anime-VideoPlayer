@@ -98,7 +98,7 @@ std::string auto_status_text(const core::AutoInfo& info, double source_fps) {
 }
 
 std::string free_status_text(const core::FreeInfo& info) {
-  std::string text = i18n::tr_format("Fast · {:.0f} fps", info.fps);
+  std::string text = i18n::tr_format("Fast · {:.0f} planned fps", info.fps);
   if (info.load_pct >= 0) text += i18n::tr_format(" · GPU limit {} %", info.load_pct);
   if (info.step_us > 0) text += i18n::tr(" · service gap ") + format_ms(info.step_us);
   if (info.pressure > 1.02) {

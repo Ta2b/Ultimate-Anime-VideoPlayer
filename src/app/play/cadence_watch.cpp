@@ -77,7 +77,7 @@ std::string CadenceWatch::summary() const {
   const double n = samples_;
   const auto share = [n](int count) { return static_cast<int>(std::lround(100.0 * count / n)); };
   text += std::format(
-      " ; mode Rapide : {:.1f} i/s en moyenne, écart minimal {:.2f} ms, écart planifié moyen {:.2f} ms, "
+      " ; mode Rapide : {:.1f} i/s planifiées en moyenne, écart minimal {:.2f} ms, écart planifié moyen {:.2f} ms, "
       "service moyen {:.2f} ms, contre-pression moyenne {:.2f} (max {:.2f}) ; borné par l'écran {} %, "
       "par le temps de service {} %, par la contre-pression {} %",
       fps_sum_ / n, static_cast<double>(min_gap_us_) / 1000.0, step_sum_ / n / 1000.0,

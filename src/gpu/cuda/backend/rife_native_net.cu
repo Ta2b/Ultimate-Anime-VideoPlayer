@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,14 +39,21 @@ struct Entry {
   bool encoder = false;
   bool finish = false;  // le dernier bloc : sa dernière couche peut faire la fin (finish_layer)
   std::vector<int> glue_scales;
+  int glue_reduce = 1;
 };
 
 class Net final : public RifeNativeNet {
  public:
-  Net(RifeNativePrecision precision, cudaStream_t loading) : precision_(precision), loading_(loading) {
+  Net(RifeNativePrecision precision, cudaStream_t loading, bool encoder = true)
+      : precision_(precision), loading_(loading), first_block_(encoder ? 1 : 0) {
     int device = 0;
-    if (cudaGetDevice(&device) == cudaSuccess)
+    if (cudaGetDevice(&device) == cudaSuccess) {
       static_cast<void>(cudaDeviceGetAttribute(&sms_, cudaDevAttrMultiProcessorCount, device));
+      int major = 0, minor = 0;
+      shared_finish_ = cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, device) == cudaSuccess &&
+                       cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, device) == cudaSuccess &&
+                       major == 8 && minor == 9;
+    }
     sms_ = std::max(sms_, 1);
   }
 
@@ -107,24 +115,31 @@ class Net final : public RifeNativeNet {
   std::int64_t workspace_bytes() const override { return 2 * peak_ + partial_; }
 
   cudaError_t encode(cudaStream_t stream, const void* image, void* encoded, void* workspace) const override {
+    if (first_block_ == 0) return cudaErrorInvalidValue;
     return run(stream, 0, image, encoded, workspace, {}, {});
   }
   cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace,
                     const FusedGlueParams* glue, const FusedFinishParams* finish) const override {
-    return run(stream, static_cast<std::size_t>(k) + 1, x, y, workspace, {},
+    if (k < 0) return cudaErrorInvalidValue;
+    return run(stream, static_cast<std::size_t>(k) + static_cast<std::size_t>(first_block_), x, y, workspace, {},
                {.glue = glue, .finish = finish});
   }
   bool can_finish(int k, const FusedFinishParams& finish) const override {
-    const auto piece = static_cast<std::size_t>(k) + 1;
+    const auto piece = static_cast<std::size_t>(k) + first_block_;
     return k >= 0 && piece < pieces_.size() && !pieces_[piece].empty() &&
            rn::finish_fits(pieces_[piece].back(), finish);
   }
   bool can_glue(int k) const override {
-    const auto piece = static_cast<std::size_t>(k) + 1;
+    const auto piece = static_cast<std::size_t>(k) + first_block_;
     return k >= 0 && piece < pieces_.size() && !pieces_[piece].empty() && pieces_[piece][0].glue != nullptr;
   }
-  bool glues(int k) const override { return glue_on_ && can_glue(k); }
-  void use_glue(bool on) override { glue_on_ = on; }
+  bool glues(int k) const override { return can_glue(k) && !apart_.contains(k); }
+  void use_glue(int k, bool on) override {
+    if (on)
+      apart_.erase(k);
+    else
+      apart_.insert(k);
+  }
   int layers(int piece) const override {
     return piece >= 0 && static_cast<std::size_t>(piece) < pieces_.size()
                ? static_cast<int>(pieces_[static_cast<std::size_t>(piece)].size())
@@ -139,7 +154,7 @@ class Net final : public RifeNativeNet {
   std::string layer_label(int piece, int i) const override {
     if (i < 0 || i >= layers(piece)) return "?";
     const Layer& l = pieces_[static_cast<std::size_t>(piece)][static_cast<std::size_t>(i)];
-    if (l.glue != nullptr && glue_on_)
+    if (l.glue != nullptr && glues(piece - first_block_))
       return "3×3 pas 2 " + std::to_string(l.cin) + "→" + std::to_string(l.cout) + " sur " +
              std::to_string(l.ow) + "×" + std::to_string(l.oh) +
              ", entrée calculée à la volée (colle), tranche 16, tuile " + std::to_string(l.cout) +
@@ -152,7 +167,9 @@ class Net final : public RifeNativeNet {
            std::to_string(l.cout) + " sur " + std::to_string(l.ow) + "×" + std::to_string(l.oh) +
            ", tranche " + std::to_string(l.cfg.kc) + ", tuile " + std::to_string(l.cfg.ct) + ", " +
            std::to_string(l.cfg.rows) + (l.cfg.rows > 1 ? " lignes" : " ligne") + " par warp, K en " +
-           std::to_string(l.cfg.ksplit) + (l.cfg.ahead ? ", poids à l'avance" : "") + ", sommes " +
+           std::to_string(l.cfg.ksplit) + (l.cfg.ahead ? ", poids à l'avance" : "") +
+           (l.cfg.bands > 0 ? ", flux jusqu'à " + std::to_string(l.cfg.bands) + " bandes par bloc" : "") +
+           ", sommes " +
            rn::sums_name(l.sums) +
            (l.rejected > 0 ? ", " + std::to_string(l.rejected) + " formes écartées (sortie différente)"
                            : "") +
@@ -199,24 +216,27 @@ class Net final : public RifeNativeNet {
     return sent(to.upload(packed.data(), packed.size() * sizeof(std::uint32_t), loading_), error);
   }
 
-  // La première couche du dernier bloc en pleine résolution (scales : les échelles des blocs d'avant, vide
-  // sinon) : son noyau à entrée calculée, s'il en est un pour ses sommes et ses canaux (X de 28 canaux, 32
-  // rangés ; une convolution de pas 2 sans résiduel, toute en une tuile), et ses poids rangés pour lui.
-  bool glue_layer(Layer& layer, const rn::Dense& dense, const std::vector<int>& scales,
+  // La première couche d'un bloc dont l'entrée se calcule à la volée (scales : les échelles des blocs
+  // d'avant, vide sinon ; reduce : celle du bloc, 1 ou 2) : son noyau, s'il en est un pour ses sommes et ses
+  // canaux (X de 28 canaux, 32 rangés ; une convolution de pas 2 sans résiduel, toute en une tuile), et ses
+  // poids rangés pour lui.
+  bool glue_layer(Layer& layer, const rn::Dense& dense, const std::vector<int>& scales, int reduce,
                   std::string& error) const {
     if (scales.empty() || layer.kind != Kind::kHalf || layer.cin != 32 || layer.residual) return true;
-    // Le noyau est dimensionné pour des sources d'échelle au moins 2 (au plus 15 Ko de relèvement) : un
-    // découpage qui en aurait une de 1 avant le dernier bloc garde la colle à part. La borne de 48 Ko sur
-    // toute sa mémoire partagée (tuile et relèvement), que ces échelles tiennent déjà, n'est qu'une garde :
-    // le lancement ne demande pas plus que la part par défaut.
-    if (std::ranges::any_of(scales, [](int d) { return d < 2; }) || rn::glue_smem(scales) > 48 * 1024)
+    // Le noyau est dimensionné pour des sources plus grossières que X d'un facteur 2 au moins (au plus 15 Ko
+    // de relèvement en pleine résolution, 10 Ko à moitié) : un découpage qui en aurait une plus fine garde la
+    // colle à part. La borne de 48 Ko sur toute sa mémoire partagée (tuile et relèvement), que ces échelles
+    // tiennent déjà, n'est qu'une garde : le lancement ne demande pas plus que la part par défaut.
+    if (std::ranges::any_of(scales, [reduce](int d) { return d < 2 * reduce; }) ||
+        rn::glue_smem(scales, reduce) > 48 * 1024)
       return true;
-    layer.glue = rn::pick_glue(layer.sums, static_cast<int>(scales.size()), layer.cout);
+    layer.glue = rn::pick_glue(layer.sums, static_cast<int>(scales.size()), reduce, layer.cout);
     if (layer.glue == nullptr) return true;
     layer.glue_scales = scales;
+    layer.glue_reduce = reduce;
     layer.glue_grid = dim3(static_cast<unsigned>((layer.ow + rn::kTW - 1) / rn::kTW),
                            static_cast<unsigned>((layer.oh + rn::kWarps - 1) / rn::kWarps), 1U);
-    layer.glue_smem = rn::glue_smem(scales);
+    layer.glue_smem = rn::glue_smem(scales, reduce);
     return upload_weights(layer.glue_w, dense, layer.cout, error);
   }
 
@@ -224,7 +244,7 @@ class Net final : public RifeNativeNet {
   // (glue_layer), la fin dans l'épilogue (finish_layer).
   bool ends(Layer& layer, const rn::Dense& dense, const Entry& at, bool first, bool last,
             std::string& error) const {
-    return (!first || glue_layer(layer, dense, at.glue_scales, error)) &&
+    return (!first || glue_layer(layer, dense, at.glue_scales, at.glue_reduce, error)) &&
            (!last || !at.finish || finish_layer(layer, dense, error));
   }
 
@@ -234,7 +254,8 @@ class Net final : public RifeNativeNet {
   bool finish_layer(Layer& layer, const rn::Dense& dense, std::string& error) const {
     if (layer.kind != Kind::kPhase || layer.cfg.ksplit != 1 || layer.cout % 32 != 0 || layer.out_ld < 20)
       return true;
-    layer.finish = rn::pick_finish(layer.sums, layer.cfg.kc, layer.cfg.rows);
+    const bool shared_phases = shared_finish_ && layer.cin == 32 && layer.ow == 480 && layer.oh == 272;
+    layer.finish = rn::pick_finish(layer.sums, layer.cfg.kc, layer.cfg.rows, shared_phases);
     if (layer.finish == nullptr) return true;
     layer.finish_tiles = layer.cout / 32;
     const int th = rn::kWarps * layer.cfg.rows;
@@ -249,7 +270,8 @@ class Net final : public RifeNativeNet {
   }
 
   static bool same_shape(const Config& a, const Config& b) {
-    return a.kc == b.kc && a.ct == b.ct && a.rows == b.rows && a.ksplit == b.ksplit && a.ahead == b.ahead;
+    return a.kc == b.kc && a.ct == b.ct && a.rows == b.rows && a.ksplit == b.ksplit && a.ahead == b.ahead &&
+           a.bands == b.bands;
   }
 
   struct Tuning {
@@ -270,7 +292,8 @@ class Net final : public RifeNativeNet {
                                                        .ct = known->ct,
                                                        .rows = known->rows,
                                                        .ksplit = known->ksplit,
-                                                       .ahead = known->ahead}))
+                                                       .ahead = known->ahead,
+                                                       .bands = known->bands}))
       return upload_weights(layer.w, dense, layer.cfg.ct, error);
     std::array<rn::Buffer, 3> packs;  // tuiles de 16, 32 et 64
     const auto packed = [&](int ct) -> const void* {
@@ -287,10 +310,15 @@ class Net final : public RifeNativeNet {
     if (w == nullptr || !at.bench.reference(layer, w, error)) return false;
     const rn::Extent extent{
         .cin = layer.cin, .cout = layer.cout, .oh = layer.oh, .ow = layer.ow, .phases = layer.phases};
+    auto configs = rn::configs(layer.sums, layer.kind, extent, sms_);
+    if (rn::can_stream(layer)) {
+      const auto streamed = rn::stream_configs(layer.sums, layer.kind, extent, sms_);
+      configs.insert(configs.end(), streamed.begin(), streamed.end());
+    }
     Config best = reference;
     float fastest = std::numeric_limits<float>::infinity();
     layer.rejected = 0;
-    for (const Config& cfg : rn::configs(layer.sums, layer.kind, extent, sms_)) {
+    for (const Config& cfg : configs) {
       const bool simplest = same_shape(cfg, reference);
       if (!shape(layer, cfg)) continue;
       w = packed(cfg.ct);
@@ -317,7 +345,8 @@ class Net final : public RifeNativeNet {
                         .ct = best.ct,
                         .rows = best.rows,
                         .ksplit = best.ksplit,
-                        .ahead = best.ahead});
+                        .ahead = best.ahead,
+                        .bands = best.bands});
     return upload_weights(layer.w, dense, best.ct, error);
   }
 
@@ -368,14 +397,52 @@ class Net final : public RifeNativeNet {
 
   RifeNativePrecision precision_;
   cudaStream_t loading_;  // la voie du chargement : envois et banc
+  int first_block_ = 1;
   int sms_ = 1;
+  bool shared_finish_ = false;
   std::int64_t peak_ = 0;
   std::int64_t partial_ = 0;  // sommes partielles de la plus grande couche à K découpé
-  bool glue_on_ = true;       // use_glue
+  std::set<int> apart_;       // les blocs qui gardent la colle à part (use_glue)
   std::vector<std::vector<Layer>> pieces_;
 };
 
 }  // namespace
+
+std::unique_ptr<RifeNativeNet> RifeNativeNet::create_ifnet(
+    const std::array<RifeNativePiece, 4>& pieces, int height, int width, cudaStream_t stream,
+    std::string& error) {
+  // Deux convolutions de pas 2 par bloc, puis ConvTranspose de pas 2.
+  if (height <= 0 || width <= 0 || height % 32 != 0 || width % 32 != 0) {
+    error = "taille IFNet attendue : multiples de 32";
+    return nullptr;
+  }
+  rn::Bench bench(stream);
+  if (!bench.ready()) {
+    error = "événements CUDA du réglage IFNet";
+    return nullptr;
+  }
+  const RifeNativePrecision precision{RifeNativeSums::kF32, RifeNativeSums::kF32};
+  auto net = std::make_unique<Net>(precision, stream, false);
+  std::vector<RifeNativeTuned> tuned;
+  for (std::size_t k = 0; k < pieces.size(); ++k) {
+    const int d = kIfnetScales[k];
+    if (pieces[k].empty()) {
+      error = "bloc IFNet vide";
+      return nullptr;
+    }
+    const Entry at{.ih = height / d,
+                   .iw = width / d,
+                   .in_ld = 16,
+                   .out_h = height / (2 * d),
+                   .out_w = width / (2 * d),
+                   .glue_scales = {}};
+    if (!net->plan(pieces[k], at, bench, tuned, error)) {
+      error = "bloc IFNet " + std::to_string(k) + " : " + error;
+      return nullptr;
+    }
+  }
+  return net;
+}
 
 std::unique_ptr<RifeNativeNet> RifeNativeNet::create(const std::vector<RifeNativePiece>& pieces,
                                                      const std::vector<int>& reduce, int height, int width,
@@ -414,8 +481,12 @@ std::unique_ptr<RifeNativeNet> RifeNativeNet::create(const std::vector<RifeNativ
              .encoder = false,
              .glue_scales = {}};
     at.finish = k + 1 == reduce.size();
-    if (k > 0 && k + 1 == reduce.size() && d == 1)
+    // L'entrée calculée à la volée : le dernier bloc en pleine résolution, l'avant-dernier à moitié.
+    const bool last = k + 1 == reduce.size();
+    if (k > 0 && ((last && d == 1) || (k + 2 == reduce.size() && d == 2))) {
       at.glue_scales.assign(reduce.begin(), reduce.begin() + static_cast<std::ptrdiff_t>(k));
+      at.glue_reduce = d;
+    }
     if (!net->plan(pieces[k + 1], at, bench, tuned, error)) {
       error = "bloc " + std::to_string(k) + " : " + error;
       return nullptr;

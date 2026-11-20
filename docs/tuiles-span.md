@@ -332,8 +332,7 @@ et l'image entière due sous la reprise entière, la troncature de la mesure, la
 sans mesure et la mesure de chaque paire à ×1. Restent à reprendre avec le prochain paquet TensorRT (un
 changement de `src/gpu` ou de `src/kernels` le demande) : les commentaires de `PairScores::blocks`
 (`gpu/kernel_ops.h`), de `tensorrt_rife.cpp` et de `kernels/spec/scene_flow.h`, qui disent encore que les
-tuiles lisent la carte, et le nom du profil GPU du SPAN natif, « moteur FP8 … » alors que le FP16 natif passe
-par le même moteur (`tensorrt_span_fp8.cpp`, `stage_named`).
+tuiles lisent la carte. Le profil GPU distingue « moteur SPAN FP16 natif » et « moteur FP8 ».
 
 Le test `tests/unit/app/upscale_tiles_test.cpp` couvre la dilatation, les masques, la décision sur des écarts
 de blocs synthétiques (remise à zéro stricte comprise), la reprise entière qui suit la seule règle du lot A

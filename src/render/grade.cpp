@@ -185,8 +185,20 @@ struct ParsedHook {
 };
 
 std::expected<ParsedHook, Refusal> parse(pl_gpu gpu, std::string_view text, std::string_view file,
-                                         std::span<const ParamBinding> bindings,
+                                         std::span<const ParamBinding> bindings, Grade::Target target,
                                          std::span<const ParamBinding> more = {}) {
+  std::string before_encoding;
+  if (target == Grade::Target::Yuv) {
+    // Dans libplacebo, PREOUTPUT reçoit le RGB après la gestion de la couleur ; OUTPUT reçoit déjà YCbCr.
+    constexpr std::string_view from = "//!HOOK OUTPUT\n";
+    constexpr std::string_view to = "//!HOOK PREOUTPUT\n";
+    before_encoding = text;
+    for (std::size_t at = before_encoding.find(from); at != std::string::npos;
+         at = before_encoding.find(from, at + to.size())) {
+      before_encoding.replace(at, from.size(), to);
+    }
+    text = before_encoding;
+  }
   ParsedHook out;
   out.hook = pl_mpv_user_shader_parse(gpu, text.data(), text.size());
   if (out.hook == nullptr) {
@@ -208,14 +220,14 @@ std::expected<ParsedHook, Refusal> parse(pl_gpu gpu, std::string_view text, std:
 }
 
 // Le hook du look lu par libplacebo, qui crée les textures : sur le thread qui rend.
-std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu, std::string_view text) {
+std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu, std::string_view text, Grade::Target target) {
   // Une marque laissée (fin de ligne inattendue) couperait l'en-tête : le hook ne compilerait qu'au rendu,
   // et libplacebo le couperait sans le dire au lecteur.
   for (const std::string_view mark : {"//@LOOK_PARAMS@", "//@LOOK_BINDS@", "//@LOOK_CHAIN@"})
     if (text.find(mark) != std::string_view::npos)
       return std::unexpected(
           Refusal{RefusalCode::FieldMissing, "anime-hdr-look.hook : marque LOOK non remplacée"});
-  return parse(gpu, text, "anime-hdr-look.hook", kLookParams);
+  return parse(gpu, text, "anime-hdr-look.hook", kLookParams, target);
 }
 
 }  // namespace
@@ -241,6 +253,7 @@ struct Grade::Impl {
   mutable std::array<const pl_hook*, 4> listed{};
   GradeParams params;
   pl_gpu gpu = nullptr;
+  Target target = Target::Display;
   // Les LUT du look (copies : celles de set_looks ne vivent que le temps de l'appel), une par contenu
   // distinct, partagée entre les emplacements qui la répètent (C41-05 : la pile livrée en a 19 pour 4
   // fichiers).
@@ -270,19 +283,20 @@ struct Grade::Impl {
   }
 };
 
-std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
+std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, Target target) {
   auto impl = std::make_unique<Impl>();
   impl->gpu = gpu;
+  impl->target = target;
   // Les paramètres, puis les trois passes (carte locale, zone, passe anime).
   std::string text(shaders::anime_hdr_params);
   text += shaders::anime_hdr_anime;
-  auto grade = parse(gpu, text, "anime-hdr-anime", kGradeParams);
+  auto grade = parse(gpu, text, "anime-hdr-anime", kGradeParams, target);
   if (!grade) return std::unexpected(grade.error());
   impl->grade = std::move(*grade);
-  auto look = parse_look(gpu, look_text({}));
+  auto look = parse_look(gpu, look_text({}), target);
   if (!look) return std::unexpected(look.error());
   impl->look = std::move(*look);
-  auto black = parse(gpu, shaders::anime_hdr_black, "anime-hdr-black.hook", kBlackParams);
+  auto black = parse(gpu, shaders::anime_hdr_black, "anime-hdr-black.hook", kBlackParams, target);
   if (!black) return std::unexpected(black.error());
   impl->black = std::move(*black);
   impl->hooks = {impl->grade.hook, impl->look.hook, impl->black.hook};
@@ -292,7 +306,7 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
 }
 
 std::expected<void, Refusal> Grade::set_looks(const std::array<const CubeLut*, kLookSlots>& luts) {
-  auto look = parse_look(impl_->gpu, look_text(luts));
+  auto look = parse_look(impl_->gpu, look_text(luts), impl_->target);
   if (!look) return std::unexpected(look.error());
   pl_mpv_user_shader_destroy(&impl_->look.hook);
   impl_->look = std::move(*look);
@@ -317,7 +331,7 @@ std::expected<void, Refusal> Grade::set_looks(
     const std::array<std::shared_ptr<const CubeLut>, kLookSlots>& luts) {
   std::array<const CubeLut*, kLookSlots> slots{};
   for (std::size_t i = 0; i < kLookSlots; ++i) slots[i] = luts[i].get();
-  auto look = parse_look(impl_->gpu, look_text(slots));
+  auto look = parse_look(impl_->gpu, look_text(slots), impl_->target);
   if (!look) return std::unexpected(look.error());
   pl_mpv_user_shader_destroy(&impl_->look.hook);
   impl_->look = std::move(*look);
@@ -387,7 +401,7 @@ void Grade::Impl::write_params() {
 void Grade::Impl::put_table() {
   const bool wanted = params.look_table > 0.5;
   if (wanted && !table && !table_refused) {
-    auto made = LookTable::create(gpu);
+    auto made = LookTable::create(gpu, target == Target::Yuv ? PL_HOOK_PRE_OUTPUT : PL_HOOK_OUTPUT);
     if (made) {
       table = std::move(*made);
       table_stale = true;

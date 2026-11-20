@@ -317,6 +317,81 @@ Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintil
 grade ne monte pas de plus de 0,3 ms, et le test à l'aveugle est gagné sur des scènes d'explosion et de
 magie. `fx_rest` et les deux constantes de temps se règlent au banc.
 
+### Rejeu des lueurs fixes sur la source SDR
+
+La sonde CPU `tools/grade/emitters/probe_glow.py` approxime les cartes PQ à la taille du grade 4K à partir de
+la source BT.709 déployée, avec un blanc de 203 nits. Elle mesure le contraste bloc-zone et la fraction de
+directions où un cœur blanc présente une atténuation progressive et colorée. Le rejeu ne comprend ni SPAN,
+ni le relèvement des cartes guidé par pixel, ni leur historique. Les valeurs servent à comparer les signaux
+et à sélectionner des témoins pour le prochain essai.
+
+| Source Re:Zero S4 épisode 18 | Région 1920×1080 (`x,y,l,h`) | Contraste bloc-zone p95 (PQ) | Couronne p95 au meilleur rayon (8, 16, 32 px source) |
+|---|---|---:|---:|
+| 983,000 s, corne | 931,97,65,213 | 0,092 | 44 % |
+| 983,000 s, visage | 841,488,362,213 | 0,023 | 25 % |
+| 1005,000 s, halo au bord supérieur | 450,0,198,114 | 0,045 | 13 % |
+| 1005,000 s, main | 708,121,398,234 | 0,048 | 6 % |
+| 969,674 s, reflet des cheveux | 1312,490,96,188 | 0,031 | 31 % |
+| 969,674 s, visage | 999,699,517,286 | 0,064 | 31 % |
+
+Aucun blanc de ces régions n’atteint le seuil de 0,20 PQ. À 1005 s, un seuil bloc-zone abaissé seul
+admettrait la main autant que le halo. Le signal de couronne distingue mieux les deux dans cette image.
+Il se confond encore avec le visage dans le plan à 969,674 s. Les directions hors champ sont écartées du
+calcul pour mesurer le halo au bord. Il faut d’autres scènes annotées avant de choisir une règle de rendu.
+
+```sh
+ffmpeg -ss 1005 -i "$VIDEO" -map 0:v:0 -frames:v 1 -pix_fmt rgb24 halo.ppm
+python3 -I tools/grade/emitters/probe_glow.py halo.ppm \
+  --region halo=450,0,198,114 --region main=708,121,398,234
+```
+
+Dans la passe finale, le gain des éclats ne peut rien ajouter quand le niveau avant gain atteint déjà le pic
+(`ajk_emit`). Un essai après détection doit relever les niveaux avant cette limitation et étudier la marge
+des blancs immédiatement autour de l’émetteur. Pour mesurer l’écart des captures PQ, prendre les mêmes
+PTS de sortie avec et sans le traitement. L’éclat fixe et le masque dynamique de la scène ont des témoins
+distincts.
+
+Un rejeu sur neuf images voisines de chaque témoin a ajouté une cohérence de teinte aux pentes de lueur.
+Sur la grille au 1/32, la corne garde un p95 de 0,459 sur les neuf images. Le visage de la même scène
+est à 0,123, l'aplat de contrôle à 0,136. Le halo au bord culmine à 0,145 et sa manche à 0,382.
+Sur la capture HDR à 983,025 s, l'essai hors lecteur de la couronne annotée gagne 7,29 nits en médiane
+et 11,32 au p95 des pixels modifiés. Le cœur blanc, le visage et les codes hors de la région annotée sont
+identiques. Le canal modifié le plus clair est à 749 nits pour un pic contenu à 766 nits. Une exposition du
+critère plein cadre détecte encore quelques faux anneaux. Le rendu de la couronne reste un prototype de banc.
+
+Le mode `--directionnel`, sur une suite de PPM ordonnée par PTS, conserve les arcs partiels cohérents dont le
+canal dominant garde au moins 93 % de sa valeur du premier au deuxième anneau. Il confirme la teinte sur
+une image voisine et oublie l'historique à la coupe. Autour de 1005,005 s, il garde deux ou trois ancres
+du halo au bord et ne retient ni la manche, ni la main, ni le visage. Les deux transcodages de contrôle
+(CRF 24 et 32) conservent chacun deux ancres du halo. Un aplat synthétique conçu avec un plateau magenta
+au bord déclenche encore le signal. Le mode reste un outil de mesure hors du grade du lecteur.
+
+Dans la sonde, `--directionnel --profil-couronne` vérifie aussi, pour les arcs tronqués par le cadre,
+que l'écart entre les deux canaux dominants grandit au moins de 0,010 le long de deux rayons voisins
+entre le premier et le troisième anneau. Les sept témoins de plateau magenta passent de sept ou huit
+ancres à zéro. Sur six images du halo réel avant la coupe, les comptes restent 3, 3, 3, 3, 2, 2. Les
+transcodages CRF 24 et 32 gardent chacun deux ancres. Les ancres de la corne et les contrôles visage,
+main et manche restent identiques. Après la coupe, la garde écarte aussi des candidats plein cadre
+encore sans annotation. Elle reste disponible dans la sonde pour examiner ces cas.
+
+### Rejeu du signal dynamique existant
+
+Le rejeu CPU de `carte_rejeu` sur les paires 103 à 134 de l’archive `flux-carte-aura` (début 16:40)
+retrouve 31 mesures photométriques sur 32. Le compteur de diagnostic compte 229 candidates sur 63 234
+tuiles mesurées (0,36 %, avant les autres conditions de la classe Effet). Dix paires en ont au moins une.
+Les quatre paires mesurées juste avant la paire sans mesure autour de 1005 s ont zéro candidate.
+Les deux suivantes en ont 23 et 27. Ces valeurs distinguent l’absence de signal ponctuelle de l’activité
+de la scène. Pour faire évoluer cette classification, comparer les tuiles réellement couvertes par un effet
+mobile à des tuiles témoins sur une scène annotée.
+
+Un rejeu contrôlé avec le flux matériel dans les deux sens a déplacé la planche de couronne de 8,
+24 et 48 pixels à 1080p. À 24 et 48 pixels, la confirmation à position fixe perd les ancres et le
+flux 4×4 les retrouve toutes (six et quatre). Une extinction de la couleur à luminance constante
+retire toutes les ancres malgré un déplacement exact. Les grilles 2×2, 1×1 pleine image et 1×1 en
+région retrouvent les mêmes ancres. Sur ces témoins, 4×4 suffit pour confirmer le trajet. Une
+couronne présente et compatible dans l'image courante reste nécessaire pour autoriser un éclat.
+L'activation dans le lecteur attend des effets mobiles annotés en scène réelle.
+
 ## A2 : décisions par plan
 La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
 relèvement fixe (1,15) dans tous les plans : l'exposition par plan est retirée (C41-01).

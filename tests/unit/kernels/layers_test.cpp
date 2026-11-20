@@ -114,6 +114,25 @@ TEST_CASE("calques : déplacements de caméra et composition de référence", "[
   RgbImage far(w, h, 0.0F);  // trop loin de la plaque : rien ne change
   REQUIRE(ref::compose_layers(far, a, a, plate));
   CHECK(far.planes[0].at(64, 32) == 0.0F);
+  // Un trait violet resté dans la plaque, sur un ciel bleu de même luma : la garde le voit quand même.
+  constexpr float kSkyR = 0.2F;
+  constexpr float kSkyG = 0.5F;
+  constexpr float kSkyB = 0.9F;
+  constexpr float kInkR = 0.6F;
+  constexpr float kInkB = 0.9F;
+  const float sky_y = 0.2126F * kSkyR + 0.7152F * kSkyG + 0.0722F * kSkyB;
+  const float ink_g = (sky_y - 0.2126F * kInkR - 0.0722F * kInkB) / 0.7152F;
+  RgbImage ink(w, h, 0.0F);
+  ink.planes[0].data.assign(ink.planes[0].data.size(), kInkR);
+  ink.planes[1].data.assign(ink.planes[1].data.size(), ink_g);
+  ink.planes[2].data.assign(ink.planes[2].data.size(), kInkB);
+  RgbImage sky(w, h, 0.0F);
+  sky.planes[0].data.assign(sky.planes[0].data.size(), kSkyR);
+  sky.planes[1].data.assign(sky.planes[1].data.size(), kSkyG);
+  sky.planes[2].data.assign(sky.planes[2].data.size(), kSkyB);
+  REQUIRE(ref::compose_layers(sky, ink, ink, plate));
+  CHECK(sky.planes[0].at(64, 32) == kSkyR);
+  CHECK(sky.planes[1].at(64, 32) == kSkyG);
 
   // Refus : grille vide, garde vide.
   LayerParams empty = params;
@@ -122,4 +141,21 @@ TEST_CASE("calques : déplacements de caméra et composition de référence", "[
   LayerParams flat = params;
   flat.guard_high = flat.guard_low;
   CHECK_FALSE(ref::compose_layers(out, a, b, flat));
+}
+
+TEST_CASE("calques : la plaque respecte la couverture fractionnaire de sa grille", "[layers]") {
+  const RgbImage key(16, 8, 0.515625F);
+  RgbImage out(16, 8, 0.5F);
+  LayerParams plate{.grid = full_grid(2, 1, 8.0F),
+                    .count = 1,
+                    .source_grid = {.cols = 2, .rows = 1, .tile_w = 8.0F, .tile_h = 8.0F},
+                    .guard_low = kPlateGuardLow,
+                    .guard_high = kPlateGuardHigh};
+  plate.source_grid.set(0, 0);
+  plate.sources[0].shift[0] = 0.5F;
+
+  REQUIRE(ref::compose_layers(out, key, key, plate));
+  CHECK(out.planes[0].at(1, 3) == 0.515625F);
+  CHECK(out.planes[0].at(6, 3) == 0.50390625F);  // quart de couverture de la clé, garde ouverte
+  CHECK(out.planes[0].at(10, 3) == 0.5F);
 }

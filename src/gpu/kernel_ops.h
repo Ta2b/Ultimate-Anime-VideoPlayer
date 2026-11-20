@@ -36,6 +36,8 @@
 
 namespace kirari::gpu {
 
+class Engine;
+
 // Ingestion d'une image décodée : quelle conversion, selon l'étage qui la lit.
 // Filtre de la réduction fusionnée à l'ingestion : boîte
 // (Area), triangle (bilinéaire étiré), cubique de Mitchell-Netravali (B, C) ou Spline36 (rayon 3),
@@ -326,6 +328,13 @@ class KernelOps {
   virtual std::expected<void, Refusal> compose_layers(const LayerJob& /*job*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "compose_layers : absent de ce backend"});
   }
+  // Warp puis composition sur les deux sources de job, avec le mouvement exact ou celui du milieu
+  // (poses). same_sources vaut vrai si les deux images du dernier appel n'ont pas été réécrites.
+  virtual std::expected<void, Refusal> warp_layered(const LayerJob& /*job*/, const Motion& /*motion*/,
+                                                    const Motion* /*previous*/, float /*t*/, bool /*poses*/,
+                                                    bool /*same_sources*/) {
+    return refuse(RefusalCode::FormatUnsupported, "warp_layered : absent de ce backend");
+  }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.
   struct DeviceMemory {
@@ -363,6 +372,12 @@ class KernelOps {
   virtual std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
       std::uint64_t /*ticket*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_flow : absent de ce backend"});
+  }
+  // La grille compacte de l'aller-retour expérimental, relue sans attente par ticket de l'aller.
+  // SequenceOrder si ce retour a été sauté, consommé ou remplacé ; nullopt s'il est encore en vol.
+  virtual std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> scene_roundtrip_take(
+      std::uint64_t /*ticket*/) {
+    return refuse(RefusalCode::FormatUnsupported, "scene_roundtrip : absent de ce backend");
   }
   // L'affinage de la caméra d'une paire de la carte (kernels/spec/scene_camera.h) : Lucas-Kanade sur les
   // lumas du flux de la paire flow_ticket (celui de scene_flow_start), depuis le modèle de request et sur ses
@@ -406,6 +421,22 @@ class KernelOps {
   // attend les écritures en vol et rend le bloc ; à appeler avant de le libérer.
   virtual bool map_fences(std::span<std::byte> /*block*/) { return false; }
   virtual void unmap_fences(std::span<std::byte> /*block*/) {}
+  // Le même warp avec calques vers un slot RGB. job.out ne sert pas, le repli peut l'utiliser si le
+  // backend refuse FormatUnsupported avant d'attendre le slot. Un succès a signalé le slot sur la file.
+  virtual std::expected<void, Refusal> warp_layered_ring(const LayerJob& /*job*/, const Motion& /*motion*/,
+                                                         const Motion* /*previous*/, float /*t*/,
+                                                         bool /*poses*/, bool /*same_sources*/,
+                                                         const RingTarget& /*ring*/) {
+    return refuse(RefusalCode::FormatUnsupported, "warp_layered_ring : absent de ce backend");
+  }
+  // Enfile les splats et la fusion native sur la même voie. Les caractéristiques peuvent rester dans
+  // la zone du GridNet. FormatUnsupported signifie que l'appelant peut encore enchaîner les deux appels.
+  virtual std::expected<void, Refusal> gmfss_fuse_splats(Engine& /*fusion*/, std::span<const SplatJob> /*jobs*/,
+                                                         const Tensor& /*time*/, float /*t*/,
+                                                         std::span<const Tensor> /*inputs*/,
+                                                         std::span<Tensor> /*outputs*/) {
+    return refuse(RefusalCode::FormatUnsupported, "gmfss_fuse_splats : absent de ce backend");
+  }
 };
 
 }  // namespace kirari::gpu

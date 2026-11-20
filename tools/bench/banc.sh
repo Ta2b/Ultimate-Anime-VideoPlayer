@@ -28,7 +28,9 @@ mkdir -p "$OUT"
   echo "date : $(date -Is)"
   echo "kirari : $("$Kirari" --version 2>&1 | head -1)"
   echo "noyau : $(uname -sr)"
-  command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
+  if command -v nvidia-smi >/dev/null; then
+    nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null || echo "télémétrie NVIDIA indisponible"
+  fi
   echo "A : $A"
   echo "B : $B"
 } >"$OUT/contexte.txt"
@@ -38,13 +40,17 @@ play() { # variante options fichier début étiquette
   local base="$OUT/$tag"
   # shellcheck disable=SC2086
   "$Kirari" play "$file" --start="$start" --seconds="$SECONDS_PLAYED" --fullscreen --mute --no-resume \
-    --data-dir="$OUT/data-$label" --stats="$base.tsv" $options </dev/null >"$base.log" 2>&1 || echo "échec : $tag" >&2
+    --data-dir="$OUT/data-$label" --stats="$base.tsv" $options </dev/null >"$base.log" 2>&1 || {
+    echo "échec : $tag — voir $base.log" >&2
+    return 1
+  }
   if command -v nvidia-smi >/dev/null; then
     nvidia-smi --query-gpu=clocks.sm,clocks.mem,power.draw,utilization.gpu --format=csv,noheader >"$base.smi" || true
   fi
 }
 
 n=0
+passages=()
 while IFS=$'\t' read -r file start; do
   [ -n "$file" ] && [[ "$file" != \#* ]] || continue
   n=$((n + 1))
@@ -61,9 +67,12 @@ while IFS=$'\t' read -r file start; do
     order=(A B A B); ((round % 2)) || order=(B A B A)
     for label in "${order[@]}"; do
       options="$A"; [ "$label" = B ] && options="$B"
-      play "$label" "$options" "$file" "$start" "extrait$n-tour$round-$label-$(date +%s)"
+      tag="extrait$n-tour$round-$label-$(date +%s)-${#passages[@]}"
+      play "$label" "$options" "$file" "$start" "$tag"
+      passages+=("$OUT/$tag.tsv")
     done
   done
 done <"$EXTRAITS"
 
-python3 -I "$HERE/banc_resume.py" "$OUT" | tee "$OUT/resume.txt"
+(( ${#passages[@]} )) || { echo "aucun passage demandé" >&2; exit 2; }
+python3 -I "$HERE/banc_resume.py" "$OUT" "${passages[@]}" | tee "$OUT/resume.txt"

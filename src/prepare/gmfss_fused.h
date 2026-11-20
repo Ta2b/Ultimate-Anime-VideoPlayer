@@ -4,6 +4,7 @@
 // : elle est la référence de l'essai au chargement et le repli quand le natif est écarté.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include "core/types.h"
+#include "prepare/rife_native.h"
 
 namespace kirari::prepare {
 
@@ -44,6 +46,13 @@ std::expected<std::string, Refusal> gmfss_ifnet_tensor(std::span<const std::byte
 // L'IFNet d'une fusion de height × width : half0 et half1 (1 × 3 × h × w), time (1 × 1 × 1 × 1) vers l'image
 // de l'IFNet (gmfss_ifnet_tensor). Refus : ceux de gmfss_ifnet_tensor et d'extract_subgraph.
 std::expected<std::vector<std::byte>, Refusal> gmfss_ifnet(std::span<const std::byte> fusion, int height,
+                                                           int width);
+
+// Les convolutions de l'IFNet d'origine de Fortuna Union, blocs 0 à 3 (réductions 8, 4, 2, 1).
+// Dimensions de l'IFNet dérivé par gmfss_ifnet : celles des demi-images de la fusion.
+// Chaque bloc va de sa première Conv à sa ConvTranspose, avant le PixelShuffle à 6 canaux.
+using GmfssIfnetBlocks = std::array<std::vector<RifeNativeLayer>, 4>;
+std::expected<GmfssIfnetBlocks, Refusal> gmfss_ifnet_blocks(std::span<const std::byte> ifnet, int height,
                                                            int width);
 
 // Version de la dérivation : elle entre dans le nom des fichiers.

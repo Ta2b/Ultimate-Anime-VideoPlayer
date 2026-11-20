@@ -1,8 +1,7 @@
 # GMFSS union en temps réel : bilan du chantier natif
 
-> **Mis à jour le 19 novembre 2026, au soir : GMFSS en pause**, à la demande de Tatoub, une fois #959 fusionné
-> pour la première release. Le travail en cours (splats par étapes dans le L2, émulation de Winograd et du FP8)
-> est arrêté et rangé ; son état exact et l'ordre de reprise sont en partie 4, « En pause ».
+> **Chantier repris le 20 novembre 2026.** La partie 4 conserve le point d'arrêt du 19 novembre et les
+> hypothèses de départ. Les mesures de la reprise figurent ci-dessous.
 >
 > Avant, le 19 novembre en fin de journée :
 > - étape 0 de la séance PC faite sur `e5f56f69` : paire et fusion natives retenues, 0 forme écartée ; la forme
@@ -17,14 +16,100 @@
 >   règle de décision ajoutés à la séance PC (partie 4) ;
 > - avant : le budget du ×2 en 1080p corrigé (partie 3.2).
 
-Le but : GMFSS Fortuna Union en temps réel sur la RTX 4070 Ti de Tatoub. Ses
-petits réseaux (le GridNet de la fusion, FeatureNet et MetricNet de la paire) passent par nos noyaux CUDA ; GMFlow
-et l'IFNet restent sous TensorRT pour l'instant. Le détail technique est dans [`gmfss-natif.md`](gmfss-natif.md) et
+Le but : GMFSS Fortuna Union en temps réel sur la RTX 4070 Ti de Tatoub. GridNet, IFNet, FeatureNet et
+MetricNet passent par nos noyaux CUDA sur le chemin retenu en 1080p. GMFlow CUDA est exécutable au banc.
+À l'ouverture du lecteur, le contrôle de qualité sélectionne encore TensorRT pour le flot.
+Le détail technique est dans [`gmfss-natif.md`](gmfss-natif.md) et
 [`gmflow-natif.md`](gmflow-natif.md). Ce document dit ce qui est fait, ce qui a été essayé, jusqu'où l'on peut
 aller, ce qui reste, et où reprendre.
 
 Décision de Tatoub : la séance PC de GMFSS passe en dernier, après les autres chantiers. Tout ce qui peut se faire
 dans le cloud s'y fait d'ici là.
+
+## Reprise du 20 novembre
+
+Mesures sur RTX 4070 Ti, taille de fusion 960×576 en lecture 1080p. Les essais de couches isolées
+indiquent leurs propres dimensions. Les hypothèses et les résultats antérieurs restent plus bas.
+
+### GMFSS Instantané à l'écran
+
+En Instantané, la paire et la fusion partent au créneau déclaré utile par l'étage de sortie. Le
+précalcul des fusions saturait le GPU avec des images abandonnées avant présentation. Le facteur
+fixe, l'export et le mélange GMFSS avec RIFE conservent leur propre ordonnancement.
+
+Extrait Re:Zero, PTS [979, 986), 1080p, sans SPAN, KDE Wayland 165 Hz et splats C8. Les i/s comptent
+les **images nouvelles** après composition, par jointure de `present_id` avec les retours
+`wp_presentation`. Le p95 couvre les intervalles entre les images nouvelles, y compris les pauses.
+
+| Passage | i/s visibles | Images nouvelles | Répétitions confirmées | Intervalle p95 |
+|---|---:|---:|---:|---:|
+| Avant, fusions à l'arrivée | 9,58 | 67 | 7 | 421,21 ms |
+| Fusion au créneau, essai | 25,36 | 175 | 3 | 103,03 ms |
+| Version intégrée, reprise de FeatureNet sans copie | 25,26 | 174 | 4 | 105,46 ms |
+| Idem, fenêtre de splat expérimentale | 26,05 | 180 | 6 | 109,09 ms |
+
+Passage de contrôle après correction du réglage GridNet, fenêtre [980, 986) : 25,49 i/s nouvelles,
+151 images nouvelles, 4 répétitions confirmées, p95 de l'intervalle à 106,37 ms. GridNet et IFNet
+natifs restent retenus. Ce passage vérifie le chargement et la cadence, avec une fenêtre plus courte
+que les quatre passages du tableau.
+
+La fenêtre de splat (`KIRARI_AB_GMFSS_SPLAT_CROP=1`) est gardée pour les essais. La somme des
+médianes de splat et de fusion augmente de 25,60 à 26,67 ms sur ce passage. Le gain isolé sur
+certaines paires ne suffit pas à conclure pour la lecture.
+
+Sur le bloc résiduel C64 à 960×576, deux convolutions enchaînées avec une bande de 96 lignes dans
+un anneau de 128 lignes passent de 0,887 à 0,777 ms, avec 35,4 millions de valeurs FP16 identiques.
+En lecture, l'essai `KIRARI_AB_GMFSS_GRID_RING=1` a pu tourner sur les trois blocs compatibles.
+La fusion passe de 21,54 à 21,27 ms en médiane. Sur ce passage, 25,59 à 26,46 i/s visibles et
+103 à 121 ms au p95 d'intervalle. La dispersion des intervalles doit être vérifiée avant activation.
+
+Pour reproduire les mesures avec les relevés bruts :
+
+```sh
+python3 -I tools/bench/banc_resume.py --visible 979 986 lecture.tsv
+```
+
+### Mesures des morceaux
+
+| Unité | Mesure de la reprise |
+|---|---|
+| GridNet | 45 convolutions CUDA. La transposition des plans passe de six à trois lancements. Avec l'IFNet natif, fusion en lecture de 22,18 à 20,16 ms (médianes). |
+| Sortie GridNet | La dernière convolution écrit les trois plans RGB bornés directement. En sommes FP32, 0,839 à 0,732 ms au même Kc32. En sommes FP16, 0,830 à 0,706 ms. Égalité bit à bit sur 6 635 520 sorties à 1920×1152 et sur les bords à 127×75. En lecture, médiane de fusion de 21,60 à 21,16 ms sur le même extrait. |
+| IFNet | Les quatre blocs d'Union en CUDA, 1,35 ms contre 1,47 ms sous TensorRT et 73,19 dB sur la sortie de l'IFNet. |
+| Splats | 8,16–8,41 ms au témoin, 5,37 ms par groupes L2, 4,00 ms après partage du dénominateur et réduction de la marge des tuiles. Au dernier passage, p95 de 4,64 ms. |
+| Splats directement dans GridNet | Le premier rangement par pixel alourdit l'ensemble splats et fusion de 25,90 à 27,46 ms, par somme des médianes. Le rangement par groupes de huit canaux passe de 1,51 à 0,89 ms pour normaliser et ranger le niveau 960×576 au banc, avec les mêmes codes. En lecture, splats et fusion passent de 25,42 à 24,12 ms, par somme des médianes sur Re:Zero. La cadence affichée n'a pas progressé dans cet A/B. Essai local avec `KIRARI_AB_GMFSS_PACKED_SPLATS=2`. |
+| Réemploi de FeatureNet | Avec `--gmfss-feature-reuse`, deuxième paire consécutive à 19,47 ms de médiane sur 40 occurrences. Les 49 paires complètes du même passage coûtent 21,95 ms. Le banc isolé retrouve les mêmes codes FP16 et passe de 2,71–2,78 à 0,60–0,65 ms pour le côté réemployé. |
+| GMFlow | Chaîne CUDA exécutable. Le réemploi exact du CNN et le MLP Ada donnent environ 6,9 ms au minimum dans le banc GPU au demi-flot en 1080p. Au chargement du lecteur, `motion1_1` tombe encore à 39,3 dB pour un seuil à 45 dB. Le flot appliqué reste TensorRT. Voir [la mesure du réemploi et de la précision](gmflow-natif.md). |
+| Winograd GridNet | Couche `residual_model_head2.3`, C128, 480×288. Bloc calculant toutes les sorties : 0,46–0,49 ms en sommes f32, contre 0,58 ms en direct f32. En sommes f16, 0,45–0,49 ms contre 0,34–0,37 ms en direct. Le direct f16 reste le plus rapide. |
+| Winograd GridNet C192 | Couche `residual_model_head3.3`, 240×144. Winograd f32 à 0,279 ms contre 0,394 ms en direct f32. Winograd f16 à 0,273 ms contre 0,227 ms en direct f16. Sur 47×29, Winograd f16 descend à 0,023 contre 0,030 ms. |
+| Winograd GridNet, réemploi des poids | Une tuile de 128 pixels réutilise chaque chargement des poids deux fois et reproduit les bits du Winograd précédent. En C192 à 240×144, 0,192 ms de médiane, contre 0,259 ms pour l'ancien Winograd et 0,186 ms pour le direct FP16 sur le même banc. |
+| Tuiles directes GridNet et PReLU | Sur couches réelles C128 et C192, les tuiles de sortie élargies conservent les bits à groupement K égal. Le meilleur direct C128 passe de 0,325 à 0,319 ms. C192 reste à 0,189 ms. Avancer le PReLU à l'écriture de la transposée est aussi exact. Les minima mesurés montent de 0,993 à 1,011 ms (R1) et de 0,965 à 0,968 (R2). Les variantes restent au banc. |
+
+Les budgets historiques de 3 ms pour les splats et 11,2 ms pour la fusion modélisent des algorithmes et des
+rangements précis. Les mesures ci-dessus servent à calculer la marge de l'implémentation actuelle et à choisir
+une autre méthode lorsque le coût modélisé dépend d'un transfert ou d'un calcul qu'on peut supprimer.
+
+Sur Re:Zero en 1080p vers 4K, `python tools/bench/gmfss_budget_resume.py lecture.gpu.tsv --key-span --extra-key-ms 2`
+propose `--gmfss-budget=24,43` à partir des durées par étage relevées avec la sortie RGB directe. Le premier
+coût couvre les caractéristiques et les flots d'une paire froide. Le second couvre chaque instant GMFSS,
+son agrandissement et une provision de 2 ms pour les autres opérations de la clé. Les voies se recouvrent
+en lecture. La somme des p95 sert à essayer un budget avec les mêmes réglages et à mesurer ensuite la
+cadence réelle.
+
+En GMFSS seul à facteur fixe, le témoin 1080p ×2 sans SPAN a produit 124 fusions et repris 36 précalculs
+dont tous les instants étaient déjà tardifs à l'arrivée de la paire. La garde qui attend que le PTS de B
+soit dépassé évite ces précalculs dans le test d'horloge. Elle n'en évite aucun dans cet extrait. L'essai
+`KIRARI_AB_GMFSS_AHEAD_DEADLINE=1` rejoue à la place la grille fixe de la prochaine paire et applique le
+même horizon de présentation que la lecture. Sur le même passage de 7 s, 28 avances évitées, une seule
+reprise tardive et 138 fusions. La fusion reste possible à la demande après un recalage d'horloge.
+Le contrôle du binaire final avec l'option activée a évité 25 avances, repris une avance tardive et
+rendu 137 fusions.
+
+Une ablation sur la paire réelle à 960,40 s remplace tour à tour les sorties CUDA intermédiaires par celles
+de l'ONNX. Témoin à 34,84 dB en fusion. Remplacer le CNN donne 43,54 dB, remplacer la propagation au huitième
+47,25 dB, les deux ensemble 55,07 dB. Rétablir les frontières FP16 de l'attention et du MLP attestées par
+les couches TensorRT aide sur certaines paires. Forcer les arrondis FP16 du softmax global en deux passes
+n'améliore pas ce cas. Les chiffres ne suffisent pas à qualifier le flot complet.
 
 ## 1. Ce qui est fait
 

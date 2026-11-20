@@ -296,6 +296,8 @@ std::int64_t relaunch_position(const std::optional<std::int64_t>& forced_start,
 // La fenêtre et la swapchain que la ligne de commande et play.toml demandent.
 ScreenOptions screen_options(const PlayOptions& options, const PlaySettings& saved, const PlayerPaths& paths,
                              const std::string& title) {
+  const bool smooth_motion =
+      saved.smooth_motion && !options.hidden && !options.software_gpu && smooth_motion_rife(settings_for(saved, options));
   return ScreenOptions{
       .title = title,
       .width = options.hidden ? 16 : options.window_width,
@@ -308,7 +310,7 @@ ScreenOptions screen_options(const PlayOptions& options, const PlaySettings& sav
       .hdr = !options.sdr,
       .kde_sdr_nits = options.kde_sdr_nits,
       .kde_sdr_auto = options.kde_sdr_auto,
-      .smooth_motion = saved.smooth_motion && saved.rife_factor >= 2,
+      .smooth_motion = smooth_motion,
       .allow_software = options.software_gpu,
       .device_name = options.software_gpu ? std::string() : saved.gpu,
       .present = options.present,

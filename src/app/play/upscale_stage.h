@@ -90,6 +90,7 @@ struct UpscaleSetup {
   // aux coupes seulement ; temporal_by_shot : temporal_fix seulement sur les plans qui le demandent.
   bool drba_by_shot = false;
   bool temporal_by_shot = false;
+  bool drba_fused = false;  // le moteur ne lit le temps que dans pair01
   Factor rife_factor{.num = 1,
                      .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×10, limits::kRifeFactor)
   // --one-lane : tout sur la voie Upscale, sans recouvrement. Plus lent, mais le temps GPU de
@@ -104,6 +105,7 @@ struct UpscaleSetup {
   // --rife-at-slot, mesure : les passes RIFE d'une paire forte attendent chacune le slot de leur image, comme
   // avant les passes à l'arrivée (upscale_early.cpp). Pour mesurer le gain en ABAB.
   bool rife_at_slot = false;
+  bool span_b_ahead = false;  // avance de B pendant l'attente du premier slot, pour une comparaison
   // Réglages changés en cours de lecture (facteur RIFE, réduction, débandage) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
@@ -146,6 +148,7 @@ struct UpscaleSetup {
   // Export par puits CUDA : les images de l'encodeur derrière les slots, par write_yuv ; nullptr : le ring.
   std::shared_ptr<const YuvSlots> yuv_slots;
   bool scene_map = false;  // --scene-map : la carte de la scène par NVOF (scene_map.h), PairFacts::scene
+  bool nvof_roundtrip = false;
 };
 
 class UpscaleStage final : public RingStage {
@@ -175,6 +178,7 @@ class UpscaleStage final : public RingStage {
   struct Target {
     const gpu::Tensor* tensor = nullptr;
     const gpu::RingTarget* ring = nullptr;
+    LayerRingOutput* layer_ring = nullptr;  // sinon tensor reste la cible du warp avec calques
   };
   // Image intermédiaire output + 1 sur outputs_ par le mouvement de rife_motion, de a et b dans out
   // (les trois à une taille : celle de travail, ou de sortie après SPAN).
@@ -366,6 +370,9 @@ class UpscaleStage final : public RingStage {
   // SPAN de l'image en cours dans son tampon de spanned_, une fois (aucune passe sur un dessin tenu :
   // celui de la précédente).
   std::expected<void, Refusal> span_current();
+  std::expected<void, Refusal> before_slot_wait(std::uint32_t output) override;
+  // Enfile le SPAN sur la voie Upscale ; la plaque et le grade restent au premier usage de la source.
+  std::expected<void, Refusal> span_body();
   // Le tampon de SPAN de l'image arrivée, dès les mesures de sa paire (reuse_span_ connu), et non à son
   // premier SPAN : le warp de la paire prend spanned(current_) avant que span_current enfile SPAN.
   void pick_span_buffer();
@@ -374,6 +381,11 @@ class UpscaleStage final : public RingStage {
                                            const gpu::Reduction& reduce);
   const gpu::Tensor& spanned(std::uint32_t index) const { return spanned_[span_of_[index]]->tensor(); }
   bool spanned_now_ = false;
+  bool span_body_queued_ = false;
+  std::int64_t span_body_enqueued_us_ = 0;
+  std::uint64_t span_body_ahead_ = 0;
+  std::uint64_t span_body_seen_ = 0;
+  std::int64_t span_body_headroom_us_ = 0;
   std::array<std::uint32_t, 2> span_of_{0, 1};  // tampon de spanned_ de chaque image de rgb_
   // Dessin tenu : la sortie de SPAN de l'ancre sert (output_ si output_has_source_, ou son tampon de
   // spanned_).
@@ -592,8 +604,8 @@ class UpscaleStage final : public RingStage {
     std::unique_ptr<gpu::TensorBuffer> pair12;
     std::unique_ptr<gpu::TensorBuffer> flow;  // variante mouvement : 1 × 4 × ph × pw
     std::unique_ptr<gpu::TensorBuffer> mask;  // 1 × 1 × ph × pw
-    // Les deux images dont pair01 et pair12 tiennent les plans d'images : une autre sortie de la
-    // même paire sur les mêmes images ne réécrit que l'instant (rife_time).
+    // Les deux images dont pair01 et pair12 tiennent les plans RGB : sur le même trio, seul l'instant
+    // change (rife_time), y compris quand la paire suivante a repris les trois tampons tels quels.
     struct Filled {
       const gpu::Tensor* first = nullptr;
       const gpu::Tensor* second = nullptr;
@@ -669,9 +681,9 @@ class UpscaleStage final : public RingStage {
   // La mesure en vol relue (sans attente : une paire est passée), strong_motion_ et motion_measured_ mis à
   // jour.
   std::expected<void, Refusal> settle_motion();
-  // Avec les poses, la première paire d'un plan (motion_measured_ faux) attend la mesure de son milieu pour
-  // strong_motion_ (C09-04).
-  std::expected<void, Refusal> measure_first_pair(const gpu::Motion& middle, float t);
+  // Avec les poses, la première paire d'un plan attend la mesure de son milieu pour strong_motion_
+  // (C09-04). Vrai si le résultat est déjà disponible, aussi pour la paire suivante.
+  std::expected<bool, Refusal> measure_first_pair(const gpu::Motion& middle, float t);
   std::uint64_t single_pairs_ = 0;
   std::uint64_t multi_pairs_ = 0;
   std::uint64_t direct_pairs_ = 0;    // dont sans passe au milieu
@@ -726,7 +738,7 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> span_smooth_b();
   // Le grade avant le warp du tampon buf de spanned_, juste après son SPAN : span_graded_ le retient. Un
   // refus du grade l'arrête pour la lecture (l'écran reprend), sans arrêter la vidéo.
-  std::expected<void, Refusal> grade_spanned(std::uint32_t buf);
+  std::expected<void, Refusal> grade_spanned(std::uint32_t buf, const Previous& source, bool debanded);
   std::array<bool, 2> span_graded_{};
   // La source montrée gradée (warps_spanned seulement) ; l'image intermédiaire si ses deux sources le sont,
   // une paire à cheval sur un changement du grade restant à l'écran.
@@ -748,7 +760,8 @@ class UpscaleStage final : public RingStage {
   bool smooth_far_ = false;        // b dans smooth_far_rgb_ (tenue de trois sources ou plus)
   std::unique_ptr<gpu::TensorBuffer> smooth_far_rgb_;    // b d'une longue tenue, à la taille de travail
   std::unique_ptr<gpu::TensorBuffer> smooth_far_small_;  // et à la taille de RIFE, si small_
-  SourceId smooth_b_id_;
+  Previous smooth_b_;
+  bool smooth_far_debanded_ = false;
   SourceId frame_id_;  // l'image en tête (outputs)
   Previous head_;      // la même, avec son pts et son époque (éclats des effets au grade avant le warp)
   std::optional<std::pair<SourceId, gpu::PairScores>> ahead_taken_;  // (gauche, mesures de la suivante)

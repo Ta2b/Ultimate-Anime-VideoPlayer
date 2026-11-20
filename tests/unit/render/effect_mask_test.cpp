@@ -77,6 +77,33 @@ TEST_CASE("Masque des effets : un effet en deux ne retombe pas une paire sur deu
   CHECK(lowest > 0.88F);  // l'équilibre : 0,91
 }
 
+TEST_CASE("Masque des effets : une tenue sur une nouvelle grille repart du neutre", "[render]") {
+  EffectMask mask;
+  EffectTiles initial = grid(9, 5, 1.0F);
+  initial.sure = initial.effect;
+  mask.update(initial);
+  REQUIRE_FALSE(mask.neutral());
+  const auto before = mask.serial();
+  EffectTiles held = grid(5, 9, 0.0F);  // même nombre de tuiles, autre grille
+  held.hold = true;
+  held.sure.assign(held.effect.size(), 1.0F);
+  mask.update(held);
+  CHECK(mask.cols() == 5);
+  CHECK(mask.rows() == 9);
+  CHECK(mask.values().size() == held.effect.size());
+  CHECK(mask.sure().size() == held.sure.size());
+  CHECK(mask.neutral());
+  CHECK(mask.serial() != before);
+  const auto resized = mask.serial();
+  held.cover_x = 1.125;
+  mask.update(held);
+  CHECK(mask.cover_x() == held.cover_x);
+  CHECK(mask.serial() != resized);
+  const auto moved = mask.serial();
+  mask.update(held);
+  CHECK(mask.serial() == moved);
+}
+
 TEST_CASE("Masque des effets : le halo d'un effet déborde d'une tuile, pas plus", "[render]") {
   EffectMask mask;
   for (int i = 0; i < 72; ++i) {

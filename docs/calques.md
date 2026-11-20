@@ -30,8 +30,15 @@ arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
   false` (section `[interpolation]` de `play.toml`, dans le dossier des données) le fait disparaître, la carte
   restant allumée ; `--no-scene-map` aussi, puisqu'il éteint la plaque ; `--no-span-tiles` et
   `--no-span-reuse` ne changent rien. Lecture probable : la clé du plan contenait un dessin à cet endroit, et la
-  plaque recolle son décor décalé là où la source n'a plus ce dessin ; la garde par pixel (6 à 18 codes contre
-  SPAN de b) et le retrait des tuiles de dessin ne l'ont pas écarté. Correctif en cours.
+  plaque recolle son décor décalé là où la source n'a plus ce dessin (un bout de main ou de contour immobile au
+  moment de la clé, rangé dans le décor) ; la garde par pixel ne comparait que la luma, et un trait violet ou
+  rose a presque celle du ciel bleu qui l'a remplacé. **Correctif** : la garde de la plaque prend l'écart le
+  plus grand des trois canaux R, G, B (toujours 6 à 18 codes), dans la référence, le noyau CUDA et la spec
+  (`kernels/spec/layers.h`, étape 4) ; la garde des calques à deux sources reste en luma. Un test reproduit un
+  trait violet sur un ciel bleu de même luma (`tests/unit/kernels/layers_test.cpp`). À vérifier à 1:59 au PC de
+  Tatoub avec un nouveau paquet TensorRT (le noyau change l'empreinte). Le masque de la clé atténue aussi
+  la reprise aux frontières : la normalisation des sources annulait son opacité fractionnaire pour la
+  plaque, qui ne lit qu'une image.
 
 Sans carte (AMD, Intel, Turing, NVOF refusé, pas encore relue), ou dès qu'elle doute de la paire (coupe, fondu,
 caméra non ajustée ou non affinée par Lucas-Kanade, résidu au-delà de 0,5 pixel de travail, moins de 5 % de
@@ -74,6 +81,20 @@ journal.
 Journal de fin : `calques : N paires avec calques (dont V avec la caméra lk d'une voisine, X % de décor en
 moyenne), M images composées ; sans : … ; plaque : K clés, P sources
 reprises`. Profil GPU : étapes « calques » et « plaque de décor ».
+
+`--debug --fused-layers` essaie de calculer le warp et la composition CUDA dans le même noyau. Quand les
+sources sont certifiées et que le mélange peut conduire à un seul arrondi FP16, le warp de RIFE est dispensé
+sur les pixels de décor concernés. Avec une destination RGB compatible, le noyau écrit directement le slot.
+Le banc 4K obtient les mêmes codes RGBA16 et RGB10A2, avec et sans tramage, qu'en passant par le tenseur.
+Les deux lectures avec écriture directe atteignent 132,2 et 133,7 i/s en mouvement, contre 129,7 et 130,4
+avec le tenseur. L'étage du warp et des calques passe de 1,60–1,63 à 1,46–1,47 ms de médiane, et l'écriture
+séparée passe d'environ 2 140 appels à 706. Les passes déjà optimisées avant ce lot servent de témoin.
+
+`--debug --nvof-layer-guard` essaie un changement de masque. Il ne retire du décor que des tuiles adjacentes
+à une zone déjà protégée, avec désaccord photométrique du retour NVOF et corroboration sous la caméra de la
+même paire. Sur SPY×FAMILY à 4:53, le lecteur en rend 90 à RIFE sur 137 paires avec les deux mesures. Le
+rejeu apparié par PTS et SHA du plan Y recoupe 9 des 12 bords du témoin RGB, avec un candidat propre. Il
+reste à juger visuellement l'effet sur ces contours interpolés.
 
 ## Rejeu sur processeur
 

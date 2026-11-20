@@ -38,7 +38,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Te
   const auto height = static_cast<int>(a.shape.dims[2]);
   const int divisor = kernels::scene_flow_divisor(height);
   if (auto ok = bind(); !ok) return std::unexpected(std::move(ok.error()));
-  if (!scene_flow_) scene_flow_ = std::make_unique<SceneFlow>();
+  if (!scene_flow_) scene_flow_ = std::make_unique<SceneFlow>(nvof_roundtrip_);
   auto fresh = scene_flow_->prepare(width / divisor, height / divisor, divisor);
   if (!fresh) return std::unexpected(std::move(fresh.error()));
   // Une session neuve n'a pas d'indices : la couper ne change rien, et le dit au pilote. Sans coupure, a est
@@ -91,6 +91,12 @@ std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> TensorRtBackend::
   if (!scene_flow_)
     return refuse(RefusalCode::SequenceOrder, std::format("scene_flow_take : ticket {} périmé", ticket));
   return scene_flow_->take(ticket);
+}
+
+std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> TensorRtBackend::scene_roundtrip_take(
+    std::uint64_t ticket) {
+  if (scene_flow_) return scene_flow_->take_roundtrip(ticket);
+  return refuse(RefusalCode::SequenceOrder, "scene_roundtrip_take : aucune paire lancée");
 }
 
 std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_camera_start(

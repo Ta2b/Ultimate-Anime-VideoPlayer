@@ -65,6 +65,48 @@ std::vector<std::uint8_t> rife_zone(const kernels::SceneMotion& s) {
   return zone;
 }
 
+void count_roundtrip_edges(PairLayers& base, const kernels::SceneMotion& scene, const kernels::Affine& to_a,
+                           bool protect_edges) {
+  const auto& measured = *scene.roundtrip;
+  if (measured.tiles.size() != base.decor.size()) return;
+  const auto& photo_a = scene.roundtrip_photo_edge_a;
+  const bool has_camera_photo = photo_a.size() == base.decor.size();
+  std::vector<std::size_t> confirmed;
+  const auto index = [&](int c, int r) {
+    return static_cast<std::size_t>(r) * static_cast<std::size_t>(base.cols) + static_cast<std::size_t>(c);
+  };
+  for (int r = 0; r < base.rows; ++r) {
+    for (int c = 0; c < base.cols; ++c) {
+      const auto i = index(c, r);
+      if (base.decor[i] == 0 || measured.tiles[i].photo_b < 2) continue;  // sens ancré sur b (plaque)
+      const bool border = (c > 0 && base.decor[index(c - 1, r)] == 0) ||
+                          (c + 1 < base.cols && base.decor[index(c + 1, r)] == 0) ||
+                          (r > 0 && base.decor[index(c, r - 1)] == 0) ||
+                          (r + 1 < base.rows && base.decor[index(c, r + 1)] == 0);
+      if (!border) continue;
+      ++base.roundtrip_edges;
+      if (!has_camera_photo) continue;
+
+      // Désaccord NVOF ancré en b (plaque) ; le contrôle de la caméra part de a. Projeter le centre
+      // de la tuile b pour interroger la bonne tuile a, toujours en indices de pixels de travail.
+      const double x = std::min((c + 0.5) * base.tile_px - 0.5, base.work_width - 1.0);
+      const double y = std::min((r + 0.5) * base.tile_px - 0.5, base.work_height - 1.0);
+      const double ax = to_a[0] + to_a[1] * x + to_a[2] * y;
+      const double ay = to_a[3] + to_a[4] * x + to_a[5] * y;
+      if (!(ax >= 0.0 && ax <= base.work_width - 1.0 && ay >= 0.0 && ay <= base.work_height - 1.0)) continue;
+      const int ac = static_cast<int>((ax + 0.5) / base.tile_px);
+      const int ar = static_cast<int>((ay + 0.5) / base.tile_px);
+      if (ac < base.cols && ar < base.rows && photo_a[index(ac, ar)] != 0) {
+        ++base.roundtrip_camera_edges;
+        if (protect_edges) confirmed.push_back(i);
+      }
+    }
+  }
+  // Tester les voisins sur la grille entière avant de retirer la moindre tuile.
+  for (const std::size_t i : confirmed) base.decor[i] = 0;
+  base.roundtrip_protected = static_cast<std::uint32_t>(confirmed.size());
+}
+
 }  // namespace
 
 std::string_view name(LayerSkip skip) {
@@ -90,7 +132,7 @@ std::string_view name(LayerSkip skip) {
 }
 
 std::expected<PairLayers, LayerSkip> plan_layers(const std::optional<kernels::SceneMotion>& scene,
-                                                 int work_width, int work_height) {
+                                                 int work_width, int work_height, bool protect_edges) {
   if (!scene) return std::unexpected(LayerSkip::NoMap);
   const kernels::SceneMotion& s = *scene;
   if (s.cut_likely || s.fade) return std::unexpected(LayerSkip::Cut);
@@ -98,7 +140,8 @@ std::expected<PairLayers, LayerSkip> plan_layers(const std::optional<kernels::Sc
   if (!s.camera_refined) return std::unexpected(LayerSkip::Unrefined);
   if (!(s.residual <= kLayerResidualMax)) return std::unexpected(LayerSkip::Residual);
   const kernels::Affine camera = index_camera(s.camera);
-  if (!kernels::inverse(camera)) return std::unexpected(LayerSkip::Warp);
+  const auto inverse_camera = kernels::inverse(camera);
+  if (!inverse_camera) return std::unexpected(LayerSkip::Warp);
   const kernels::LayerGrid limits;
   if (!limits.fits(s.cols, s.rows) || s.tile_px <= 0 || work_width <= 0 || work_height <= 0 ||
       s.tiles.size() != static_cast<std::size_t>(s.cols) * static_cast<std::size_t>(s.rows))
@@ -117,7 +160,8 @@ std::expected<PairLayers, LayerSkip> plan_layers(const std::optional<kernels::Sc
     layers.decor[i] = 1;
     ++kept;
   }
-  layers.share = static_cast<double>(kept) / static_cast<double>(s.tiles.size());
+  if (s.roundtrip) count_roundtrip_edges(layers, s, *inverse_camera, protect_edges);
+  layers.share = static_cast<double>(kept - layers.roundtrip_protected) / static_cast<double>(s.tiles.size());
   if (layers.share < kLayerMinShare) return std::unexpected(LayerSkip::FewTiles);
   return layers;
 }
@@ -147,9 +191,10 @@ std::optional<kernels::SceneMotion> with_neighbour(const kernels::SceneMotion& s
 
 std::expected<PairLayers, LayerSkip> plan_with_neighbour(const std::optional<kernels::SceneMotion>& scene,
                                                          const std::optional<NeighbourCamera>& neighbour,
-                                                         int work_width, int work_height, bool& borrowed) {
+                                                         int work_width, int work_height, bool& borrowed,
+                                                         bool protect_edges) {
   borrowed = false;
-  auto planned = plan_layers(scene, work_width, work_height);
+  auto planned = plan_layers(scene, work_width, work_height, protect_edges);
   if (planned || planned.error() != LayerSkip::Unrefined || !scene.has_value() || !neighbour.has_value()) {
     return planned;
   }

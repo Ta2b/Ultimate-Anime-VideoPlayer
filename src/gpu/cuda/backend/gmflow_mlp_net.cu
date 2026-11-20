@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -87,38 +89,43 @@ std::vector<__half> to_half(const std::vector<float>& from) {
 // Le flux d'étages d'une couche, dans l'ordre où le noyau les prend : pour chaque tranche c de 64 canaux
 // cachés, 8 étages de W1 (pas k 2i et 2i + 1, 4 paires de tuiles, 32 lanes) puis 4 étages de W2 (pas k j de
 // la tranche, 8 paires, 32 lanes).
-std::vector<uint4> stages(const GmflowMlpLayer& layer, int hidden) {
+std::vector<uint4> stages(const GmflowMlpLayer& layer, int hidden, bool paired) {
   const std::vector<__half> w1 = to_half(layer.w1);  // [hidden][256]
   const std::vector<__half> w2 = to_half(layer.w2);  // [128][hidden]
   std::vector<uint4> out;
   out.reserve(static_cast<std::size_t>(hidden / gm::kHiddenTile) * gm::kChunkStages * gm::kStageVec);
-  for (int c = 0; c < hidden / gm::kHiddenTile; ++c) {
-    const int h0 = c * gm::kHiddenTile;
-    for (int ks = 0; ks < gm::kK1; ++ks)
-      for (int np = 0; np < gm::kNP1; ++np)
-        for (int lane = 0; lane < 32; ++lane)
-          out.push_back(fragment(w1, gm::kIn, h0 + 16 * np, 16 * ks, lane));
-    for (int j = 0; j < gm::kK2; ++j)
-      for (int np = 0; np < gm::kNP2; ++np)
-        for (int lane = 0; lane < 32; ++lane) out.push_back(fragment(w2, hidden, 16 * np, h0 + 16 * j, lane));
+  const int group = paired ? 2 : 1;
+  for (int c = 0; c < hidden / gm::kHiddenTile; c += group) {
+    // Dans un groupe de deux, les étages W1 au même K sont adjacents ; W2 garde son ordre.
+    for (int ks = 0; ks < gm::kK1; ks += 2)
+      for (int part = 0; part < group; ++part)
+        for (int kl = 0; kl < 2; ++kl)
+          for (int np = 0; np < gm::kNP1; ++np)
+            for (int lane = 0; lane < 32; ++lane)
+              out.push_back(fragment(w1, gm::kIn, (c + part) * gm::kHiddenTile + 16 * np,
+                                     16 * (ks + kl), lane));
+    for (int part = 0; part < group; ++part)
+      for (int j = 0; j < gm::kK2; ++j)
+        for (int np = 0; np < gm::kNP2; ++np)
+          for (int lane = 0; lane < 32; ++lane)
+            out.push_back(fragment(w2, hidden, 16 * np, (c + part) * gm::kHiddenTile + 16 * j, lane));
   }
   return out;
 }
 
-template <int Warps>
+template <int Warps, bool Paired = false>
 void launch(dim3 grid, cudaStream_t stream, const gm::Params& p) {
-  gm::mlp_kernel<Warps, gm::Acc::kF32>
-      <<<grid, gm::Block<Warps>::kThreads, static_cast<std::size_t>(gm::Block<Warps>::kSmemBytes), stream>>>(
-          p);
+  constexpr auto smem = Paired ? gm::Block<Warps>::kWideSmemBytes : gm::Block<Warps>::kSmemBytes;
+  gm::mlp_kernel<Warps, gm::Acc::kF32, Paired><<<grid, gm::Block<Warps>::kThreads, smem, stream>>>(p);
 }
 
 // Le noyau du bloc demandé, réglé pour sa mémoire partagée (au-delà de 48 Ko, et la part de la mémoire
 // partagée au plus haut pour deux blocs par SM).
-template <int Warps>
+template <int Warps, bool Paired = false>
 cudaError_t prepare_kernel() {
-  const auto kernel = gm::mlp_kernel<Warps, gm::Acc::kF32>;
-  if (const cudaError_t e = cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                 gm::Block<Warps>::kSmemBytes);
+  const auto kernel = gm::mlp_kernel<Warps, gm::Acc::kF32, Paired>;
+  constexpr auto smem = Paired ? gm::Block<Warps>::kWideSmemBytes : gm::Block<Warps>::kSmemBytes;
+  if (const cudaError_t e = cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
       e != cudaSuccess)
     return e;
   return cudaFuncSetAttribute(kernel, cudaFuncAttributePreferredSharedMemoryCarveout,
@@ -140,21 +147,31 @@ class Net final : public GmflowMlpNet {
       return false;
     }
     hidden_ = mlp.hidden;
-    int device = 0, optin = 0;
+    int device = 0, optin = 0, major = 0, minor = 0;
     if (!sent(cudaGetDevice(&device), error) ||
         !sent(cudaDeviceGetAttribute(&sms_, cudaDevAttrMultiProcessorCount, device), error) ||
-        !sent(cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, device), error))
+        !sent(cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, device), error) ||
+        !sent(cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, device), error) ||
+        !sent(cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, device), error))
       return false;
-    const int smem = warps_ == 8 ? gm::Block<8>::kSmemBytes : gm::Block<4>::kSmemBytes;
+    // Seule la forme mesurée sur Ada et dont chaque split peut grouper les tranches par deux.
+    const char* ab = std::getenv("KIRARI_AB_GMFLOW_MLP_PAIRS");
+    paired_ = major == 8 && minor == 9 && warps_ == 4 &&
+              hidden_ % (2 * kMaxSplits * gm::kHiddenTile) == 0 &&
+              (ab == nullptr || std::strcmp(ab, "0") != 0);
+    const int smem = paired_ ? gm::Block<4>::kWideSmemBytes
+                              : (warps_ == 8 ? gm::Block<8>::kSmemBytes : gm::Block<4>::kSmemBytes);
     if (smem > std::max(optin, kDefaultSmem)) {
       error = "MLP de GMFlow : la carte n'a pas la mémoire partagée de ce bloc";
       return false;
     }
-    if (!sent(warps_ == 8 ? prepare_kernel<8>() : prepare_kernel<4>(), error)) return false;
+    const cudaError_t prepared =
+        paired_ ? prepare_kernel<4, true>() : (warps_ == 8 ? prepare_kernel<8>() : prepare_kernel<4>());
+    if (!sent(prepared, error)) return false;
     layers_ = std::vector<Layer>(mlp.layers.size());
     for (std::size_t i = 0; i < mlp.layers.size(); ++i) {
       const GmflowMlpLayer& from = mlp.layers[i];
-      const std::vector<uint4> packed = stages(from, hidden_);
+      const std::vector<uint4> packed = stages(from, hidden_, paired_);
       Layer& l = layers_[i];
       l.eps = from.epsilon;
       if (!sent(l.w.upload(packed.data(), packed.size() * sizeof(uint4)), error) ||
@@ -189,7 +206,9 @@ class Net final : public GmflowMlpNet {
     p.beta = l.beta.as<const float>();
     p.eps = l.eps;
     const dim3 grid(static_cast<unsigned>(blocks), static_cast<unsigned>(p.splits));
-    if (warps_ == 8) {
+    if (paired_) {
+      launch<4, true>(grid, stream, p);
+    } else if (warps_ == 8) {
       launch<8>(grid, stream, p);
     } else {
       launch<4>(grid, stream, p);
@@ -240,6 +259,7 @@ class Net final : public GmflowMlpNet {
   long max_tokens_;
   int hidden_ = 0;
   int sms_ = 1;
+  bool paired_ = false;
   std::vector<Layer> layers_;
   std::int64_t partial_floats_ = 0;
   Buffer partial_;

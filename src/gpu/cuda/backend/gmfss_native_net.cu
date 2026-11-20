@@ -38,22 +38,41 @@ __global__ void pack_head(const __half* w0, const __half* rife, const __half* w1
   to[1] = make_uint4(pair_bits(v[8], v[9]), 0U, 0U, 0U);
 }
 
-// count plans de src (pas plane) vers les canaux [c0, c0 + count) de out, ld canaux par pixel ; huit canaux
-// par fil, les fils voisins sur des pixels voisins (lectures des plans groupées).
-__global__ void pack_planes(const __half* src, long plane, int count, __half* out, int ld, int c0) {
-  const long i = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
-  const int groups = count / 8;
-  if (i >= plane * groups) return;
-  const auto g = static_cast<int>(i / plane);
-  const long px = i - g * plane;
-  const __half* from = src + static_cast<long>(g) * 8 * plane + px;
+// Les deux sources contiennent déjà des demi-flottants. La transposition les déplace bit pour bit.
+constexpr int kPackPixels = 32;
+constexpr int kPackChannels = 32;
+constexpr int kPackThreads = kPackPixels * (kPackChannels / 8);
+
+// Une tuile lit 32 pixels consécutifs dans chaque plan et écrit 32 canaux contigus par pixel.
+// Une tuile lit une seule source : la frontière entre les deux images est un multiple de 32 canaux.
+template <bool Blocked8>
+__global__ void pack_features(const __half* a, const __half* b, long plane, int channels, __half* out) {
+  __shared__ __half tile[kPackChannels][kPackPixels + 1];
+  const long x = static_cast<long>(blockIdx.x) * kPackPixels;
+  const int c = static_cast<int>(blockIdx.y) * kPackChannels;
+  const __half* from = c < channels ? a + static_cast<long>(c) * plane
+                                   : b + static_cast<long>(c - channels) * plane;
+  const int lane = static_cast<int>(threadIdx.x);
+  const long px = x + lane % kPackPixels;
+  if (px < plane) {
+    for (int ch = lane / kPackPixels; ch < kPackChannels; ch += kPackThreads / kPackPixels)
+      tile[ch][lane % kPackPixels] = from[ch * plane + px];
+  }
+  __syncthreads();
+  constexpr int kGroups = kPackChannels / 8;
+  const int local_pixel = lane / kGroups;
+  const int group = (lane % kGroups) * 8;
+  const long pixel = x + local_pixel;
+  if (pixel >= plane) return;
   std::uint32_t w[4];
 #pragma unroll
-  for (int j = 0; j < 4; ++j) w[j] = pair_bits(from[(2 * j) * plane], from[(2 * j + 1) * plane]);
-  *reinterpret_cast<uint4*>(out + px * ld + c0 + g * 8) = make_uint4(w[0], w[1], w[2], w[3]);
+  for (int j = 0; j < 4; ++j)
+    w[j] = pair_bits(tile[group + 2 * j][local_pixel], tile[group + 2 * j + 1][local_pixel]);
+  const long at = Blocked8 ? (c + group) * plane + pixel * 8 : pixel * (2 * channels) + c + group;
+  *reinterpret_cast<uint4*>(out + at) = make_uint4(w[0], w[1], w[2], w[3]);
 }
 
-// Les entrées telles que pack_head et pack_planes les remplissent : niveau et canaux de x0 à x3.
+// Les entrées telles que pack_head et pack_features les remplissent : niveau et canaux de x0 à x3.
 struct InputForm {
   int level = 0;
   int channels = 0;
@@ -80,7 +99,8 @@ constexpr std::array<const char*, prepare::kGmfssGridPieces> kPieceNames{"ligne 
 
 class Net final : public GmfssNativeNet {
  public:
-  Net(int height, int width) : height_(height), width_(width), net_(height, width) {}
+  Net(int height, int width, bool features_c8)
+      : height_(height), width_(width), features_c8_(features_c8), net_(height, width) {}
 
   bool plan(const GmfssGrid& grid, const gmfss_plan::Tuner& tuner, std::string& error) {
     if (grid.tensors.size() <= static_cast<std::size_t>(prepare::kGmfssGridInputs) || grid.steps.empty()) {
@@ -93,7 +113,8 @@ class Net final : public GmfssNativeNet {
       return false;
     }
     out_ = static_cast<int>(grid.tensors.size()) - 1;
-    const gmfss_plan::Io io{.external = {}, .image = -1, .written = {0, 1, 2, 3}, .kept = {out_}};
+    const gmfss_plan::Io io{.external = {}, .image = -1, .written = {0, 1, 2, 3},
+                             .kept = {out_}, .rgb = out_, .features_c8 = features_c8_};
     if (!net_.plan(grid, io, pieces, tuner, error) || !check(error)) return false;
     use(std::vector<RifeNativePrecision>(kPieceNames.size(), {RifeNativeSums::kF32, RifeNativeSums::kF32}));
     const auto sent = [&](cudaError_t result) {
@@ -112,51 +133,69 @@ class Net final : public GmfssNativeNet {
     return piece >= 0 && piece < pieces() ? kPieceNames[static_cast<std::size_t>(piece)] : "?";
   }
   bool has_head(int piece) const override { return net_.has_head(piece); }
+  bool join_ready() const override { return net_.join_ready(); }
+  void use_join(bool enabled) override { net_.use_join(enabled); }
   void use(std::span<const RifeNativePrecision> precisions) override { net_.use(precisions); }
   void trim() override { net_.trim(); }
   GmfssTuning& tuning() { return tuning_; }
   const GmfssTuning& tuning() const override { return tuning_; }
   std::int64_t workspace_bytes() const override { return net_.zone_bytes() + net_.partial_bytes(); }
+  std::array<void*, 3> feature_inputs() const override {
+    void* zone = zone_.as<void>();
+    return {gmfss_plan::ConvNet::at(zone, net_.tensor(1)), gmfss_plan::ConvNet::at(zone, net_.tensor(2)),
+            gmfss_plan::ConvNet::at(zone, net_.tensor(3))};
+  }
 
   cudaError_t run(cudaStream_t stream, const GmfssNativeInputs& in, void* out) const override {
     const auto plane = [&](int level) { return static_cast<long>(height_ >> level) * (width_ >> level); };
     void* zone = zone_.as<void>();
     const auto at = [&](int tensor) {
-      return gmfss_plan::ConvNet::at(zone, inputs_[static_cast<std::size_t>(tensor)]);
+      return gmfss_plan::ConvNet::at(zone, net_.tensor(tensor));
     };
     const auto* w01 = static_cast<const __half*>(in.warped0[0]);
     const auto* w11 = static_cast<const __half*>(in.warped1[0]);
     const long p0 = plane(0);
     pack_head<<<blocks_for(p0), 256, 0, stream>>>(w01, static_cast<const __half*>(in.rife), w11, p0, at(0));
-    const int features = prepare::kGmfssFeatureChannels;
-    const auto planes = [&](const void* src, long n, int count, int tensor, int c0) {
-      pack_planes<<<blocks_for(n * (count / 8)), 256, 0, stream>>>(
-          static_cast<const __half*>(src), n, count, at(tensor),
-          inputs_[static_cast<std::size_t>(tensor)].channels, c0);
-    };
-    planes(w01 + 3 * p0, p0, features, 1, 0);
-    planes(w11 + 3 * p0, p0, features, 1, features);
-    for (int level = 1; level <= 2; ++level) {
-      const int c = inputs_[static_cast<std::size_t>(level + 1)].channels / 2;
-      planes(in.warped0[static_cast<std::size_t>(level)], plane(level), c, level + 1, 0);
-      planes(in.warped1[static_cast<std::size_t>(level)], plane(level), c, level + 1, c);
+    if (!in.packed_features) {
+      const int features = prepare::kGmfssFeatureChannels;
+      const auto planes = [&](const void* a, const void* b, long n, int count, int tensor) {
+        const dim3 grid(static_cast<unsigned>((n + kPackPixels - 1) / kPackPixels),
+                        static_cast<unsigned>(2 * count / kPackChannels));
+        if (features_c8_) {
+          pack_features<true><<<grid, kPackThreads, 0, stream>>>(static_cast<const __half*>(a),
+                                                               static_cast<const __half*>(b), n, count, at(tensor));
+        } else {
+          pack_features<false><<<grid, kPackThreads, 0, stream>>>(static_cast<const __half*>(a),
+                                                                static_cast<const __half*>(b), n, count, at(tensor));
+        }
+      };
+      planes(w01 + 3 * p0, w11 + 3 * p0, p0, features, 1);
+      for (int level = 1; level <= 2; ++level) {
+        const int c = net_.tensor(level + 1).channels / 2;
+        planes(in.warped0[static_cast<std::size_t>(level)], in.warped1[static_cast<std::size_t>(level)],
+               plane(level), c, level + 1);
+      }
     }
-    net_.run(stream, zone, partial_.as<float>(), {});
-    const long full = 4 * p0;
-    unpack_image<<<blocks_for(full), 256, 0, stream>>>(gmfss_plan::ConvNet::at(zone, net_.tensor(out_)), full,
-                                                       static_cast<__half*>(out));
+    auto* rgb = static_cast<__half*>(out);
+    if (!net_.run(stream, zone, partial_.as<float>(), {}, -1, rgb)) {
+      const long full = 4 * p0;
+      unpack_image<<<blocks_for(full), 256, 0, stream>>>(gmfss_plan::ConvNet::at(zone, net_.tensor(out_)), full,
+                                                         rgb);
+    }
     return cudaGetLastError();
   }
 
   cudaError_t run_piece(cudaStream_t stream, int piece) const override {
     if (piece < 0 || piece >= pieces()) return cudaErrorInvalidValue;
-    net_.run(stream, zone_.as<void>(), partial_.as<float>(), {}, piece);
+    void* zone = zone_.as<void>();
+    auto* rgb = gmfss_plan::ConvNet::at(zone, net_.tensor(out_));
+    net_.run(stream, zone, partial_.as<float>(), {}, piece, rgb);
     return cudaGetLastError();
   }
 
  private:
   // La sortie, l'image au double de la taille ; les entrées, aux formes que remplissent pack_head et
-  // pack_planes.
+  // pack_features.
   bool check(std::string& error) {
     const gmfss_plan::Placed& out = net_.tensor(out_);
     if (out.channels != 8 || out.height != 2 * height_ || out.width != 2 * width_) {
@@ -170,16 +209,15 @@ class Net final : public GmfssNativeNet {
         error = "entrée x" + std::to_string(i) + " de forme inattendue";
         return false;
       }
-      inputs_[i] = t;
     }
     return true;
   }
 
   int height_;
   int width_;
+  bool features_c8_;
   gmfss_plan::ConvNet net_;
   GmfssTuning tuning_;
-  std::array<gmfss_plan::Placed, prepare::kGmfssGridInputs> inputs_{};
   int out_ = 0;
   gmfss_plan::rn::Buffer zone_;
   gmfss_plan::rn::Buffer partial_;
@@ -188,7 +226,8 @@ class Net final : public GmfssNativeNet {
 }  // namespace
 
 std::unique_ptr<GmfssNativeNet> GmfssNativeNet::create(const prepare::GmfssGrid& grid, int height, int width,
-                                                       cudaStream_t stream, std::string& error) {
+                                                       cudaStream_t stream, std::string& error,
+                                                       bool features_c8) {
   if (height < 32 || width < 32 || height % 32 != 0 || width % 32 != 0) {
     error = "taille de la fusion : des multiples de 32 attendus";
     return nullptr;
@@ -198,7 +237,7 @@ std::unique_ptr<GmfssNativeNet> GmfssNativeNet::create(const prepare::GmfssGrid&
     error = "événements CUDA du réglage";
     return nullptr;
   }
-  auto net = std::make_unique<Net>(height, width);
+  auto net = std::make_unique<Net>(height, width, features_c8);
   if (!net->plan(grid, gmfss_plan::Tuner{.bench = bench, .stream = stream, .tuning = net->tuning()}, error))
     return nullptr;
   // Les envois sur stream finis avant qu'une autre voie (la lecture) lance le réseau.

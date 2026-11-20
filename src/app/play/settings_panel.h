@@ -10,6 +10,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -65,6 +66,8 @@ struct SettingsChoices {
   bool distil_drba_available = false;      // le graphe de DistilDRBA
   bool gmfss_half_flow_available = false;  // la paire de GMFSS au demi-flot à côté des deux graphes
   bool gmfss_available = false;  // les deux graphes de GMFSS union, sur un moteur qui les fait tourner
+  bool gmfss_loaded = false;    // le moteur chargé sur la chaîne active, indépendamment des fichiers
+  int gmfss_only_auto_cap = 0;   // en i/s, pour le GMFSS seul chargé ; 0 en mélange ou après un repli
   bool rife_loaded = false;      // moteur RIFE chargé : ×N en direct
   // La chaîne ouverte (chain_shape.h) : un facteur, Auto ou Rapide qui demandent un autre anneau ou un autre
   // ordre du warp attendent « Appliquer ». Rien : à l'accueil, aucune chaîne.
@@ -73,6 +76,7 @@ struct SettingsChoices {
   std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
   std::string default_rife_model;        // celui qu'un nom vide désigne
   std::string rife_folder;               // le dossier des modèles RIFE (et de DistilDRBA)
+  std::function<void(SettingsChoices&, const PlaySettings&)> refresh_motion_models;
   bool nvidia = false;                   // GPU NVIDIA : Smooth Motion n'est offert qu'à lui
   bool tensor_cores = false;             // une NVIDIA RTX (GpuFacts) : les conseils de card_advice.h
   bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)

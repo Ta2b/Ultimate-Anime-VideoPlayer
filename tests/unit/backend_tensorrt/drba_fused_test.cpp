@@ -155,6 +155,34 @@ TEST_CASE("DistilDRBA fusionné : les noyaux de réduction sont exacts",
       CHECK(wrong_time == 0);
     }
 
+    // Le plan reste hétérogène mais seule sa première valeur a été réécrite par rife_time. Le moteur
+    // peut reprendre les images ou refaire une exécution entière sur une autre zone d'activations.
+    const Halves scalar{kernels::ref::float_to_half(0.375F)};
+    upload_halves(d01.get(), scalar, 6 * area);
+    for (const bool times_only : {false, true}) {
+      REQUIRE(gpu::cuda::launch_drba_pre({.height = h,
+                                          .width = w,
+                                          .reduce0 = kernels::drba_fused_reduce(plan, 0),
+                                          .reduce1 = kernels::drba_fused_reduce(plan, 1),
+                                          .reduce2 = kernels::drba_fused_reduce(plan, 2),
+                                          .pair01 = d01.get(),
+                                          .pair12 = d12.get(),
+                                          .x0 = x[0],
+                                          .x1 = x[1],
+                                          .x2 = x[2],
+                                          .times_only = times_only,
+                                          .scalar_time = true},
+                                         nullptr) == cudaSuccess);
+      for (int k = 0; k < kernels::kDrbaFusedBlocks; ++k) {
+        const auto dims = kernels::drba_fused_x(plan, k, h, w);
+        const auto plane = static_cast<std::size_t>(dims.width) * static_cast<std::size_t>(dims.height);
+        const int channel = k == 0 ? 57 : kernels::kDrbaFusedTimeChannel;
+        const auto time = download_halves(x[k], static_cast<std::size_t>(channel) * plane, plane);
+        const auto expected = kernels::ref::float_to_half(0.75F);
+        CHECK(std::ranges::all_of(time, [&](std::uint16_t v) { return v == expected; }));
+      }
+    }
+
     // Les encodages (sortie de l'encodeur, 48 plans au plan 9 de X2) réduits au demi et au quart.
     const int eh = h / tail;
     const int ew = w / tail;
@@ -376,6 +404,7 @@ void compare_engines(const std::string& file, int h, int w) {
     upload(inputs[0], a);
     upload(inputs[1], b);
     const auto want = run(**reference);
+    const auto fused_dense = run(**fused);
     const auto [a0, b0] = pairs_of(images, h, w, 0.5F);
     upload(inputs[0], a0);
     upload(inputs[1], b0);
@@ -383,13 +412,18 @@ void compare_engines(const std::string& file, int h, int w) {
     REQUIRE(buffer);
     std::vector<gpu::Tensor> outs{(*buffer)->tensor()};
     REQUIRE(loaded.backend->enqueue(**fused, inputs, outs));
-    upload(inputs[0], a);
-    upload(inputs[1], b);
+    // Les deux adresses sont désormais connues du backend : seule la première valeur est changée
+    // dans chaque plan, et le moteur entier peut reprendre les entrées après restauration.
+    REQUIRE(loaded.backend->kernels() != nullptr);
+    REQUIRE(loaded.backend->kernels()->rife_time(inputs[0], tau / 2.0F));
+    REQUIRE(loaded.backend->kernels()->rife_time(inputs[1], tau / 2.0F));
     for (int i = 0; i < 3; ++i) {
       (*fused)->next_times_only();
       REQUIRE(loaded.backend->enqueue(**fused, inputs, outs));
     }
     const auto got = download(outs[0]);
+    CHECK(got == fused_dense);
+    CHECK(run(**reference) == want);
     double worst = 0.0;
     const double score = psnr_of(got, want, worst);
     WARN(file << " tau " << tau << " (temps seul) : PSNR " << score << " dB contre TensorRT entier");

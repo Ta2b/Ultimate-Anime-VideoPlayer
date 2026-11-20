@@ -49,7 +49,7 @@ struct Shape {
   int smem = 0;
   float ms = 0.F;
   int rejected = 0;    // formes écartées au banc : sortie différente de celle de la forme de référence
-  std::string stream;  // le flux face à la tuile au banc, quand une forme en flux y passe (vide sinon)
+  std::string stream;  // comparaison au banc de la forme en flux ou à halo partagé, si essayée
 };
 
 // Une convolution : kImage (l'image en trois plans, pas 2), kSame, kHalf, kPhase (transposée par phases) ou
@@ -62,7 +62,11 @@ struct Layer {
   int from = 0, to = 0, skip = -1;
   float in_slope = 1.F;
   bool activation = false;
-  bool head = false;  // écrit une sortie du réseau (Io::kept)
+  bool blocked8 = false;   // entrée [groupes C8][pixels][8]
+  bool ring_next = false;  // l’étape suivante est le consommateur unique de cet anneau
+  bool join_next = false;  // les quatre convolutions des deux branches se terminent par leur addition
+  bool rgb = false;        // dernière convolution 64 → 3 du GridNet, sans résiduel
+  bool head = false;       // écrit une sortie du réseau (Io::kept)
   int piece = 0;
   RifeNativeSums sums = RifeNativeSums::kF32;  // les sommes lancées
   std::array<Shape, kSums.size()> shapes;
@@ -91,6 +95,8 @@ struct Io {
   int image = -1;
   std::vector<int> written;
   std::vector<int> kept;
+  int rgb = -1;              // image finale facultative, dans kept
+  bool features_c8 = false;  // GridNet : les trois entrées de caractéristiques
 };
 
 // Le banc du réglage et sa voie, où partent aussi les poids ; tuning : le compte, que le plan complète.
@@ -139,6 +145,9 @@ class ConvNet {
   }
 
   bool has_head(int piece) const;
+  bool join_ready() const;
+  // Au chargement seulement, stream vidé entre les deux placements.
+  void use_join(bool enabled);
   // Les sommes de chaque convolution : celles de son morceau (precisions[morceau]), la tête à part.
   void use(std::span<const RifeNativePrecision> precisions);
   // Les poids des tuiles que les sommes posées n'emploient pas : libérés.
@@ -146,22 +155,27 @@ class ConvNet {
 
   // Les convolutions sur stream ; bound : la mémoire des tenseurs externes, dans l'ordre d'Io::external ;
   // piece positif : celles de ce morceau seulement, sur ce que la zone garde (pour son temps).
-  void run(cudaStream_t stream, void* zone, float* partial, std::span<const void* const> bound,
-           int piece = -1) const;
+  // Avec rgb, essaie d'écrire directement en trois plans. Renvoie vrai si ces plans ont été écrits.
+  bool run(cudaStream_t stream, void* zone, float* partial, std::span<const void* const> bound,
+           int piece = -1, __half* rgb = nullptr) const;
 
  private:
   void lifetimes(const prepare::GmfssGrid& grid, const Io& io);
   void place(const prepare::GmfssGrid& grid, const Io& io);
+  void pack();
   bool layout(const prepare::GmfssGridStep& step, const Io& io, Layer& layer, std::string& error) const;
   bool build(const prepare::GmfssGridStep& step, const Tuner& tuner, Layer& layer, std::string& error);
   bool tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string& error);
   const Layer* twin(const Layer& layer) const;
+  bool joins_at(std::size_t index) const;
   __half* address(int id, void* zone, std::span<const void* const> bound) const;
 
   int height_;
   int width_;
   int sms_ = 1;
   std::vector<Placed> tensors_;
+  std::vector<Placed> join_tensors_;
+  bool join_on_ = false;
   std::vector<Layer> layers_;
   std::int64_t zone_bytes_ = 0;
   std::int64_t partial_bytes_ = 0;

@@ -20,10 +20,12 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "core/types.h"
 #include "gpu/cuda/backend/gpu_timing.h"
 #include "gpu/cuda/backend/nvof_session.h"
+#include "gpu/cuda/backend/scene_roundtrip.h"
 #include "gpu/kernel_ops.h"
 #include "kernels/spec/scene_camera.h"
 #include "kernels/spec/scene_flow.h"
@@ -34,7 +36,7 @@ struct SceneRefineState;  // scene_camera_kernels.h
 
 class SceneFlow {
  public:
-  SceneFlow() = default;
+  explicit SceneFlow(bool roundtrip = false) : roundtrip_wanted_(roundtrip) {}
   ~SceneFlow();
   SceneFlow(const SceneFlow&) = delete;
   SceneFlow& operator=(const SceneFlow&) = delete;
@@ -44,6 +46,8 @@ class SceneFlow {
   // les appels suivants le rendent sans rien essayer.
   std::expected<bool, Refusal> prepare(int flow_width, int flow_height, int divisor);
   NvofSession& session() { return *session_; }
+  // À la destruction du backend : finit la dernière relecture éventuelle et rend le relevé du retour.
+  std::string finish_roundtrip();
 
   // Les tampons de luma d'une paire : a et b, et si la luma de a est déjà là (b de la paire d'avant).
   struct Lumas {
@@ -63,6 +67,7 @@ class SceneFlow {
                                             GpuTiming& flow_timing, GpuTiming& tiles_timing);
   // La grille d'un ticket si sa copie est passée, sans attendre ; nullopt sinon. Périmé : SequenceOrder.
   std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> take(std::uint64_t ticket);
+  std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> take_roundtrip(std::uint64_t ticket);
 
   // L'affinage de la caméra d'une paire lancée (KernelOps::scene_camera_start, scene_camera.cpp) : sur la
   // file de NVOF, sur les lumas de la paire, puis « relâché » reposé sur leurs tampons. Ticket 0, rien de
@@ -106,6 +111,9 @@ class SceneFlow {
 
   std::optional<Refusal> refused_;
   std::unique_ptr<NvofSession> session_;
+  bool roundtrip_wanted_ = false;
+  std::unique_ptr<SceneRoundtrip> roundtrip_;
+  std::string roundtrip_notice_;
   int divisor_ = 1;
   int cols_ = 0;
   int rows_ = 0;
