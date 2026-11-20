@@ -175,7 +175,8 @@ __device__ __forceinline__ QuadAxes d2_axes(const FusedFlowSource& source, int x
   }
 }
 
-__device__ __forceinline__ float4 d2_sample(const warp::Staged& source, int c, const QuadAxes& q) {
+[[maybe_unused]] __device__ __forceinline__ float4 d2_sample(const warp::Staged& source, int c,
+                                                             const QuadAxes& q) {
   const auto& axis_x = q.left;
   const auto& axis_y = q.above;
   const float a = glue::z_at(source, c, axis_y.i0, axis_x.i0),
@@ -188,7 +189,7 @@ __device__ __forceinline__ float4 d2_sample(const warp::Staged& source, int c, c
           warp::rounded(warp::lerp2(a, b, d, e, q.right, q.below))};
 }
 
-__device__ __forceinline__ float d2_average(float4 v) {
+[[maybe_unused]] __device__ __forceinline__ float d2_average(float4 v) {
   return ((v.x + v.y) + (v.z + v.w)) * 0.25F;
 }
 
