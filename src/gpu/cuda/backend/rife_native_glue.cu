@@ -394,8 +394,8 @@ __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGluePa
       }
     }
   };
+  // Les deux boucles donnent les mêmes cases aux mêmes fils : chacun relit son propre flot.
   stage_motion<K, N, Fixed>(s, g, src, x0, y0);
-  __syncthreads();
   warp_staged_tile<N, Packed>(s, g, x0, y0);
   __syncthreads();
   conv(0);
