@@ -87,6 +87,10 @@ struct SpanFp8Weights {
   bool compact_workspace = false;
 };
 
+// Un masque par couche du corps, dans l'ordre de lancement, puis le cœur de la queue.
+inline constexpr std::size_t kSpanBodyLayers = 2 + 3 * SpanFp8Weights::kBlocks;
+inline constexpr std::size_t kSpanBodyMaskWords = kSpanBodyLayers * kernels::kSpanTileMaskWords;
+
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.
 // Seuls les pixels de 0 à width-1 et de 0 à height-1 sont écrits.
 struct SpanFp8Ring {
@@ -160,7 +164,8 @@ class SpanFp8Net {
   // CUTLASS ne calcule que l'image entière), les masques d'appareil des lancements suivants (nuls : l'image
   // entière) et le décalage de la sortie d'avant.
   kernels::SpanTileGrid tile_grid() const;
-  void set_tile_masks(const std::uint32_t* region, const std::uint32_t* core);
+  void pack_tile_layers(std::span<const std::uint8_t> core, std::uint32_t* body) const;
+  void set_tile_masks(const std::uint32_t* region, const std::uint32_t* core, bool layered = false);
   bool shift_output(cudaStream_t stream, const void* from, void* to, int dx, int dy, std::string& error);
 
  private:

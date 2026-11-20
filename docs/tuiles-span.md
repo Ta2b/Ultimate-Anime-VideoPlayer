@@ -60,10 +60,10 @@ la grille. Les tuiles n'arrêtent aucune série du lot A : la ligne « SPAN repr
   à 16 pixels, de 0,01 à 0,1 à 20, et de moins de 0,003 à 32 ; rien du tout à 26 pour b5f48. Le cœur se
   dilate donc de 32 pixels de travail (une colonne, deux lignes) et non plus de la portée du réseau (quatre
   lignes) : une tuile isolée coûte 5 × 13 tuiles de région au lieu de 5 × 17.
-- **Exactitude** : toutes les couches se calculent sur le cœur dilaté du halo. Hors de cette région, les
-  tampons intermédiaires tiennent n'importe quoi, mais une valeur fausse n'avance que d'un rayon par couche :
-  elle n'atteint jamais le cœur. Seul le cœur est écrit (`to_pixel` masqué). Le calcul des tuiles est donc
-  celui d'un calcul complet, au flottant près.
+- **Exactitude**. Chaque couche native reçoit un masque couvrant le cœur et la portée des couches suivantes.
+  Le halo se resserre jusqu'à la sortie. Winograd vertical compte deux lignes de demi-résolution par
+  convolution pour garder la phase des paires. Seul `to_pixel` écrit le cœur. Le test remplit les tampons
+  intermédiaires de valeurs non finies et compare les codes FP16 du cœur au calcul complet.
 - **Décision** (`app/play/upscale_tiles.{h,cpp}`) : la règle du lot A, tuile par tuile. La sortie d'une tuile
   se reprend tant qu'aucun bloc de son entrée ne s'écarte de plus de 0,70 niveau (`kernels::kHeldThreshold`)
   de l'entrée qui l'a produite. L'écart se lit sur la mesure de la paire, l'écart moyen de chaque bloc 16 × 16

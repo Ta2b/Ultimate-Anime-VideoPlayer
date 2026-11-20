@@ -35,7 +35,9 @@ class SpanFp8Body {
   virtual kernels::SpanTileGrid tile_grid() const { return {}; }
   // Masques d'appareil (kSpanTileMaskWords mots chacun) des lancements suivants : region pour le corps, core
   // pour la queue ; nuls : l'image entière. Sans appel CUDA.
-  virtual void set_tile_masks(const std::uint32_t* /*region*/, const std::uint32_t* /*core*/) {}
+  virtual void pack_tile_layers(std::span<const std::uint8_t> /*core*/, std::uint32_t* /*body*/) const {}
+  virtual void set_tile_masks(const std::uint32_t* /*region*/, const std::uint32_t* /*core*/,
+                              bool /*layered*/) {}
   // La sortie FP16 NCHW (3 × 4fh × 4fw) from copiée dans to, décalée de (dx, dy) pixels de sortie : to(x, y)
   // = from(x − dx, y − dy) là où ce point est dans l'image, rien ailleurs. from et to distincts.
   virtual bool shift_output(cudaStream_t /*stream*/, const void* /*from*/, void* /*to*/, int /*dx*/,

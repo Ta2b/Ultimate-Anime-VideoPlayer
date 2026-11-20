@@ -494,6 +494,48 @@ TEST_CASE("SPAN FP16 natif : les poids partagés rendent la même sortie au bit 
   CHECK(outputs[0] == outputs[1]);
 }
 
+namespace {
+
+void check_layered_tiles(SpanFp8Net& net, const DeviceBytes& in, const DeviceBytes& workspace) {
+  const auto expected = launch_half(net, in);
+  const auto grid = net.tile_grid();
+  REQUIRE(grid.count() >= 3);
+  std::vector<std::uint8_t> core(static_cast<std::size_t>(grid.count()));
+  core.front() = core.back() = 1;
+  std::vector<std::uint32_t> masks(kSpanBodyMaskWords + kernels::kSpanTileMaskWords);
+  net.pack_tile_layers(core, masks.data());
+  kernels::pack_span_tiles(core, std::span(masks).subspan(kSpanBodyMaskWords));
+  DeviceBytes device(masks.size() * sizeof(masks[0]));
+  REQUIRE(cudaMemcpy(device.data, masks.data(), masks.size() * sizeof(masks[0]), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
+  auto* words = static_cast<const std::uint32_t*>(device.data);
+  DeviceBytes output(expected.size() * sizeof(__half));
+  REQUIRE(cudaMemset(output.data, 0, expected.size() * sizeof(__half)) == cudaSuccess);
+  REQUIRE(cudaMemset(workspace.data, 0x7d, static_cast<std::size_t>(net.workspace_bytes())) == cudaSuccess);
+  net.set_tile_masks(words, words + kSpanBodyMaskWords, true);
+  std::string error;
+  REQUIRE(net.launch(nullptr, in.data, output.data, error));
+  std::vector<__half> actual(expected.size());
+  REQUIRE(cudaMemcpy(actual.data(), output.data, actual.size() * sizeof(__half), cudaMemcpyDeviceToHost) ==
+          cudaSuccess);
+  net.set_tile_masks(nullptr, nullptr);
+
+  constexpr int output_width = 2 * kWidth;
+  constexpr int output_plane = 4 * kWidth * kHeight;
+  std::size_t differences = 0;
+  for (std::size_t index = 0; index < actual.size(); ++index) {
+    const int px = static_cast<int>(index % output_plane);
+    const int col = (px % output_width) / (grid.tile_w * grid.scale);
+    const int row = (px / output_width) / (grid.tile_h * grid.scale);
+    const auto tile = static_cast<std::size_t>(row * grid.cols + col);
+    const auto expected_bits = core[tile] != 0 ? __half_as_ushort(expected[index]) : 0U;
+    differences += __half_as_ushort(actual[index]) != expected_bits;
+  }
+  CHECK(differences == 0);
+}
+
+}  // namespace
+
 // Winograd arrondit différemment de la convolution directe. Pour chacun, une bande
 // de hauteur impaire doit garder la même phase et les mêmes bits que le calcul sans bandes.
 TEST_CASE("SPAN FP16 natif : Winograd suit le chemin direct, et les bandes ne le changent pas",
@@ -525,6 +567,7 @@ TEST_CASE("SPAN FP16 natif : Winograd suit le chemin direct, et les bandes ne le
     const auto grid = net->tile_grid();
     REQUIRE(grid.accepts_shift(2, 4));
     CHECK(grid.accepts_shift(2, 2) == (winograd != SpanWinograd::Vertical));
+    if (winograd != SpanWinograd::On && band == 5) check_layered_tiles(*net, in, workspace);
     return launch_once(*net, in);
   };
   const std::vector<double> direct = run(SpanWinograd::Off, 0), wino = run(mode, 0);

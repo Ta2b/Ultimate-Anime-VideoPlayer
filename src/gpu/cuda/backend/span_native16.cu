@@ -132,7 +132,7 @@ class NativeBody final : public SpanFp8Body {
                 sn::smem_bytes(C, sn::kPixel, 9, true) <= 48 * 1024 &&
                 sn::smem_bytes(C, sn::kPixel, 9) <= 48 * 1024);
   static constexpr int kBlocks = SpanFp8Weights::kBlocks;
-  static constexpr int kLayers = 2 + 3 * kBlocks;  // conv_1, les blocs, conv_cat
+  static constexpr int kLayers = kSpanBodyLayers;  // conv_1, les blocs, conv_cat
   // S0 : conv_1, puis (sur place) conv_cat, que to_pixel lit.
   enum Tensor : int { kS0, kK1, kX0, kX1, kT1, kT2, kTensors };
 
@@ -242,7 +242,30 @@ class NativeBody final : public SpanFp8Body {
                                  .shift_step_y = vertical_ ? 4 : 0};
   }
 
-  void set_tile_masks(const std::uint32_t* region, const std::uint32_t* core) override {
+  void pack_tile_layers(std::span<const std::uint8_t> core, std::uint32_t* body) const override {
+    const auto grid = tile_grid();
+    const int layers = 2 + 3 * used_;
+    int previous_x = -1, previous_y = -1;
+    for (int layer = 0; layer < layers; ++layer) {
+      // conv_1, les 3×3 des blocs, conv_cat. Après conv_cat, seul to_pixel lit un halo.
+      const int ahead = std::max(0, 3 * used_ - layer);
+      const int rx = kernels::span_reach_tiles(1 + ahead, sn::kTW);
+      const int ry = kernels::span_reach_tiles(1 + ahead * (vertical_ ? 2 : 1), sn::kTH);
+      auto next = std::span(body + static_cast<std::size_t>(layer) * kernels::kSpanTileMaskWords,
+                            kernels::kSpanTileMaskWords);
+      if (rx == previous_x && ry == previous_y)
+        std::copy_n(next.data() - kernels::kSpanTileMaskWords, kernels::kSpanTileMaskWords, next.data());
+      else {
+        const auto region = kernels::dilate_span_tiles(core, grid.cols, grid.rows, rx, ry);
+        kernels::pack_span_tiles(region, next);
+      }
+      previous_x = rx;
+      previous_y = ry;
+    }
+  }
+
+  void set_tile_masks(const std::uint32_t* region, const std::uint32_t* core, bool layered) override {
+    layered_masks_ = layered && !wino_;
     region_ = region;
     core_ = core;
   }
@@ -307,9 +330,11 @@ class NativeBody final : public SpanFp8Body {
   // Le rayon d'une convolution de taps positions (1 ou 9).
   static constexpr int radius(int taps) { return taps == 9 ? 1 : 0; }
 
-  sn::Params params(const Conv& conv, __half* out) const {
+  sn::Params params(const Conv& conv, __half* out, int layer = 0) const {
     sn::Params p;
     p.mask = region_;
+    if (region_ != nullptr && layered_masks_)
+      p.mask += static_cast<std::size_t>(layer) * kernels::kSpanTileMaskWords;
     p.out = out;
     p.w = conv.w.template as<uint4>();
     p.bias = conv.b.template as<float>();
@@ -330,7 +355,7 @@ class NativeBody final : public SpanFp8Body {
     const int last = used_ - 1;
     const int rolling = rolling_rows_ - 1;
     __half* const x[2] = {t_[kX0], t_[kX1]};
-    sn::Params cat = params(cat_, t_[kS0]);
+    sn::Params cat = params(cat_, t_[kS0], 3 * used_ + 1);
     cat.in[0] = t_[kS0];
     cat.in[1] = x[used_ % 2];
     cat.in[2] = t_[kK1];
@@ -342,16 +367,16 @@ class NativeBody final : public SpanFp8Body {
     for (int b = 0; b < used_; ++b) {
       const __half* in = b == 0 ? t_[kS0] : b == 1 ? t_[kK1] : x[b % 2];
       __half* out = b == 0 ? t_[kK1] : b == last ? x[used_ % 2] : x[(b + 1) % 2];
-      sn::Params c1 = params(conv_[b][0], t_[kT1]);
+      sn::Params c1 = params(conv_[b][0], t_[kT1], 3 * b + 1);
       c1.in[0] = in;
       c1.input_row_mask[0] = b == 0 ? -1 : rolling;
       c1.output_row_mask = rolling;
       block<M::kPlain, true>(stream, c1, front.next(1, quantum));
-      sn::Params c2 = params(conv_[b][1], t_[kT2]);
+      sn::Params c2 = params(conv_[b][1], t_[kT2], 3 * b + 2);
       c2.in[0] = t_[kT1];
       c2.input_row_mask[0] = c2.output_row_mask = rolling;
       block<M::kPlain, true>(stream, c2, front.next(1, quantum));
-      sn::Params c3 = params(conv_[b][2], out);
+      sn::Params c3 = params(conv_[b][2], out, 3 * b + 3);
       c3.in[0] = t_[kT2];
       c3.skip = in;
       c3.skip_row_mask = b == 0 ? -1 : rolling;
@@ -465,11 +490,12 @@ class NativeBody final : public SpanFp8Body {
   int fh_, fw_;
   dim3 grid_;
   int used_ = kBlocks;
-  int rolling_rows_ = 0;   // banc : lignes allouées pour chacun des cinq temporaires
-  int band_ = 0;           // lignes de demi-résolution par bande (SpanFp8Weights::band), 0 : l'image entière
-  bool shared_ = false;    // poids partagés (SpanFp8Weights::shared_weights)
-  bool vertical_ = false;  // Winograd le long des paires de lignes
-  bool wino_ = false;      // les 3×3 des blocs par Winograd (SpanFp8Weights::winograd)
+  int rolling_rows_ = 0;  // banc : lignes allouées pour chacun des cinq temporaires
+  int band_ = 0;          // lignes de demi-résolution par bande (SpanFp8Weights::band), 0 : l'image entière
+  bool shared_ = false;   // poids partagés (SpanFp8Weights::shared_weights)
+  bool layered_masks_ = false;
+  bool vertical_ = false;    // Winograd le long des paires de lignes
+  bool wino_ = false;        // les 3×3 des blocs par Winograd (SpanFp8Weights::winograd)
   bool gate_cache_ = false;  // conserver v float2 entre 1×1 et produit de la porte
   bool gate_cat_ = false;    // banc de la porte finale suivie de conv_cat
   bool bound_ = false;

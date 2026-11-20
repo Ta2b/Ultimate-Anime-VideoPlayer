@@ -1,7 +1,8 @@
 // Les tuiles qui bougent du SPAN FP16 natif (kernels/spec/span_tiles.h, span_fp8_engine.h) : la demande du
-// lecteur, le décalage de la sortie d'avant et l'envoi des deux masques (région dilatée du halo pour le
-// corps, cœur pour la queue). Les masques passent par une mémoire hôte épinglée tournante : la copie lit
-// l'hôte quand le flux y arrive, un emplacement n'est réécrit qu'une fois sa copie faite (son événement).
+// lecteur, le décalage de la sortie d'avant et l'envoi des masques de chaque couche puis du cœur. Les masques
+// passent par une mémoire hôte épinglée tournante : la copie lit l'hôte quand le flux y arrive, un
+// emplacement n'est réécrit qu'une fois sa copie faite (son événement).
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <utility>
@@ -51,7 +52,7 @@ std::expected<bool, Refusal> SpanFp8Engine::start_tiles(cudaStream_t stream, std
   const auto failed = [](cudaError_t error, const char* step) {
     return std::unexpected(cuda_refusal(error, std::format("SPAN tuiles : {}", step)));
   };
-  if (tile_masks_ == nullptr && !allocate_tiles()) return false;  // 5 Ko refusés : l'image entière
+  if (tile_masks_ == nullptr && !allocate_tiles()) return false;
   if (!in_place) {
     // NOLINTBEGIN(performance-no-int-to-ptr) : un tenseur porte son adresse CUDA en entier
     const void* from = reinterpret_cast<const void*>(job->previous);
@@ -68,29 +69,27 @@ std::expected<bool, Refusal> SpanFp8Engine::start_tiles(cudaStream_t stream, std
       return refuse(RefusalCode::VendorCallFailed, "SPAN tuiles : " + why);
     }
   }
-  const std::vector<std::uint8_t> region =
-      kernels::dilate_span_tiles(job->core, grid.cols, grid.rows, grid.reach_cols, grid.reach_rows);
   const std::size_t slot = static_cast<std::size_t>(tile_stage_);
   tile_stage_ = (tile_stage_ + 1) % kTileStages;
   // L'envoi d'il y a kTileStages appels est fait depuis longtemps : l'attente est de principe.
   if (cudaError_t e = cudaEventSynchronize(tile_sent_[slot]); e != cudaSuccess)
     return failed(e, "attente d'un envoi de masques");
   std::uint32_t* host = tile_staging_[slot];
-  kernels::pack_span_tiles(region, std::span(host, kernels::kSpanTileMaskWords));
-  kernels::pack_span_tiles(job->core,
-                           std::span(host + kernels::kSpanTileMaskWords, kernels::kSpanTileMaskWords));
-  const std::size_t bytes = std::size_t{2} * kernels::kSpanTileMaskWords * sizeof(std::uint32_t);
+  net_->pack_tile_layers(job->core, host);
+  constexpr std::size_t kMaskWords = kSpanBodyMaskWords + kernels::kSpanTileMaskWords;
+  kernels::pack_span_tiles(job->core, std::span(host + kSpanBodyMaskWords, kernels::kSpanTileMaskWords));
+  const std::size_t bytes = kMaskWords * sizeof(std::uint32_t);
   if (cudaError_t e = cudaMemcpyAsync(tile_masks_, host, bytes, cudaMemcpyHostToDevice, stream);
       e != cudaSuccess)
     return failed(e, "envoi des masques");
   if (cudaError_t e = cudaEventRecord(tile_sent_[slot], stream); e != cudaSuccess)
     return failed(e, "cudaEventRecord");
-  net_->set_tile_masks(tile_masks_, tile_masks_ + kernels::kSpanTileMaskWords);
+  net_->set_tile_masks(tile_masks_, tile_masks_ + kSpanBodyMaskWords, true);
   return true;
 }
 
 bool SpanFp8Engine::allocate_tiles() {
-  const std::size_t bytes = std::size_t{2} * kernels::kSpanTileMaskWords * sizeof(std::uint32_t);
+  const std::size_t bytes = (kSpanBodyMaskWords + kernels::kSpanTileMaskWords) * sizeof(std::uint32_t);
   void* device = nullptr;
   bool ok = cudaMalloc(&device, bytes) == cudaSuccess;
   tile_masks_ = ok ? static_cast<std::uint32_t*>(device) : nullptr;
@@ -98,6 +97,7 @@ bool SpanFp8Engine::allocate_tiles() {
     void* host = nullptr;
     ok = cudaMallocHost(&host, bytes) == cudaSuccess;
     tile_staging_[i] = ok ? static_cast<std::uint32_t*>(host) : nullptr;
+    if (ok) std::fill_n(tile_staging_[i], bytes / sizeof(std::uint32_t), 0U);
     ok = ok && cudaEventCreateWithFlags(&tile_sent_[i], cudaEventDisableTiming) == cudaSuccess;
   }
   if (ok) return true;

@@ -160,8 +160,12 @@ kernels::SpanTileGrid SpanFp8Net::tile_grid() const {
   return impl_->body->tile_grid();
 }
 
-void SpanFp8Net::set_tile_masks(const std::uint32_t* region, const std::uint32_t* core) {
-  impl_->body->set_tile_masks(region, core);
+void SpanFp8Net::pack_tile_layers(std::span<const std::uint8_t> core, std::uint32_t* body) const {
+  impl_->body->pack_tile_layers(core, body);
+}
+
+void SpanFp8Net::set_tile_masks(const std::uint32_t* region, const std::uint32_t* core, bool layered) {
+  impl_->body->set_tile_masks(region, core, layered);
 }
 
 bool SpanFp8Net::shift_output(cudaStream_t stream, const void* from, void* to, int dx, int dy,
