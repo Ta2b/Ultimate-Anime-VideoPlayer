@@ -179,7 +179,8 @@ void RifeFusedEngine::set_window(const kernels::Window& window) {
 
 std::expected<void, Refusal> RifeFusedEngine::run_trt_encoder(cudaStream_t stream,
                                                               const std::shared_ptr<SharedActivations>& arena,
-                                                              const Tensor& image, const Tensor& encoded) {
+                                                              const Tensor& image, const Tensor& encoded,
+                                                              bool hwc4) {
   if (!encode_hybrid_)
     return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
   // X du dernier bloc, encore libre : le corps de l'encodeur y range 16 canaux à demi-taille.
@@ -189,7 +190,7 @@ std::expected<void, Refusal> RifeFusedEngine::run_trt_encoder(cudaStream_t strea
   if (auto ok = encode_body_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&hidden, 1)); !ok)
     return ok;
   return cuda_check(
-      encode_tail_->encode(stream, fused_address(hidden), fused_address(encoded), arena->data()),
+      encode_tail_->encode(stream, fused_address(hidden), fused_address(encoded), arena->data(), hwc4),
       "RIFE Lite : transposée de l'encodeur hybride");
 }
 
@@ -229,7 +230,7 @@ FusedGlueParams RifeFusedEngine::glue_params(const void* in, int block, std::byt
       .encode_b = at_ptr(encode_b),
       .x = at_ptr(layout_.x[i]),
       .x_pitch = native && block + 1 == plan_.blocks ? kRifeCompactFlowPitch : pitch(next.channels),
-      .encode_hwc4 = piece_net(0) != nullptr};
+      .encode_hwc4 = piece_net(0) != nullptr || encode_hybrid_};
   for (int k = 0; k < block; ++k) {
     const auto j = static_cast<std::size_t>(k);
     const kernels::FusedDims yk = kernels::rife_fused_y(plan_, k, h, w);
@@ -299,7 +300,7 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
                         "RIFE natif : encodeur");
     const Tensor image = fused_tensor(input.handle, input.offset + image_offset, 3, h, w);
     const Tensor encoded = fused_tensor(at(encode_offset), 0, 4, h, w);
-    return run_trt_encoder(stream, arena, image, encoded);
+    return run_trt_encoder(stream, arena, image, encoded, encode_hybrid_);
   };
   const std::size_t encode_a = layout_.encode + a_slot * encode_bytes;
   const std::size_t encode_b = layout_.encode + (a_slot ^ 1U) * encode_bytes;
@@ -329,7 +330,7 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
                                                  .encode_b = at_ptr(encode_b),
                                                  .x = at_ptr(layout_.x[0]),
                                                  .x_pitch = pitch(x0.channels),
-                                                 .encode_hwc4 = piece_net(0) != nullptr},
+                                                 .encode_hwc4 = piece_net(0) != nullptr || encode_hybrid_},
                                                 stream),
                              "fused_entry<<<>>>");
         !ok)

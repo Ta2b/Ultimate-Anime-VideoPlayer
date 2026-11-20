@@ -152,7 +152,7 @@ class RifeFusedEngine final : public Engine {
   };
   std::expected<void, Refusal> run_trt_encoder(cudaStream_t stream,
                                                const std::shared_ptr<SharedActivations>& arena,
-                                               const Tensor& image, const Tensor& encoded);
+                                               const Tensor& image, const Tensor& encoded, bool hwc4 = false);
   // La chaîne, lancée ou capturée selon l'appelant.
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                    const Tensor& input, std::span<const Tensor> outputs, const Pass& pass);
