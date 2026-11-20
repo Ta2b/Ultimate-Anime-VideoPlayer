@@ -3,15 +3,15 @@
 #
 #   kirari-windows-x64.zip                     le lecteur, le backend Vulkan, leurs DLL, engines.lock
 #                                           et les modèles (models/, sauf KIRARI_WITHOUT_MODELS)
-#   kirari-engine-tensorrt-windows-x64.tar.gz  backend TensorRT, TensorRT et trtexec (NVIDIA), si
+#   kirari-engine-tensorrt-windows-x64.tar.gz  backend TensorRT et trtexec (NVIDIA), si
 #                                           construit (KIRARI_WITH_CUDA=ON, TensorRT installé)
 #
 #   $env:VCPKG_ROOT = "C:\vcpkg"; [$env:KIRARI_WITH_CUDA = "ON"]; [$env:KIRARI_RELEASE_TAG = "v0.2.0"]
-#   pwsh tools/release/package-windows.ps1 [dossier-de-sortie]
+#   pwsh tools/release/package-windows.ps1 [dossier-de-sortie] [-TensorRtOnly]
 #
 # À lancer depuis une invite « x64 Native Tools » de Visual Studio (cl.exe dans le PATH). Les DLL
 # de vcpkg sont copiées à côté des binaires par la construction (VCPKG_APPLOCAL_DEPS).
-param([string]$Out = "")
+param([string]$Out = "", [switch]$TensorRtOnly)
 $ErrorActionPreference = "Stop"
 
 $Root = (Resolve-Path "$PSScriptRoot/../..").Path
@@ -27,6 +27,7 @@ $Repo = if ($env:KIRARI_RELEASE_REPO) { $env:KIRARI_RELEASE_REPO } else {
 }
 $BaseUrl = "https://github.com/$Repo/releases/download/$Tag"
 $Cuda = if ($env:KIRARI_WITH_CUDA) { $env:KIRARI_WITH_CUDA } else { "OFF" }
+if ($TensorRtOnly -and $Cuda -ne "ON") { throw "-TensorRtOnly demande KIRARI_WITH_CUDA=ON" }
 
 $Extra = @()
 # Arbre de construction de vcpkg ailleurs (un chemin court : les sources de certains ports
@@ -36,52 +37,61 @@ if ($env:KIRARI_VCPKG_BUILDTREES) { $Extra += "-DVCPKG_INSTALL_OPTIONS=--x-build
 # SPAN FP8 CUTLASS sous MSVC (12.4) : à l'essai, éteint par défaut hors Linux.
 if ($Cuda -eq "ON" -and $env:KIRARI_WITH_SPAN_FP8) { $Extra += "-DKIRARI_WITH_SPAN_FP8=$env:KIRARI_WITH_SPAN_FP8" }
 if ($Cuda -eq "ON" -and $env:KIRARI_TENSORRT_ROOT) { $Extra += "-DKIRARI_TENSORRT_ROOT=$env:KIRARI_TENSORRT_ROOT" }
+if ($Cuda -eq "ON" -and $env:KIRARI_TRTEXEC) { $Extra += "-DKIRARI_TRTEXEC:FILEPATH=$env:KIRARI_TRTEXEC" }
 # sccache sur la CI (release-windows.yml) : les objets de cl.exe repris d'une construction à l'autre.
 if ($env:KIRARI_COMPILER_LAUNCHER) {
   $Extra += "-DCMAKE_C_COMPILER_LAUNCHER=$env:KIRARI_COMPILER_LAUNCHER", "-DCMAKE_CXX_COMPILER_LAUNCHER=$env:KIRARI_COMPILER_LAUNCHER"
 }
 # Release rapide : les tests unitaires ne se compilent pas (KIRARI_BUILD_TESTS=OFF), le paquet est le même.
-if ($env:KIRARI_BUILD_TESTS) { $Extra += "-DKIRARI_BUILD_TESTS=$env:KIRARI_BUILD_TESTS" }
+if ($TensorRtOnly) {
+  $Extra += "-DKIRARI_BUILD_TESTS=OFF"
+} elseif ($env:KIRARI_BUILD_TESTS) {
+  $Extra += "-DKIRARI_BUILD_TESTS=$env:KIRARI_BUILD_TESTS"
+}
 if ($env:KIRARI_VCPKG_TRIPLET) {
   $Extra += "-DVCPKG_TARGET_TRIPLET=$env:KIRARI_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:KIRARI_VCPKG_TRIPLET"
 }
 # Une étiquette de préversion (v0.11.0-rc.1) donne son suffixe au binaire : il dit la version de l'étiquette (A26-04).
 $Suffix = if ($Tag.StartsWith("v$Version-")) { $Tag.Substring("v$Version".Length) } else { "" }
-cmake --preset windows-release -S $Root "-DKIRARI_WITH_CUDA=$Cuda" "-DKIRARI_VERSION_SUFFIX=$Suffix" @Extra
-if ($LASTEXITCODE -ne 0) { throw "configuration" }
-cmake --build --preset windows-release -- -k 0  # toutes les erreurs de MSVC en une passe
-if ($LASTEXITCODE -ne 0) { throw "construction" }
+$BuildTargets = @()
 $Build = Join-Path $Root "build/windows-release"
+if ($TensorRtOnly) {
+  $Build = Join-Path $Root "build/windows-release-tensorrt"
+  $BuildTargets = @("--target", "kirari_backend_tensorrt")
+}
+cmake --preset windows-release -S $Root -B $Build "-DKIRARI_WITH_CUDA=$Cuda" "-DKIRARI_VERSION_SUFFIX=$Suffix" @Extra
+if ($LASTEXITCODE -ne 0) { throw "configuration" }
+cmake --build $Build @BuildTargets -- -k 0  # toutes les erreurs de MSVC en une passe
+if ($LASTEXITCODE -ne 0) { throw "construction" }
 
 # --- Le lecteur. ---
 $Stage = Join-Path $Out "kirari"
-Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path $Stage | Out-Null
-Copy-Item "$Build/src/app/kirari.exe" $Stage
-Copy-Item "$Build/src/app/*.dll" $Stage
-Copy-Item "$Root/LICENSE", "$Root/THIRD_PARTY_NOTICES.md" $Stage
-Copy-Item (Join-Path $PSScriptRoot "windows/LISEZMOI.txt") $Stage
-Copy-Item "$Build/src/gpu/vulkan/backend/kirari_backend_vulkan.dll" $Stage
-Copy-Item "$Build/src/gpu/vulkan/backend/*.dll" $Stage -Exclude "kirari_backend_*" -ErrorAction SilentlyContinue
-# Le runtime C++ de Visual Studio (CRT dynamique, triplet x64-windows-release), copié à côté de kirari.exe (déploiement
-# local, permis par Microsoft) : un Windows 11 neuf, sans jeu ni application qui ait posé le redistribuable, ne
-# démarrerait pas kirari.exe (VCRUNTIME140.dll introuvable, 0xc000007b). Ces DLL servent aussi aux modules des moteurs,
-# chargés dans le même processus (C51-05).
-if (-not $env:VCToolsRedistDir) { throw "VCToolsRedistDir absent : lancer depuis une invite x64 Native Tools (runtime C++ à livrer)" }
-$crt = Get-ChildItem (Join-Path $env:VCToolsRedistDir "x64") -Directory -Filter "Microsoft.VC*.CRT" | Select-Object -First 1
-if (-not $crt) { throw "runtime C++ introuvable dans $env:VCToolsRedistDir\x64" }
-Copy-Item "$($crt.FullName)/*.dll" $Stage
-foreach ($name in "vcruntime140.dll", "msvcp140.dll") {
-  if (-not (Test-Path (Join-Path $Stage $name))) { throw "$name absent du runtime C++ copié" }
+if (-not $TensorRtOnly) {
+  Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory -Force -Path $Stage | Out-Null
+  Copy-Item "$Build/src/app/kirari.exe" $Stage
+  Copy-Item "$Build/src/app/*.dll" $Stage
+  Copy-Item "$Root/LICENSE", "$Root/THIRD_PARTY_NOTICES.md" $Stage
+  Copy-Item (Join-Path $PSScriptRoot "windows/LISEZMOI.txt") $Stage
+  Copy-Item "$Build/src/gpu/vulkan/backend/kirari_backend_vulkan.dll" $Stage
+  Copy-Item "$Build/src/gpu/vulkan/backend/*.dll" $Stage -Exclude "kirari_backend_*" -ErrorAction SilentlyContinue
+  # Le runtime C++ de Visual Studio (CRT dynamique, triplet x64-windows-release) est déployé à côté de
+  # kirari.exe. Ces DLL servent aussi aux modules chargés dans le même processus (C51-05).
+  if (-not $env:VCToolsRedistDir) { throw "VCToolsRedistDir absent : lancer depuis une invite x64 Native Tools (runtime C++ à livrer)" }
+  $crt = Get-ChildItem (Join-Path $env:VCToolsRedistDir "x64") -Directory -Filter "Microsoft.VC*.CRT" | Select-Object -First 1
+  if (-not $crt) { throw "runtime C++ introuvable dans $env:VCToolsRedistDir\x64" }
+  Copy-Item "$($crt.FullName)/*.dll" $Stage
+  foreach ($name in "vcruntime140.dll", "msvcp140.dll") {
+    if (-not (Test-Path (Join-Path $Stage $name))) { throw "$name absent du runtime C++ copié" }
+  }
+  # Le chargeur Vulkan vient du pilote (vulkan-1.dll dans System32) : jamais livré.
+  Remove-Item "$Stage/vulkan-1.dll" -ErrorAction SilentlyContinue
+  Copy-Item "$Root/data/luts" (Join-Path $Stage "luts") -Recurse
 }
-# Le chargeur Vulkan vient du pilote (vulkan-1.dll dans System32) : jamais livré.
-Remove-Item "$Stage/vulkan-1.dll" -ErrorAction SilentlyContinue
-
-# Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
-Copy-Item "$Root/data/luts" (Join-Path $Stage "luts") -Recurse
 
 # --- Les moteurs. ---
-$Lock = Join-Path $Stage "engines.lock"
+$LockDirectory = if ($TensorRtOnly) { $Out } else { $Stage }
+$Lock = Join-Path $LockDirectory "engines.lock"
 Set-Content -Path $Lock -Value "version = 1" -Encoding utf8NoBOM
 
 function Add-Engine([string]$Id, [string]$EngineVersion, [string]$License, [string]$Dir) {
@@ -105,13 +115,20 @@ function Add-Engine([string]$Id, [string]$EngineVersion, [string]$License, [stri
 }
 
 $TrtModule = "$Build/src/gpu/cuda/backend/kirari_backend_tensorrt.dll"
-if (Test-Path $TrtModule) {
+if ($Cuda -eq "ON") {
+  if (-not (Test-Path $TrtModule)) { throw "module TensorRT absent ($TrtModule)" }
   $dir = Join-Path $Out "engine-tensorrt"
   Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   Copy-Item $TrtModule $dir
-  $cache = Get-Content "$Build/CMakeCache.txt"
-  $trtRoot = ($cache | Select-String '^KIRARI_TENSORRT_ROOT:[A-Z]*=(.*)$').Matches[0].Groups[1].Value
+  $cache = Get-Content "$Build/CMakeCache.txt" -Raw
+  $trtRoot = [regex]::Match($cache, '(?m)^KIRARI_TENSORRT_ROOT:PATH=([^\r\n]*)').Groups[1].Value
+  # Le fichier archivé doit être celui dont CMake a gravé le SHA-256 dans le module.
+  $trtexec = [regex]::Match($cache, '(?m)^KIRARI_TRTEXEC_PACKAGED:INTERNAL=([^\r\n]*)').Groups[1].Value
+  if (-not $trtexec -or -not (Test-Path -LiteralPath $trtexec -PathType Leaf)) {
+    throw "trtexec.exe absent de la configuration du module TensorRT ($trtexec)"
+  }
+  Copy-Item -LiteralPath $trtexec -Destination (Join-Path $dir "trtexec.exe")
   # La version entière de TensorRT (11.3.0.99), celle de versions.env : jamais le seul numéro majeur, ni la version
   # du lecteur par défaut (A28-09). Elle nomme le dossier d'installation.
   $trtVersion = (Select-String -Path "$PSScriptRoot/versions.env" -Pattern '^TENSORRT_LIBS_VERSION=(.+)$').Matches[0].Groups[1].Value
@@ -121,10 +138,6 @@ if (Test-Path $TrtModule) {
     # Lien direct : le paquet ne porte que le module ; les bibliothèques de NVIDIA et trtexec se
     # tirent des archives de NVIDIA elles-mêmes, après l'acceptation de sa licence à l'écran
     # (entrées [[vendor_file]], tools/release/vendor-index.py).
-    # trtexec.exe est à nous dans l'archive (comme trtexec sous Linux) : le moteur construit ses réseaux avec lui.
-    $trtexec = if ($env:KIRARI_TRTEXEC) { $env:KIRARI_TRTEXEC } else { "$trtRoot/bin/trtexec.exe" }
-    # Sans trtexec.exe, le moteur ne construit aucun réseau : le paquet ne part pas (TRT-04).
-    if (Test-Path $trtexec) { Copy-Item $trtexec $dir } else { throw "trtexec.exe introuvable ($trtexec)" }
     Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
     Add-Content -Path $Lock -Value (@("") + (Get-Content $vendor)) -Encoding utf8NoBOM
   } else {
@@ -133,7 +146,6 @@ if (Test-Path $TrtModule) {
       Copy-Item "$trtRoot/lib/$pattern" $dir -ErrorAction SilentlyContinue
       Copy-Item "$trtRoot/bin/$pattern" $dir -ErrorAction SilentlyContinue
     }
-    Copy-Item "$trtRoot/bin/trtexec.exe" $dir -ErrorAction SilentlyContinue
     # Le runtime CUDA lié au backend (cudart64_*.dll), du kit CUDA.
     if ($env:CUDA_PATH) {
       Copy-Item "$env:CUDA_PATH/bin/cudart64_*.dll" $dir -ErrorAction SilentlyContinue
@@ -141,6 +153,11 @@ if (Test-Path $TrtModule) {
     }
     Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
   }
+}
+
+if ($TensorRtOnly) {
+  Write-Host "Paquet TensorRT : $Out"
+  return
 }
 
 # --- Les modèles SPAN et RIFE livrés (comme sous Linux) : le bash de Git, pas celui de WSL. ---

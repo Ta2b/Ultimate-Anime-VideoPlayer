@@ -199,8 +199,7 @@ jobs:
           if ($env:IN_SPAN_FP8 -eq "true" -and -not $env:KIRARI_TAG) { $env:KIRARI_WITH_SPAN_FP8 = "ON" }
           # Les liens de l'index nomment la release fixe de l'empreinte, celle que lit le paquet du lecteur.
           $env:KIRARI_RELEASE_TAG = "trt-win-$env:FP"
-          $env:KIRARI_WITHOUT_MODELS = "1"
-          pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
+          pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package" -TensorRtOnly
           if ($LASTEXITCODE -ne 0) { throw "paquet TensorRT" }
           # Un paquet sans module ni trtexec.exe ne sert à rien : refusé ici plutôt que chez l'utilisateur (TRT-04).
           $members = tar tzf "$env:RUNNER_TEMP/package/kirari-engine-tensorrt-windows-x64.tar.gz"
