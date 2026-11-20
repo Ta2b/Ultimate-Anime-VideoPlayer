@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <utility>
@@ -149,6 +151,11 @@ class Net final : public GmflowAttentionNet {
     p.scale_log2 = scale_log2_;
     p.mask_log2 = mask_log2_;
     p.eps = eps_;
+    static const bool skip_padding = [] {
+      const char* value = std::getenv("KIRARI_AB_GMFLOW_ATTN_PADDING");  // env: banc
+      return value == nullptr || std::strcmp(value, "0") != 0;
+    }();
+    p.skip_padding = skip_padding;
     const dim3 grid(static_cast<unsigned>((grid_.length + ga::kRows - 1) / ga::kRows),
                     static_cast<unsigned>(grid_.splits * grid_.splits), static_cast<unsigned>(batch_));
     ga::attention_kernel<ga::Acc::kF32><<<grid, ga::kThreads, ga::kSmemBytes, stream>>>(p);

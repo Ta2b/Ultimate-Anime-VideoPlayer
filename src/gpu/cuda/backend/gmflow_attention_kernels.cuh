@@ -75,6 +75,7 @@ struct AttnParams {
   float scale_log2 = 0.F;  // log2(e) / √d
   float mask_log2 = 0.F;   // le masque (-100) · log2(e)
   float eps = 1e-5F;
+  bool skip_padding = false;
 };
 
 __device__ __forceinline__ void cp_async_commit() {
@@ -199,10 +200,11 @@ __device__ __forceinline__ void load_rows(__half* s, int* regions, const AttnPar
 
 // S = Q Kᵀ d'une tuile pour les 16 requêtes du warp : q les fragments A de Q (8 pas sur les canaux), sk la
 // tuile K.
-__device__ __forceinline__ void scores(rn::Frag<Acc::kF32> (&s)[8], const std::uint32_t (&q)[kSteps][4],
+template <int Groups>
+__device__ __forceinline__ void scores(rn::Frag<Acc::kF32> (&s)[Groups], const std::uint32_t (&q)[kSteps][4],
                                        const __half* sk, int lane) {
 #pragma unroll
-  for (int nt = 0; nt < 8; ++nt) s[nt].clear();
+  for (int nt = 0; nt < Groups; ++nt) s[nt].clear();
   // ldmatrix.x4 : clés 16 · np + (lane / 16) · 8 + lane mod 8, canaux 16 · ks + ((lane / 8) mod 2) · 8.
   const std::uint32_t base =
       rn::smem_u32(sk) +
@@ -210,7 +212,7 @@ __device__ __forceinline__ void scores(rn::Frag<Acc::kF32> (&s)[8], const std::u
 #pragma unroll
   for (int ks = 0; ks < kSteps; ++ks)
 #pragma unroll
-    for (int np = 0; np < 4; ++np) {
+    for (int np = 0; np < Groups / 2; ++np) {
       std::uint32_t b[4];
       rn::ldmatrix4(b, base + static_cast<std::uint32_t>((np * 16 * kLds + ks * 16) * 2));
       s[2 * np].mma(q[ks], b[0], b[1]);
@@ -219,20 +221,21 @@ __device__ __forceinline__ void scores(rn::Frag<Acc::kF32> (&s)[8], const std::u
 }
 
 // Le softmax en ligne d'une tuile : facteur et masque en base 2, maximum m et somme partielle l du fil
-// (rangées g et g + 8), O remis à l'échelle, P arrondi en FP16 dans les fragments A du mma P · V (4 pas de 16
-// clés).
-__device__ __forceinline__ void online_softmax(rn::Frag<Acc::kF32> (&s)[8],
+// (rangées g et g + 8), O remis à l'échelle, P arrondi en FP16 dans les fragments A du mma P · V
+// (un pas de MMA par tranche de 16 clés).
+template <int KeyRows>
+__device__ __forceinline__ void online_softmax(rn::Frag<Acc::kF32> (&s)[KeyRows / 8],
                                                rn::Frag<Acc::kF32> (&o)[2 * kPairs],
-                                               std::uint32_t (&pa)[4][4], float (&m)[2], float (&l)[2],
-                                               const int (&qreg)[2], const int* kreg, const AttnParams& p,
-                                               int lane) {
+                                               std::uint32_t (&pa)[KeyRows / 16][4], float (&m)[2],
+                                               float (&l)[2], const int (&qreg)[2], const int* kreg,
+                                               const AttnParams& p, int lane) {
   const int t = lane & 3;
 #pragma unroll
   for (int h = 0; h < 2; ++h) {
-    float x[16];
+    float x[KeyRows / 4];
     float top = -INFINITY;
 #pragma unroll
-    for (int nt = 0; nt < 8; ++nt) {
+    for (int nt = 0; nt < KeyRows / 8; ++nt) {
       const float2 v = s[nt].pair(h);
 #pragma unroll
       for (int e = 0; e < 2; ++e) {
@@ -250,7 +253,7 @@ __device__ __forceinline__ void online_softmax(rn::Frag<Acc::kF32> (&s)[8],
     m[h] = next;
     float sum = 0.F;
 #pragma unroll
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < KeyRows / 4; ++i) {
       x[i] = exp2f(x[i] - next);
       sum += x[i];
     }
@@ -262,7 +265,7 @@ __device__ __forceinline__ void online_softmax(rn::Frag<Acc::kF32> (&s)[8],
     }
     // Fragment A de P : pas kk = tuiles n8 2kk (a0 rangée g, a1 rangée g + 8) et 2kk + 1 (a2, a3).
 #pragma unroll
-    for (int kk = 0; kk < 4; ++kk) {
+    for (int kk = 0; kk < KeyRows / 16; ++kk) {
       pa[kk][h] = half2_bits(x[4 * kk], x[4 * kk + 1]);
       pa[kk][2 + h] = half2_bits(x[4 * kk + 2], x[4 * kk + 3]);
     }
@@ -271,13 +274,15 @@ __device__ __forceinline__ void online_softmax(rn::Frag<Acc::kF32> (&s)[8],
 
 // O += P V d'une tuile. ldmatrix.x4.trans : clés 16 · kk + ((lane / 8) mod 2) · 8 + lane mod 8, canaux
 // 16 · cp + (lane / 16) · 8 ; b0, b1 de la tuile n8 2cp puis de 2cp + 1.
+template <int KeyRows>
 __device__ __forceinline__ void accumulate_pv(rn::Frag<Acc::kF32> (&o)[2 * kPairs],
-                                              const std::uint32_t (&pa)[4][4], const __half* sv, int lane) {
+                                              const std::uint32_t (&pa)[KeyRows / 16][4], const __half* sv,
+                                              int lane) {
   const std::uint32_t base =
       rn::smem_u32(sv) +
       static_cast<std::uint32_t>(((((lane >> 3) & 1) * 8 + (lane & 7)) * kLds + (lane >> 4) * 8) * 2);
 #pragma unroll
-  for (int kk = 0; kk < 4; ++kk)
+  for (int kk = 0; kk < KeyRows / 16; ++kk)
 #pragma unroll
     for (int cp = 0; cp < kPairs; ++cp) {
       std::uint32_t b[4];
@@ -285,6 +290,25 @@ __device__ __forceinline__ void accumulate_pv(rn::Frag<Acc::kF32> (&o)[2 * kPair
       o[2 * cp].mma(pa[kk], b[0], b[1]);
       o[2 * cp + 1].mma(pa[kk], b[2], b[3]);
     }
+}
+
+// Les scores hors fenêtre valent -inf et leur poids est nul : la fin se limite aux lignes utiles.
+template <int KeyRows>
+__device__ __forceinline__ void short_tile(bool active, const std::uint32_t (&q)[kSteps][4],
+                                           rn::Frag<Acc::kF32> (&o)[2 * kPairs], float (&m)[2], float (&l)[2],
+                                           const int (&qreg)[2], const int* kreg, const AttnParams& p,
+                                           const __half* sk, const __half* sv, int lane) {
+  cp_async_wait<1>();
+  __syncthreads();
+  std::uint32_t pa[KeyRows / 16][4];
+  if (active) {
+    rn::Frag<Acc::kF32> s[KeyRows / 8];
+    scores(s, q, sk, lane);
+    online_softmax<KeyRows>(s, o, pa, m, l, qreg, kreg, p, lane);
+  }
+  cp_async_wait<0>();
+  __syncthreads();
+  if (active) accumulate_pv<KeyRows>(o, pa, sv, lane);
 }
 
 // La somme sur les quatre fils d'un groupe (une rangée).
@@ -384,6 +408,14 @@ __global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
   const int window = static_cast<int>(blockIdx.y), batch = static_cast<int>(blockIdx.z);
   const int first = static_cast<int>(blockIdx.x) * kRows;
+  // Les gains sont mesurés sur Ada. Les autres architectures gardent les tuiles complètes.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 890
+  const bool skip_padding = p.skip_padding;
+#else
+  constexpr bool skip_padding = false;
+#endif
+  // Les warps hors de la fenêtre participent toujours aux copies et aux barrières du bloc.
+  const bool active = !skip_padding || first + warp * 16 < p.grid.length;
   const __half* qkv = p.qkv + static_cast<long>(batch) * p.tokens * kQkv;
   // Q dans le tampon de V, K de la première tuile dans le sien ; Q passe en registres.
   load_rows(sv, nullptr, p, qkv, window, first, 0);
@@ -393,7 +425,7 @@ __global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
   cp_async_wait<1>();
   __syncthreads();
   std::uint32_t q[kSteps][4];
-  {
+  if (active) {
     const std::uint32_t base =
         rn::smem_u32(sv) +
         static_cast<std::uint32_t>(((warp * 16 + (lane & 15)) * kLds + (lane >> 4) * 8) * 2);
@@ -415,14 +447,19 @@ __global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
   for (int nt = 0; nt < 2 * kPairs; ++nt) o[nt].clear();
   float m[2] = {-INFINITY, -INFINITY}, l[2] = {0.F, 0.F};
   const int tiles = (p.grid.length + kRows - 1) / kRows;
+  const int tail = p.grid.length % kRows;
+  const bool short_last = skip_padding && tail > 0 && tail <= 32;
+  const int full_tiles = tiles - static_cast<int>(short_last);
 #pragma unroll 1
-  for (int j = 0; j < tiles; ++j) {
+  for (int j = 0; j < full_tiles; ++j) {
     cp_async_wait<1>();  // K de la tuile j (V peut encore venir)
     __syncthreads();
-    rn::Frag<Acc::kF32> s[8];
-    scores(s, q, sk, lane);
-    std::uint32_t pa[4][4];
-    online_softmax(s, o, pa, m, l, qreg, kreg, p, lane);
+    std::uint32_t pa[kRows / 16][4];
+    if (active) {
+      rn::Frag<Acc::kF32> s[kRows / 8];
+      scores(s, q, sk, lane);
+      online_softmax<kRows>(s, o, pa, m, l, qreg, kreg, p, lane);
+    }
     __syncthreads();  // K et les régions de la tuile ne sont plus lus
     const bool more = j + 1 < tiles;
     if (more) {
@@ -433,14 +470,20 @@ __global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
       cp_async_wait<0>();
     }
     __syncthreads();
-    accumulate_pv(o, pa, sv, lane);
+    if (active) accumulate_pv<kRows>(o, pa, sv, lane);
     __syncthreads();  // V de la tuile n'est plus lu
     if (more) {
       load_rows(sv, nullptr, p, qkv, window, (j + 1) * kRows, 2);
       cp_async_commit();
     }
   }
-  finish<A>(o, l, tokens, p, batch, lane);
+  if (short_last) {
+    if (tail <= 16)
+      short_tile<16>(active, q, o, m, l, qreg, kreg, p, sk, sv, lane);
+    else
+      short_tile<32>(active, q, o, m, l, qreg, kreg, p, sk, sv, lane);
+  }
+  if (active) finish<A>(o, l, tokens, p, batch, lane);
 }
 
 }  // namespace kirari::gpu::cuda::gmflow_attention
