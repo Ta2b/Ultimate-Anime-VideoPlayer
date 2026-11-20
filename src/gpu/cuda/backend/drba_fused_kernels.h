@@ -30,6 +30,7 @@ struct DrbaPreParams {
   void* x2 = nullptr;
   bool times_only = false;   // les plans du temps seuls (D6 : mêmes images, autre instant)
   bool scalar_time = false;  // rife_time n'a réécrit que le premier demi-flottant du plan
+  bool compact_x2 = false;   // X2 planaire contient 57 plans fixes et le temps au plan 57
 };
 
 // Les encodages réduits de X_1 (canaux 9-56, moyenne des pixels 2o, 2o+1) et de X_0 (4o+1, 4o+2) depuis la
@@ -51,6 +52,8 @@ struct DrbaGlueParams {
   int full_height = 0;  // pleine résolution (le plan de tau de pair01)
   int full_width = 0;
   void* x = nullptr;
+  void* packed_x2 = nullptr;  // HWC8 109 plans, 112 valeurs par pixel
+  bool compact_time = false;  // le temps est lu dans le plan 57 du tampon compact
 };
 
 struct DrbaFinishParams {
@@ -63,12 +66,14 @@ struct DrbaFinishParams {
   void* out = nullptr;         // 3 plans ; nullptr : variante mouvement (flow et mask)
   void* flow = nullptr;        // variante mouvement : 4 plans, le flot pleine résolution du warp final
   void* mask = nullptr;        // 1 plan : le masque après sigmoïde, poids de l'image du centre
+  int y_pitch = 0;             // HWC8 si non nul, NCHW autrement
   bool shared_resize = false;  // la tuile partagée du recalage final, mesurée à 1080p sur Ada
 };
 
 cudaError_t launch_drba_pre(const DrbaPreParams& params, cudaStream_t stream);
 cudaError_t launch_drba_post(const DrbaPostParams& params, cudaStream_t stream);
 cudaError_t launch_drba_glue(const DrbaGlueParams& params, cudaStream_t stream);
+cudaError_t launch_drba_pack_x2(const void* x2, void* packed, int height, int width, cudaStream_t stream);
 cudaError_t launch_drba_finish(const DrbaFinishParams& params, cudaStream_t stream);
 
 }  // namespace kirari::gpu::cuda

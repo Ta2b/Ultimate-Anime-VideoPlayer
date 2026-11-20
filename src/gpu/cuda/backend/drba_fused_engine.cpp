@@ -9,6 +9,13 @@
 #include "gpu/cuda/backend/drba_fused_kernels.h"
 
 namespace kirari::gpu::cuda {
+namespace {
+
+constexpr int kPackedX2 = 112;
+constexpr int kPackedY2 = 56;
+constexpr int kLastBlock = kernels::kDrbaFusedBlocks - 1;
+
+}  // namespace
 
 DrbaFusedEngine::~DrbaFusedEngine() {
   if (zone_) zone_->drop_region(this);  // sa région ne repousse plus celles des autres moteurs fusionnés
@@ -43,7 +50,8 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   if (!encode) return std::unexpected(std::move(encode.error()));
   const bool encode_ok =
       (*encode)->input_shape(0) == Shape{.dims = {3, 3, h / t, w / t}} &&
-      (*encode)->output_shape(0) == Shape{.dims = {3, kernels::kDrbaFusedEncodeChannels, h / t, w / t}};
+      (*encode)->output_shape(0) == Shape{.dims = {3, kernels::kDrbaFusedEncodeChannels, h / t, w / t}} &&
+      (*encode)->input_pitch(0) == 0 && (*encode)->output_pitch(0) == 0;
   if (!encode_ok)
     return refuse(RefusalCode::ShapeInvalid, "DistilDRBA fusionné : moteur d'encodage de forme inattendue");
   activation = std::max(activation, (*encode)->activation_bytes());
@@ -59,10 +67,28 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
     if (!ok)
       return refuse(RefusalCode::ShapeInvalid,
                     std::format("DistilDRBA fusionné : moteur du bloc {} de forme inattendue", b));
+    const int x_pitch = (*block)->input_pitch(0);
+    const int y_pitch = (*block)->output_pitch(0);
+    const bool packed =
+        b == kLastBlock && t == 4 && engine->shared_finish_ && x_pitch == kPackedX2 && y_pitch == kPackedY2;
+    if (!packed && (x_pitch != 0 || y_pitch != 0)) {
+      return refuse(RefusalCode::FormatUnsupported,
+                    std::format("DistilDRBA fusionné : rangement inattendu du bloc {}", b));
+    }
+    engine->packed_tail_ |= packed;
     activation = std::max(activation, (*block)->activation_bytes());
     engine->blocks_[static_cast<std::size_t>(b)] = std::move(*block);
   }
   engine->layout_ = kernels::drba_fused_layout(key.plan, h, w);
+  if (engine->packed_tail_) {
+    const auto reduced_plane = static_cast<std::size_t>(h / t) * static_cast<std::size_t>(w / t);
+    const auto planar_tail = engine->layout_.x[kLastBlock];
+    engine->packed_x_ = planar_tail + kernels::drba_fused_align(58U * reduced_plane * 2U);
+    engine->layout_.y[kLastBlock] =
+        engine->packed_x_ + kernels::drba_fused_align(kPackedX2 * reduced_plane * 2U);
+    engine->layout_.bytes =
+        engine->layout_.y[kLastBlock] + kernels::drba_fused_align(kPackedY2 * (reduced_plane / 4U) * 2U);
+  }
   engine->own_activation_ = activation;
   engine->scratch_offset_ = engine->scratch_offset_for(*shared);
   if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
@@ -180,7 +206,8 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                                             .x1 = at_ptr(layout_.x[1]),
                                             .x2 = at_ptr(layout_.x[2]),
                                             .times_only = times_only,
-                                            .scalar_time = scalar_time},
+                                            .scalar_time = scalar_time,
+                                            .compact_x2 = packed_tail_},
                                            stream),
                            "drba_pre<<<>>>");
       !ok)
@@ -203,25 +230,36 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                              "drba_post<<<>>>");
         !ok)
       return ok;
+    if (packed_tail_) {
+      if (auto ok = cuda_check(
+              launch_drba_pack_x2(at_ptr(layout_.x[kLastBlock]), at_ptr(packed_x_), h / t, w / t, stream),
+              "drba_pack_x2<<<>>>");
+          !ok)
+        return ok;
+    }
   }
   for (int b = 0; b < kernels::kDrbaFusedBlocks; ++b) {
     const auto i = static_cast<std::size_t>(b);
     const kernels::DrbaFusedDims x = kernels::drba_fused_x(plan_, b, h, w);
     const kernels::DrbaFusedDims y = kernels::drba_fused_y(plan_, b, h, w);
-    const Tensor block_in = fused_tensor(at(layout_.x[i]), 0, x.channels, x.height, x.width);
+    const auto in = packed_tail_ && b == kLastBlock ? packed_x_ : layout_.x[i];
+    const Tensor block_in = fused_tensor(at(in), 0, x.channels, x.height, x.width);
     const Tensor block_out = fused_tensor(at(layout_.y[i]), 0, y.channels, y.height, y.width);
     if (auto ok = blocks_[i]->enqueue_plain(stream, arena, std::span(&block_in, 1), std::span(&block_out, 1));
         !ok)
       return ok;
     if (b + 1 < kernels::kDrbaFusedBlocks) {
       const kernels::DrbaFusedDims next = kernels::drba_fused_x(plan_, b + 1, h, w);
-      const DrbaGlueParams glue{.height = next.height,
-                                .width = next.width,
-                                .y = at_ptr(layout_.y[i]),
-                                .pair01 = pair01,
-                                .full_height = h,
-                                .full_width = w,
-                                .x = at_ptr(layout_.x[i + 1])};
+      const DrbaGlueParams glue{
+          .height = next.height,
+          .width = next.width,
+          .y = at_ptr(layout_.y[i]),
+          .pair01 = pair01,
+          .full_height = h,
+          .full_width = w,
+          .x = at_ptr(layout_.x[i + 1]),
+          .packed_x2 = packed_tail_ && b + 1 == kLastBlock ? at_ptr(packed_x_) : nullptr,
+          .compact_time = packed_tail_ && b + 1 == kLastBlock};
       if (auto ok = cuda_check(launch_drba_glue(glue, stream), "drba_glue<<<>>>"); !ok) return ok;
     }
   }
@@ -237,6 +275,7 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                             .out = outputs.size() == 1 ? fused_address(outputs[0]) : nullptr,
                             .flow = outputs.size() == 2 ? fused_address(outputs[0]) : nullptr,
                             .mask = outputs.size() == 2 ? fused_address(outputs[1]) : nullptr,
+                            .y_pitch = packed_tail_ ? kPackedY2 : 0,
                             .shared_resize = shared_finish_,
                         },
                         stream),

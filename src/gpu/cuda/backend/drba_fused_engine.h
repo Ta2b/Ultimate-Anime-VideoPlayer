@@ -88,6 +88,8 @@ class DrbaFusedEngine final : public Engine {
   int height_ = 0;
   int width_ = 0;
   bool shared_finish_ = false;
+  bool packed_tail_ = false;
+  std::size_t packed_x_ = 0;
   kernels::DrbaFusedLayout layout_;
   // Début des tampons intermédiaires dans la zone : au-dessus des activations de ses morceaux et de celles
   // des moteurs entiers de la même zone (SharedActivations::activation_peak, C03-01).

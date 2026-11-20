@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cuda_fp16.h>
+#include <limits>
 
 #include "gpu/cuda/backend/drba_fused_kernels.h"
 
@@ -26,11 +27,16 @@ __device__ __forceinline__ bool before_side(const __half* pair01, std::size_t fu
 struct SourceZ {
   const __half* y;
   int zh, zw;
+  int pitch = 0;
 };
 
 // DepthToSpace lu à la volée : Z[c][zy][zx] = Y[4c + 2 (zy & 1) + (zx & 1)][zy >> 1][zx >> 1].
 __device__ __forceinline__ float read_z(const SourceZ& z, int c, int zy, int zx) {
   const auto channel = static_cast<std::size_t>(4 * c + 2 * (zy & 1) + (zx & 1));
+  if (z.pitch != 0) {
+    const auto pixel = static_cast<std::size_t>(zy >> 1) * (z.zw / 2) + (zx >> 1);
+    return __half2float(z.y[pixel * z.pitch + channel]);
+  }
   return __half2float(z.y[(channel * static_cast<std::size_t>(z.zh / 2) + static_cast<std::size_t>(zy >> 1)) *
                               static_cast<std::size_t>(z.zw / 2) +
                           static_cast<std::size_t>(zx >> 1)]);
@@ -137,7 +143,7 @@ __global__ void __launch_bounds__(256) pre_kernel(DrbaPreParams p) {
   Section sections[3];                                   // NOLINT(modernize-avoid-c-arrays)
   const int reduce[3]{p.reduce2, p.reduce1, p.reduce0};  // NOLINT(modernize-avoid-c-arrays)
   __half* targets[3]{static_cast<__half*>(p.x2), static_cast<__half*>(p.x1), static_cast<__half*>(p.x0)};
-  const int time_channels[3]{kTimeChannel, kTimeChannel,
+  const int time_channels[3]{p.compact_x2 ? kFirstTimeChannel : kTimeChannel, kTimeChannel,
                              kFirstTimeChannel};  // NOLINT(modernize-avoid-c-arrays)
 #pragma unroll
   for (int k = 0; k < 3; ++k) {
@@ -230,14 +236,60 @@ __global__ void __launch_bounds__(256) post_kernel(DrbaPostParams p) {
   out[static_cast<std::size_t>(c) * plane + r] = __float2half_rn(v);
 }
 
-__global__ void __launch_bounds__(128) glue_kernel(DrbaGlueParams p) {
+constexpr int kGlueWidth = 32, kGlueHeight = 4, kGlueThreads = kGlueWidth * kGlueHeight;
+constexpr int kPackedX2 = 112, kFirstDynamicX2 = 56, kPackedGroup = 8;
+constexpr int kSharedStride = kGlueThreads + 1;
+
+// La lecture NCHW est contiguë par warp, la réécriture HWC8 groupée par 16 octets.
+__device__ __forceinline__ void store_packed(__half* packed, const __half* values, int pixel, int width,
+                                             int group, int first) {
+  const int x = static_cast<int>(blockIdx.x) * kGlueWidth + pixel % kGlueWidth;
+  const int y = static_cast<int>(blockIdx.y) * kGlueHeight + pixel / kGlueWidth;
+  auto* out = packed + (y * width + x) * kPackedX2 + first + group * kPackedGroup;
+  const auto pair = [&](int pair) {
+    return static_cast<unsigned>(__half_as_ushort(values[(2 * pair) * kSharedStride])) |
+           (static_cast<unsigned>(__half_as_ushort(values[(2 * pair + 1) * kSharedStride])) << 16U);
+  };
+  *reinterpret_cast<uint4*>(out) = make_uint4(pair(0), pair(1), pair(2), pair(3));
+}
+
+__global__ void __launch_bounds__(kGlueThreads)
+    pack_x2_kernel(const __half* x, __half* packed, int width, int height) {
+  const int thread = static_cast<int>(threadIdx.x);
+  const int ox = static_cast<int>(blockIdx.x) * kGlueWidth + thread % kGlueWidth;
+  const int oy = static_cast<int>(blockIdx.y) * kGlueHeight + thread / kGlueWidth;
+  const int pixel = oy * width + ox, plane = width * height;
+  __shared__ __half values[kFirstDynamicX2 * kSharedStride];
+#pragma unroll 1
+  for (int c = 0; c < kFirstDynamicX2; ++c) values[c * kSharedStride + thread] = x[c * plane + pixel];
+  __syncthreads();
+  constexpr int groups = kFirstDynamicX2 / kPackedGroup;
+#pragma unroll 1
+  for (int i = thread; i < groups * kGlueThreads; i += kGlueThreads) {
+    const int p = i / groups, group = i % groups;
+    store_packed(packed, values + group * kPackedGroup * kSharedStride + p, p, width, group, 0);
+  }
+}
+
+template <bool Packed>
+__global__ void __launch_bounds__(kGlueThreads, Packed ? 5 : 0) glue_kernel(DrbaGlueParams p) {
   const int ox = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int oy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
-  if (ox >= p.width || oy >= p.height) return;
+  if constexpr (!Packed) {
+    if (ox >= p.width || oy >= p.height) return;
+  }
+  __shared__ __half tile[Packed ? (kPackedX2 - kFirstDynamicX2) * kSharedStride : 1];
+  const int lane = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
   const std::size_t plane = static_cast<std::size_t>(p.height) * static_cast<std::size_t>(p.width);
   const std::size_t o =
       static_cast<std::size_t>(oy) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(ox);
   auto* x = static_cast<__half*>(p.x);
+  const auto store = [&](int channel, __half value) {
+    if constexpr (Packed)
+      tile[(channel - kFirstDynamicX2) * kSharedStride + lane] = value;
+    else
+      x[static_cast<std::size_t>(channel) * plane + o] = value;
+  };
   // Z du bloc précédent : à la moitié de la résolution de X_k.
   const SourceZ z{static_cast<const __half*>(p.y), p.height / 2, p.width / 2};
   const bool before =
@@ -252,14 +304,14 @@ __global__ void __launch_bounds__(128) glue_kernel(DrbaGlueParams p) {
 #pragma unroll
     for (int k = 0; k < 4; ++k) {
       flow[k] = rounded(r[k] * 2.0F);
-      x[(105 + k) * plane + o] = __float2half_rn(flow[k]);
+      store(105 + k, __float2half_rn(flow[k]));
     }
   }
   {
     float r[9];
     enlarge<9>(z, 4, 2, ox, oy, r);
 #pragma unroll
-    for (int k = 0; k < 9; ++k) x[(96 + k) * plane + o] = __float2half_rn(r[k]);
+    for (int k = 0; k < 9; ++k) store(96 + k, __float2half_rn(r[k]));
   }
   // Warps : n = 0 image 1 et f1 avec le flot 0-1 ; n = 1 image et f du côté choisi avec le flot 2-3.
 #pragma unroll
@@ -268,10 +320,23 @@ __global__ void __launch_bounds__(128) glue_kernel(DrbaGlueParams p) {
     const int image = n == 0 ? 3 : (before ? 0 : 6);
     const int encoding = n == 0 ? 25 : (before ? 9 : 41);
 #pragma unroll
-    for (int k = 0; k < 3; ++k)
-      x[(57 + 3 * n + k) * plane + o] = __float2half_rn(sample(x + (image + k) * plane, t));
+    for (int k = 0; k < 3; ++k) store(57 + 3 * n + k, __float2half_rn(sample(x + (image + k) * plane, t)));
     for (int k = 0; k < 16; ++k)
-      x[(63 + 16 * n + k) * plane + o] = __float2half_rn(sample(x + (encoding + k) * plane, t));
+      store(63 + 16 * n + k, __float2half_rn(sample(x + (encoding + k) * plane, t)));
+  }
+  if constexpr (Packed) {
+    store(56, x[56 * plane + o]);
+    store(95, x[(p.compact_time ? kFirstTimeChannel : kTimeChannel) * plane + o]);
+#pragma unroll
+    for (int c = 109; c < kPackedX2; ++c) store(c, __ushort_as_half(0));
+    __syncthreads();
+    auto* packed = static_cast<__half*>(p.packed_x2);
+    constexpr int groups = (kPackedX2 - kFirstDynamicX2) / kPackedGroup;
+    for (int i = lane; i < groups * kGlueThreads; i += kGlueThreads) {
+      const int j = i / groups, group = i % groups;
+      store_packed(packed, tile + group * kPackedGroup * kSharedStride + j, j, p.width, group,
+                   kFirstDynamicX2);
+    }
   }
 }
 
@@ -285,7 +350,7 @@ __global__ void __launch_bounds__(256) finish_kernel(DrbaFinishParams p) {
   constexpr int th = kFinishHeight / (S != 0 ? S : 4) + 2;
   constexpr int cells = tw * th;
   const int scale = S != 0 ? S : p.upscale;
-  const SourceZ z{static_cast<const __half*>(p.y), p.height / scale, p.width / scale};
+  const SourceZ z{static_cast<const __half*>(p.y), p.height / scale, p.width / scale, p.y_pitch};
   __shared__ float inputs[S != 0 ? 5 * cells : 1];
   const int left = static_cast<int>(blockIdx.x) * (tw - 2) - 1;
   const int top = static_cast<int>(blockIdx.y) * (th - 2) - 1;
@@ -372,8 +437,27 @@ cudaError_t launch_drba_post(const DrbaPostParams& params, cudaStream_t stream) 
 }
 
 cudaError_t launch_drba_glue(const DrbaGlueParams& params, cudaStream_t stream) {
-  const dim3 block(32, 4);
-  glue_kernel<<<grid_for(params.width, params.height, block), block, 0, stream>>>(params);
+  const dim3 block(kGlueWidth, kGlueHeight);
+  const dim3 grid = grid_for(params.width, params.height, block);
+  if (params.packed_x2 != nullptr) {
+    if (params.width <= 0 || params.height <= 0 || params.width % kGlueWidth != 0 ||
+        params.height % kGlueHeight != 0 ||
+        params.height > std::numeric_limits<int>::max() / params.width / kPackedX2)
+      return cudaErrorInvalidValue;
+    glue_kernel<true><<<grid, block, 0, stream>>>(params);
+  } else {
+    glue_kernel<false><<<grid, block, 0, stream>>>(params);
+  }
+  return cudaGetLastError();
+}
+
+cudaError_t launch_drba_pack_x2(const void* x2, void* packed, int height, int width, cudaStream_t stream) {
+  if (x2 == nullptr || packed == nullptr || width <= 0 || height <= 0 || width % kGlueWidth != 0 ||
+      height % kGlueHeight != 0 || height > std::numeric_limits<int>::max() / width / kPackedX2)
+    return cudaErrorInvalidValue;
+  const dim3 grid(static_cast<unsigned>(width / kGlueWidth), static_cast<unsigned>(height / kGlueHeight));
+  pack_x2_kernel<<<grid, kGlueThreads, 0, stream>>>(static_cast<const __half*>(x2),
+                                                    static_cast<__half*>(packed), width, height);
   return cudaGetLastError();
 }
 

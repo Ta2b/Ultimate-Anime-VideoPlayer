@@ -43,6 +43,11 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_drba_fused(const ModelSp
     return {};
   };
   const prepare::TrtexecBuilder builder(trtexec_config(), check);
+  const bool measured_hwc8 =
+      h == 1088 && w == 1920 && manifest->plan.tail == 4 && properties_.major == 8 && properties_.minor == 9;
+  prepare::TrtexecConfig tail_config = trtexec_config();
+  tail_config.hwc8_io = true;
+  const prepare::TrtexecBuilder tail_builder(std::move(tail_config), check);
   const std::filesystem::path folder = model.onnx_path.parent_path();
   const std::size_t count = manifest->pieces.size();
   const int t = manifest->plan.tail;
@@ -67,7 +72,13 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_drba_fused(const ModelSp
                                         std::format("DistilDRBA fusionné {}/{} : {}", i + 1, count, stage));
                       },
                   .stop = progress.stop};
-    auto built = builder.build(piece, ShapeSet{.min = input, .opt = input, .max = input}, part);
+    const ShapeSet fixed{.min = input, .opt = input, .max = input};
+    const bool packed_tail = measured_hwc8 && i + 1 == count;
+    auto built = (packed_tail ? tail_builder : builder).build(piece, fixed, part);
+    if (!built && packed_tail && !part.stop.stop_requested()) {
+      log(BackendLogLevel::Warn, "DistilDRBA : bloc final HWC8 refusé, essai en plans");
+      built = builder.build(piece, fixed, part);
+    }
     if (!built) return std::unexpected(std::move(built.error()));
     key.engines.push_back(core::to_utf8(built->path.filename()));
   }
