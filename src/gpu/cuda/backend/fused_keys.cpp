@@ -44,14 +44,17 @@ std::string rife_fused_artifact_key(const RifeFusedKey& key) {
     engines += std::format("{}{}", engines.empty() ? "" : ",", engine);
   const std::string_view output =
       key.motion ? "motion" : (key.warp == kernels::RifeWarp::CatmullRom ? "image-cubic" : "image");
-  return std::format("{}{}x{}:{}:{}:{}", kRifePrefix, key.height, key.width, output, reduce, engines);
+  std::string text =
+      std::format("{}{}x{}:{}:{}:{}", kRifePrefix, key.height, key.width, output, reduce, engines);
+  if (!key.encode_body.empty()) text += std::format(":{}", key.encode_body);
+  return text;
 }
 
 std::optional<RifeFusedKey> rife_fused_artifact_key_parse(std::string_view text) {
   if (!text.starts_with(kRifePrefix)) return std::nullopt;
   text.remove_prefix(kRifePrefix.size());
   const std::vector<std::string_view> fields = split(text, ':');
-  if (fields.size() != 4) return std::nullopt;
+  if (fields.size() != 4 && fields.size() != 5) return std::nullopt;
   const std::vector<std::string_view> size = split(fields[0], 'x');
   if (size.size() != 2) return std::nullopt;
   const auto height = parse_int(size[0]);
@@ -71,6 +74,11 @@ std::optional<RifeFusedKey> rife_fused_artifact_key_parse(std::string_view text)
   for (const std::string_view part : split(fields[3], ',')) {
     if (!plain_file_name(part)) return std::nullopt;
     key.engines.emplace_back(part);
+  }
+  if (fields.size() == 5) {
+    if (!plain_file_name(fields[4]) || !key.motion || key.height != 1088 || key.width != 1920)
+      return std::nullopt;
+    key.encode_body = fields[4];
   }
   if (!kernels::rife_fused_size_valid(key.plan, key.height, key.width) ||
       key.engines.size() != static_cast<std::size_t>(key.plan.blocks) + 1)

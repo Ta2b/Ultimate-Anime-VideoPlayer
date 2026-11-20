@@ -24,6 +24,16 @@ TEST_CASE("RIFE fusionné (TensorRT) : la clé d'artefact se relit", "[gpu][fuse
   CHECK(parsed->motion);
   CHECK(parsed->plan == key.plan);
   CHECK(parsed->engines == key.engines);
+  CHECK(parsed->encode_body.empty());
+
+  const auto hybrid = rife_fused_artifact_key_parse(text + ":body.engine");
+  REQUIRE(hybrid);
+  CHECK(hybrid->engines == key.engines);
+  CHECK(hybrid->encode_body == "body.engine");
+  CHECK(rife_fused_artifact_key(*hybrid) == text + ":body.engine");
+  CHECK_FALSE(rife_fused_artifact_key_parse(text + ":../body.engine"));
+  CHECK_FALSE(rife_fused_artifact_key_parse("rife-fused:576x960:motion:8,4,2,1:a,b,c,d,e:body.engine"));
+  CHECK_FALSE(rife_fused_artifact_key_parse("rife-fused:1088x1920:image:8,4,2,1:a,b,c,d,e:body.engine"));
 }
 
 TEST_CASE("RIFE fusionné (TensorRT) : la clé du warp Catmull-Rom se relit (C03-09)", "[gpu][fused_keys]") {

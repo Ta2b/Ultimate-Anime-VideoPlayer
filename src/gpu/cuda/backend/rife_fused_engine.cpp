@@ -64,6 +64,14 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   auto blocks = engine->load_blocks(runtime, cache_dir, key, shared);
   if (!blocks) return std::unexpected(std::move(blocks.error()));
   activation = std::max(activation, *blocks);
+  if (!key.encode_body.empty()) {
+    auto body = TrtEngine::load(runtime, cache_dir / core::path_from_utf8(key.encode_body), shared);
+    if (body && (*body)->input_names().size() == 1 && (*body)->output_names().size() == 1 &&
+        (*body)->input_shape(0) == Shape{.dims = {1, 3, h, w}} && (*body)->input_pitch(0) == 0 &&
+        (*body)->output_shape(0) == Shape{.dims = {1, 16, h / 2, w / 2}} && (*body)->output_pitch(0) == 16 &&
+        (*body)->activation_bytes() <= activation)
+      engine->encode_body_ = std::move(*body);
+  }
   // Les blocs grossiers, repris à chaud (next_warm) : ceux à la réduction du premier, sauf le dernier.
   while (engine->warm_blocks_ + 1 < key.plan.blocks &&
          key.plan.reduce[static_cast<std::size_t>(engine->warm_blocks_)] == key.plan.reduce[0]) {
@@ -167,6 +175,22 @@ void RifeFusedEngine::set_window(const kernels::Window& window) {
   const bool inside = window.x >= 0 && window.y >= 0 && window.width >= 1 && window.height >= 1 &&
                       window.x + window.width <= width_ && window.y + window.height <= height_;
   window_ = inside ? window : kernels::Window{.x = 0, .y = 0, .width = width_, .height = height_};
+}
+
+std::expected<void, Refusal> RifeFusedEngine::run_trt_encoder(cudaStream_t stream,
+                                                              const std::shared_ptr<SharedActivations>& arena,
+                                                              const Tensor& image, const Tensor& encoded) {
+  if (!encode_hybrid_)
+    return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
+  // X du dernier bloc, encore libre : le corps de l'encodeur y range 16 canaux à demi-taille.
+  const auto last = static_cast<std::size_t>(plan_.blocks - 1);
+  const auto base = reinterpret_cast<std::uintptr_t>(arena->data());
+  const Tensor hidden = fused_tensor(base, scratch_offset_ + layout_.x[last], 16, height_ / 2, width_ / 2);
+  if (auto ok = encode_body_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&hidden, 1)); !ok)
+    return ok;
+  return cuda_check(
+      encode_tail_->encode(stream, fused_address(hidden), fused_address(encoded), arena->data()),
+      "RIFE Lite : transposée de l'encodeur hybride");
 }
 
 std::size_t RifeFusedEngine::scratch_offset_for(SharedActivations& zone) {
@@ -275,7 +299,7 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
                         "RIFE natif : encodeur");
     const Tensor image = fused_tensor(input.handle, input.offset + image_offset, 3, h, w);
     const Tensor encoded = fused_tensor(at(encode_offset), 0, 4, h, w);
-    return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
+    return run_trt_encoder(stream, arena, image, encoded);
   };
   const std::size_t encode_a = layout_.encode + a_slot * encode_bytes;
   const std::size_t encode_b = layout_.encode + (a_slot ^ 1U) * encode_bytes;

@@ -14,7 +14,9 @@
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
+#include "prepare/derived_files.h"
 #include "prepare/model_source.h"
+#include "prepare/onnx_split.h"
 #include "prepare/rife_native.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
@@ -68,6 +70,29 @@ std::expected<std::vector<RifeNativePiece>, Refusal> native_pieces(
     }
   }
   return pieces;
+}
+
+// Le préfixe de l'encodeur Lite livré, coupé juste avant sa transposée.
+std::expected<ModelSpec, Refusal> lite_encoder_body(const std::filesystem::path& source, int h, int w) {
+  auto bytes = prepare::read_onnx_bytes(source);
+  if (!bytes) return std::unexpected(std::move(bytes.error()));
+  const prepare::SplitTensor in{.name = "/Reshape_output_0", .dims = {1, 3, h, w}};
+  const prepare::SplitTensor out{.name = "/encode/relu_2/LeakyRelu_output_0", .dims = {1, 16, h / 2, w / 2}};
+  auto cut = prepare::extract_subgraph(*bytes, std::span(&in, 1), std::span(&out, 1), "encode-body");
+  if (!cut) return std::unexpected(std::move(cut.error()));
+  const auto digest = prepare::sha256_hex(prepare::byte_text(*cut));
+  const auto onnx =
+      source.parent_path() / core::path_from_utf8(std::format("{}-body-{}.onnx", core::to_utf8(source.stem()),
+                                                              digest.substr(0, 16)));
+  if (!prepare::file_matches(onnx, cut->size(), digest)) {
+    if (auto stored = core::write_atomic(onnx, *cut); !stored)
+      return std::unexpected(std::move(stored.error()));
+  }
+  return ModelSpec{.id = core::to_utf8(onnx.stem()),
+                   .onnx_path = onnx,
+                   .sha256 = digest,
+                   .precision = TensorType::F16,
+                   .tuned = false};
 }
 
 // L'identité d'un verdict gardé (rife_native_verdict.h) : la carte (nom, architecture, UUID), le pilote, les
@@ -124,6 +149,11 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
                                ? kernels::RifeWarp::CatmullRom
                                : kernels::RifeWarp::Bilinear,
                    .plan = manifest->plan};
+  // Empreinte du Lite livré, incluse dans le nom dérivé (prepare/rife_split.cpp).
+  const bool try_body = rife_native_ && properties_.major == 8 && properties_.minor == 9 && key.motion &&
+                        h == 1088 && w == 1920 &&
+                        core::to_utf8(model.onnx_path.stem()).ends_with("-8b30b93ef8ab0b3c-motion");
+  const auto total = count + (try_body ? 1U : 0U);
   for (std::size_t i = 0; i < count; ++i) {
     const std::filesystem::path onnx =
         folder / core::path_from_utf8(manifest->pieces[i]);  // noms en UTF-8 (A04-04)
@@ -138,16 +168,42 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
     }
     // La progression de la chaîne : le morceau i occupe le i-ième sixième.
     Progress part{.report =
-                      [&progress, i, count](float fraction, const std::string& stage) {
+                      [&progress, i, total](float fraction, const std::string& stage) {
                         if (!progress.report) return;
-                        progress.report((static_cast<float>(i) + fraction) / static_cast<float>(count),
-                                        std::format("RIFE fusionné {}/{} : {}", i + 1, count, stage));
+                        progress.report((static_cast<float>(i) + fraction) / static_cast<float>(total),
+                                        std::format("RIFE fusionné {}/{} : {}", i + 1, total, stage));
                       },
                   .stop = progress.stop};
     auto built = (i == 0 ? builder : block_builder)
                      .build(piece, ShapeSet{.min = input, .opt = input, .max = input}, part);
     if (!built) return std::unexpected(std::move(built.error()));
     key.engines.push_back(core::to_utf8(built->path.filename()));
+  }
+  if (try_body) {
+    auto body = lite_encoder_body(folder / core::path_from_utf8(manifest->pieces.front()), h, w);
+    if (body) {
+      auto config = trtexec_config();
+      config.hwc8_output = true;
+      const prepare::TrtexecBuilder body_builder(config, check);
+      const Shape in{.dims = {1, 3, h, w}};
+      Progress part{.report =
+                        [&progress, count, total](float fraction, const std::string& stage) {
+                          if (progress.report)
+                            progress.report(
+                                (static_cast<float>(count) + fraction) / static_cast<float>(total),
+                                "RIFE Lite : encodeur hybride : " + stage);
+                        },
+                    .stop = progress.stop};
+      auto built = body_builder.build(*body, ShapeSet{.min = in, .opt = in, .max = in}, part);
+      if (built)
+        key.encode_body = core::to_utf8(built->path.filename());
+      else if (built.error().code == RefusalCode::Cancelled)
+        return std::unexpected(std::move(built.error()));
+      else
+        log(BackendLogLevel::Warn, "RIFE Lite : préfixe hybride écarté : " + built.error().detail);
+    } else {
+      log(BackendLogLevel::Warn, "RIFE Lite : préfixe hybride écarté : " + body.error().detail);
+    }
   }
   return Artifact{.cache_key = rife_fused_artifact_key(key), .path = model.onnx_path};
 }
@@ -181,6 +237,17 @@ std::expected<void, Refusal> TensorRtBackend::settle_rife_native(RifeFusedEngine
                                                                  const Artifact& artifact) {
   auto pieces = native_pieces(artifact.path);
   if (!pieces) return std::unexpected(std::move(pieces.error()));
+  const auto finish = [&]() -> std::expected<void, Refusal> {
+    if (!engine.can_try_hybrid_encoder()) return {};
+    auto hybrid = engine.try_hybrid_encoder(pieces->front().back(), arena());
+    if (!hybrid && hybrid.error().code == RefusalCode::DeviceLost)
+      return std::unexpected(std::move(hybrid.error()));
+    if (hybrid)
+      log(BackendLogLevel::Info, *hybrid);
+    else
+      log(BackendLogLevel::Info, "RIFE Lite : encodeur complet conservé (" + hybrid.error().detail + ")");
+    return {};
+  };
   const std::filesystem::path file = cache_dir_ / rife_verdict::file_name(verdict_identity(
                                                       properties_, driver_version_, artifact.cache_key));
   std::ifstream in(file, std::ios::binary);
@@ -190,7 +257,7 @@ std::expected<void, Refusal> TensorRtBackend::settle_rife_native(RifeFusedEngine
     if (!cached) return std::unexpected(std::move(cached.error()));
     for (const std::string& line : cached->lines)
       log(cached->held ? BackendLogLevel::Info : BackendLogLevel::Warn, line);
-    if (cached->held) return {};
+    if (cached->held) return finish();
   }
   auto trial = engine.try_native(*pieces, arena(), kNativeMinDb);
   if (!trial) return std::unexpected(std::move(trial.error()));
@@ -200,7 +267,7 @@ std::expected<void, Refusal> TensorRtBackend::settle_rife_native(RifeFusedEngine
         trial->lines[i]);
   if (auto saved = core::write_text_atomically(file, rife_verdict::text_of(trial->verdict)); !saved)
     log(BackendLogLevel::Warn, "RIFE natif : verdict non gardé, l'essai se refera : " + saved.error().detail);
-  return {};
+  return finish();
 }
 
 std::size_t TensorRtBackend::persisting_l2() {

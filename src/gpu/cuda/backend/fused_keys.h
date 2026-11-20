@@ -24,6 +24,7 @@ struct RifeFusedKey {
   kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;  // le warp de l'image (sortie « image-cubic »)
   kernels::RifeFusedPlan plan;
   std::vector<std::string> engines;
+  std::string encode_body;  // éventuel moteur hybride, après les moteurs obligatoires
 };
 std::string rife_fused_artifact_key(const RifeFusedKey& key);
 // Rien si la clé est celle d'un autre moteur ou illisible.

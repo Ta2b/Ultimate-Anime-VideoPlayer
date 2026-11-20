@@ -216,7 +216,7 @@ std::expected<void, Refusal> RifeFusedEngine::run_piece(cudaStream_t stream,
     const Tensor image = fused_tensor(input.handle, input.offset, 3, height_, width_);
     const Tensor encoded =
         fused_tensor(reinterpret_cast<std::uintptr_t>(base + layout_.encode), 0, 4, height_, width_);
-    return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
+    return run_trt_encoder(stream, arena, image, encoded);
   }
   // Un bloc dont un réseau natif sait calculer l'entrée à la volée se mesure colle comprise, quelle que soit
   // l'option (ce réseau sans elle, use_glue, compris) : sans elle, TensorRT et un réseau qui ne la refait pas

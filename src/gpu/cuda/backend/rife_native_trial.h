@@ -27,6 +27,9 @@ class RifeNativeTrial {
   RifeNativeTrial(RifeFusedEngine& engine, cudaStream_t stream, std::shared_ptr<SharedActivations> shared,
                   const Tensor& input);
 
+  // Deux images comparées au bit, puis chronométrage intercalé de l'encodeur seul.
+  std::expected<std::string, Refusal> hybrid_encoder();
+
   int pieces() const { return engine_.plan_.blocks + 1; }
   static std::string piece_name(int piece);
 

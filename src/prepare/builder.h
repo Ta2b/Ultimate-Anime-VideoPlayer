@@ -44,6 +44,8 @@ struct TrtexecConfig {
   // les blocs du RIFE fusionné, dont les noyaux de colle écrivent et lisent ce format
   // (gpu/cuda/backend/rife_fused_kernels.h). Haché dans la clé : un moteur en plans ne sert pas à sa place.
   bool hwc8_io = false;
+  // Seulement la sortie en HWC8, l'entrée RGB reste en plans.
+  bool hwc8_output = false;
 };
 
 // Vérifie un moteur avant sa publication, par exemple en le désérialisant.

@@ -128,8 +128,11 @@ class RifeFusedEngine final : public Engine {
   std::expected<CachedTrial, Refusal> try_cached(const std::vector<RifeNativePiece>& pieces,
                                                  const std::shared_ptr<SharedActivations>& shared,
                                                  const rife_verdict::Verdict& verdict);
+  bool can_try_hybrid_encoder() const { return encode_body_ != nullptr && piece_net(0) == nullptr; }
+  std::expected<std::string, Refusal> try_hybrid_encoder(const RifeNativeConv& tail,
+                                                         const std::shared_ptr<SharedActivations>& shared);
   // Un morceau au moins passe par les noyaux natifs.
-  bool native() const { return native_on_; }
+  bool native() const { return native_on_ || encode_hybrid_; }
 
   // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
   std::string take_notice() { return graphs_.take_notice(); }
@@ -147,6 +150,9 @@ class RifeFusedEngine final : public Engine {
     unsigned a_slot = 0;
     int first_block = 0;
   };
+  std::expected<void, Refusal> run_trt_encoder(cudaStream_t stream,
+                                               const std::shared_ptr<SharedActivations>& arena,
+                                               const Tensor& image, const Tensor& encoded);
   // La chaîne, lancée ou capturée selon l'appelant.
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                    const Tensor& input, std::span<const Tensor> outputs, const Pass& pass);
@@ -247,6 +253,9 @@ class RifeFusedEngine final : public Engine {
   friend class RifeNativeTrial;
 
   std::unique_ptr<TrtEngine> encode_;
+  std::unique_ptr<TrtEngine> encode_body_;
+  std::unique_ptr<RifeNativeNet> encode_tail_;
+  bool encode_hybrid_ = false;
   std::vector<std::unique_ptr<TrtEngine>> blocks_;
   // Les noyaux natifs (try_native) : les réseaux, et par morceau celui qui le fait à la place de encode_ ou
   // d'un moteur de blocks_, qui restent chargés (set_route).

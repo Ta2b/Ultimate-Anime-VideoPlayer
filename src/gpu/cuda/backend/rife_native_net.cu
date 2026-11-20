@@ -66,7 +66,7 @@ class Net final : public RifeNativeNet {
       const RifeNativeConv& conv = piece[i];
       Layer& layer = layers[i];
       const bool last = i + 1 == piece.size();
-      const bool image = at.encoder && i == 0;
+      const bool image = at.encoder && i == 0 && at.in_ld == 0;
       layer.cin = pad16(conv.cin);
       layer.in_ld = image ? 0 : at.in_ld;
       if (!image && layer.cin != at.in_ld) {
@@ -471,6 +471,37 @@ std::unique_ptr<RifeNativeNet> RifeNativeNet::create_ifnet(const std::array<Rife
       error = "bloc IFNet " + std::to_string(k) + " : " + error;
       return nullptr;
     }
+  }
+  return net;
+}
+
+std::unique_ptr<RifeNativeNet> RifeNativeNet::create_encode_tail(const RifeNativeConv& tail, int height,
+                                                                 int width, cudaStream_t stream,
+                                                                 std::string& error) {
+  if (!tail.transposed || tail.cin != 16 || tail.cout != 4 || tail.stride != 2 || !tail.slope.empty() ||
+      !tail.scale.empty() || height <= 0 || width <= 0 || height % 2 != 0 || width % 2 != 0) {
+    error = "transposée 16→4 de l'encodeur Lite attendue";
+    return nullptr;
+  }
+  rn::Bench bench(stream);
+  if (!bench.ready()) {
+    error = "événements CUDA du réglage";
+    return nullptr;
+  }
+  const RifeNativePrecision precision{RifeNativeSums::kF16, RifeNativeSums::kF16};
+  auto net = std::make_unique<Net>(precision, stream);
+  const Entry input{.ih = height / 2,
+                    .iw = width / 2,
+                    .in_ld = 16,
+                    .out_h = height,
+                    .out_w = width,
+                    .encoder = true,
+                    .glue_scales = {}};
+  std::vector<RifeNativeTuned> tuned;
+  if (!net->plan(RifeNativePiece{tail}, input, bench, tuned, error)) return nullptr;
+  if (const cudaError_t result = cudaStreamSynchronize(stream); result != cudaSuccess) {
+    error = cudaGetErrorString(result);
+    return nullptr;
   }
   return net;
 }

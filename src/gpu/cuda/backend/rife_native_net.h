@@ -63,6 +63,9 @@ class RifeNativeNet {
                                                const std::vector<int>& reduce, int height, int width,
                                                RifeNativePrecision precision, cudaStream_t stream,
                                                std::vector<RifeNativeTuned>& tuned, std::string& error);
+  // La transposée de l'encodeur Lite, depuis les seize canaux par pixel du préfixe TensorRT.
+  static std::unique_ptr<RifeNativeNet> create_encode_tail(const RifeNativeConv& tail, int height, int width,
+                                                           cudaStream_t stream, std::string& error);
   // L'IFNet de GMFSS utilise les mêmes convolutions, sans encodeur ni colle RIFE.
   static std::unique_ptr<RifeNativeNet> create_ifnet(const std::array<RifeNativePiece, 4>& pieces, int height,
                                                      int width, cudaStream_t stream, std::string& error);

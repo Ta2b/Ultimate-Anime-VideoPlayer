@@ -219,8 +219,9 @@ std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const 
   if (!recipe) return std::unexpected(recipe.error());
   auto profile = profile_shapes(source.input, shapes);
   if (!profile) return std::unexpected(profile.error());
-  BuildPlan plan{.settings = engine_settings(*recipe, source.input.name, *profile, source.twins),
-                 .label = shapes_label(shapes)};
+  BuildPlan plan;
+  plan.settings = engine_settings(*recipe, source.input.name, *profile, source.twins);
+  plan.label = shapes_label(shapes);
   plan.command = sanitize_trt11(plan.settings);
   if (!model.tuned) {
     // Haché dans la clé : un moteur pavé ne sert pas à sa place. trtexec_arguments n'ajoute alors pas
@@ -229,12 +230,13 @@ std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const 
     plan.settings += kNoTiling;
     plan.command.kept += kNoTiling;
   }
-  if (config.hwc8_io) {
+  if (config.hwc8_io || config.hwc8_output) {
     // Après le nettoyage, qui retire les --inputIOFormats des réglages du fork (typage faible) : trtexec 11.3
     // prend « hwc8 » seul, le type restant celui du graphe fortement typé.
     constexpr std::string_view kHwc8 = " --inputIOFormats=hwc8 --outputIOFormats=hwc8";
-    plan.settings += kHwc8;
-    plan.command.kept += kHwc8;
+    const std::string_view format = config.hwc8_io ? kHwc8 : " --inputIOFormats=chw --outputIOFormats=hwc8";
+    plan.settings += format;
+    plan.command.kept += format;
   }
   auto name = engine_name({.content = source.content_key,
                            .settings = plan.settings,

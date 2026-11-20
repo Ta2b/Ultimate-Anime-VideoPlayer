@@ -192,6 +192,30 @@ std::expected<std::vector<std::unique_ptr<RifeNativeNet>>, Refusal> ladder_nets(
 
 }  // namespace
 
+std::expected<std::string, Refusal> RifeFusedEngine::try_hybrid_encoder(
+    const RifeNativeConv& tail, const std::shared_ptr<SharedActivations>& shared) {
+  Pair pair;
+  if (auto ok = make_pair(pair, height_, width_, motion_); !ok) return std::unexpected(std::move(ok.error()));
+  std::string error;
+  encode_tail_ = RifeNativeNet::create_encode_tail(tail, height_, width_, pair.scratch.stream, error);
+  if (!encode_tail_) {
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(lost_refusal(lost, "RIFE Lite : transposée de l'encodeur hybride"));
+    return refuse(RefusalCode::FormatUnsupported, std::move(error));
+  }
+  RifeNativeTrial trial(*this, pair.scratch.stream, shared, pair.input);
+  auto accepted = trial.hybrid_encoder();
+  encode_hybrid_ = accepted.has_value();
+  forget_passes();
+  if (!accepted) {
+    encode_tail_.reset();
+    encode_body_.reset();
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(lost_refusal(lost, "RIFE Lite : essai de l'encodeur hybride"));
+  }
+  return accepted;
+}
+
 void RifeFusedEngine::keep_route(std::vector<int> route, std::int64_t trt_activation) {
   std::vector<std::unique_ptr<RifeNativeNet>> kept;
   std::vector<int> renamed(natives_.size(), -1);

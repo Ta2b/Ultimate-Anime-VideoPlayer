@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cuda_fp16.h>
 #include <format>
 #include <iterator>
@@ -79,6 +81,45 @@ std::vector<std::vector<Variant>> variants_of(std::size_t count, std::span<RifeN
 RifeNativeTrial::RifeNativeTrial(RifeFusedEngine& engine, cudaStream_t stream,
                                  std::shared_ptr<SharedActivations> shared, const Tensor& input)
     : engine_(engine), stream_(stream), shared_(std::move(shared)), input_(input) {}
+
+std::expected<std::string, Refusal> RifeNativeTrial::hybrid_encoder() {
+  const auto plane = static_cast<std::size_t>(engine_.height_) * static_cast<std::size_t>(engine_.width_);
+  const Tensor pair = input_;
+  for (const std::size_t off : {std::size_t{0}, 6 * plane}) {
+    input_.offset = pair.offset + off;
+    engine_.encode_hybrid_ = false;
+    auto trt = output(0, nullptr);
+    if (!trt) return std::unexpected(std::move(trt.error()));
+    engine_.encode_hybrid_ = true;
+    auto hybrid = output(0, nullptr);
+    if (!hybrid) return std::unexpected(std::move(hybrid.error()));
+    if (!std::ranges::equal(*trt, *hybrid, [](float a, float b) {
+          return std::isfinite(a) && std::bit_cast<std::uint32_t>(a) == std::bit_cast<std::uint32_t>(b);
+        }))
+      return refuse(RefusalCode::FormatUnsupported, "l'encodage diffère de TensorRT");
+  }
+  input_ = pair;
+  std::array<Exec, 2> execs;
+  for (std::size_t route = 0; route < execs.size(); ++route) {
+    engine_.encode_hybrid_ = route == 1;
+    auto graph = capture(0, nullptr, route == 1 ? "hybride" : "TensorRT");
+    if (!graph) return std::unexpected(std::move(graph.error()));
+    execs[route] = std::move(*graph);
+  }
+  std::array<std::vector<double>, 2> samples;
+  for (int round = 0; round < kRounds; ++round)
+    for (std::size_t i = 0; i < execs.size(); ++i) {
+      const std::size_t route = round % 2 == 0 ? i : 1 - i;
+      engine_.encode_hybrid_ = route == 1;
+      auto ms = time(0, nullptr, execs[route].get());
+      if (!ms) return std::unexpected(std::move(ms.error()));
+      samples[route].push_back(*ms);
+    }
+  const double trt_ms = median(std::move(samples[0])), hybrid_ms = median(std::move(samples[1]));
+  if (hybrid_ms >= trt_ms * 0.98) return refuse(RefusalCode::FormatUnsupported, "gain inférieur à 2 %");
+  return std::format("RIFE Lite : encodeur hybride retenu, {} codes identiques, {:.3f} → {:.3f} ms",
+                     8 * plane, trt_ms, hybrid_ms);
+}
 
 std::string RifeNativeTrial::piece_name(int piece) {
   return rife_mix::piece_name(piece);
