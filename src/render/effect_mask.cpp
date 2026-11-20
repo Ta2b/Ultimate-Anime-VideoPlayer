@@ -112,8 +112,10 @@ void EffectMask::update(const EffectTiles& tiles) {
   cover_y_ = cover_y;
   if (tiles.hold && !tiles.cut) {
     // Une tenue ne change pas les niveaux. Une nouvelle grille n'a pas d'historique à afficher.
-    if (resized) publish();
-    else if (moved) ++serial_;
+    if (resized)
+      publish();
+    else if (moved)
+      ++serial_;
     return;
   }
   const float rise = effect_step(tiles.span_us, kEffectRiseUs);

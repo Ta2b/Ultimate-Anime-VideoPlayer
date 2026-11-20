@@ -75,10 +75,11 @@ class GmfssFusedEngine final : public Engine {
   std::expected<void, Refusal> enqueue_ifnet(cudaStream_t stream,
                                              const std::shared_ptr<SharedActivations>& shared,
                                              std::span<const Tensor> inputs, bool native);
-  std::expected<std::string, Refusal> try_ifnet(
-      const std::array<RifeNativePiece, 4>& pieces, cudaStream_t stream,
-      const std::shared_ptr<SharedActivations>& shared, std::span<const Tensor> inputs,
-      const Tensor& out, double min_db);
+  std::expected<std::string, Refusal> try_ifnet(const std::array<RifeNativePiece, 4>& pieces,
+                                                cudaStream_t stream,
+                                                const std::shared_ptr<SharedActivations>& shared,
+                                                std::span<const Tensor> inputs, const Tensor& out,
+                                                double min_db);
 
   // Les entrées de la fusion, par nom.
   enum Input : std::size_t { kHalf0, kHalf1, kTime, kW01, kW02, kW03, kW11, kW12, kW13, kInputs };

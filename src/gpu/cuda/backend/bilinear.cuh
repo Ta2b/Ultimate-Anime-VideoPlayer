@@ -111,8 +111,8 @@ struct CatmullRom {
 #pragma unroll
     for (int i = 0; i < 4; ++i) {
       f.cols[i] = static_cast<std::size_t>(min(max(x0 - 1 + i, 0), t.fw - 1));
-      f.rows[i] = static_cast<std::size_t>(min(max(y0 - 1 + i, 0), t.fh - 1)) *
-                  static_cast<std::size_t>(t.plane_w);
+      f.rows[i] =
+          static_cast<std::size_t>(min(max(y0 - 1 + i, 0), t.fh - 1)) * static_cast<std::size_t>(t.plane_w);
     }
     return f;
   }

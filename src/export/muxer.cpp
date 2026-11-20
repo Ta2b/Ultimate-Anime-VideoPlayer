@@ -20,8 +20,8 @@ extern "C" {
 #include <libavutil/mem.h>
 }
 
-#include "core/log.h"
 #include "av/input_whitelist.h"
+#include "core/log.h"
 
 namespace kirari::exporter {
 namespace {
@@ -38,8 +38,8 @@ std::string file_url(const std::filesystem::path& path) {
 std::filesystem::path partial_path_for(const std::filesystem::path& output) {
   static std::atomic<std::uint64_t> sequence = 0;
   const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-  return output.parent_path() /
-         std::format(".kirari-export-{:x}-{:x}.partial", ticks, sequence.fetch_add(1, std::memory_order_relaxed));
+  return output.parent_path() / std::format(".kirari-export-{:x}-{:x}.partial", ticks,
+                                            sequence.fetch_add(1, std::memory_order_relaxed));
 }
 
 std::int64_t to_us(std::int64_t ts, AVRational time_base) {

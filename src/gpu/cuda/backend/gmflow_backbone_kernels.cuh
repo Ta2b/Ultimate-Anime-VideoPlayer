@@ -49,17 +49,18 @@ struct Params {
   int in_ld = 0;
   int ih = 0, iw = 0;
   const float2* in_stats = nullptr;  // kNorm : [image][in_ld] de (moyenne, inverse de l'écart-type)
-  __half* out = nullptr;            // NHWC à out_ld canaux
+  __half* out = nullptr;             // NHWC à out_ld canaux
   int out_ld = 0;
   int oh = 0, ow = 0;
   float* partial_stats = nullptr;  // non nul : [image][tuile spatiale][Σx, Σx²][out_ld]
-  const uint4* w = nullptr;    // poids rangés, un paquet par tuile de sortie
+  const uint4* w = nullptr;        // poids rangés, un paquet par tuile de sortie
   const float* bias = nullptr;
-  int cin = 0;    // multiple de Kc (la 7 × 7 : kStemK)
-  int tiles = 1;  // tuiles de CT canaux de sortie
+  int cin = 0;          // multiple de Kc (la 7 × 7 : kStemK)
+  int tiles = 1;        // tuiles de CT canaux de sortie
   int first_image = 0;  // 1 : seul le côté droit est calculé
   bool swap_output_images = false;
-  float pad[3] = {0.F, 0.F, 0.F};  // la 7 × 7 : moyennes, également utilisées comme halo avec les poids repliés
+  float pad[3] = {0.F, 0.F,
+                  0.F};  // la 7 × 7 : moyennes, également utilisées comme halo avec les poids repliés
   float deviation[3] = {0.F, 0.F, 0.F};
   bool normalize_image = false;
 };
@@ -137,8 +138,8 @@ __device__ __forceinline__ void store_tile(const __half* o, const Params& p, __h
 // Σx et Σx² des canaux [n0, n0 + CT) des pixels valides de cette tuile. Chaque fil somme deux canaux
 // pour un groupe de pixels. Le résultat du CTA est relu dans un ordre fixe par la réduction suivante.
 template <int CT, int Rows>
-__device__ __forceinline__ void store_stats(const __half* o, float4* red, const Params& p, float* sum, int ty0,
-                                            int tx0, int n0) {
+__device__ __forceinline__ void store_stats(const __half* o, float4* red, const Params& p, float* sum,
+                                            int ty0, int tx0, int n0) {
   constexpr int kTH = kWarps * Rows, kLdo = CT + 8, kPairs = CT / 2, kGroups = kThreads / kPairs;
   const int pair = static_cast<int>(threadIdx.x) % kPairs, group = static_cast<int>(threadIdx.x) / kPairs;
   float4 acc = make_float4(0.F, 0.F, 0.F, 0.F);
@@ -175,7 +176,8 @@ __device__ __forceinline__ void finish(const rn::Frag<A> (&acc)[Rows * 2][CT / 8
   rn::stage<CT, Rows, A>(acc, s, p.bias + n0, warp, lane);
   __syncthreads();
   const int out_image = image ^ static_cast<int>(p.swap_output_images);
-  store_tile<CT, Rows, Relu>(s, p, p.out + static_cast<long>(out_image) * p.oh * p.ow * p.out_ld, ty0, tx0, n0);
+  store_tile<CT, Rows, Relu>(s, p, p.out + static_cast<long>(out_image) * p.oh * p.ow * p.out_ld, ty0, tx0,
+                             n0);
   if constexpr (!Relu) {
     if (p.partial_stats != nullptr) {
       auto* red = reinterpret_cast<float4*>(s + kTH * kTW * (CT + 8));

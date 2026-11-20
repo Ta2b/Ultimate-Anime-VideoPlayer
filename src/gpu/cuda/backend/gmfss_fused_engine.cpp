@@ -139,10 +139,10 @@ std::optional<std::array<GmfssFusedEngine::SplatTarget, 6>> GmfssFusedEngine::pa
       const auto channels = static_cast<int>(warped.shape.dims[1]);
       const auto cells = features_c8_ ? static_cast<std::size_t>(warped.shape.dims[2] * warped.shape.dims[3])
                                       : std::size_t{1};
-      void* to = static_cast<std::byte*>(planes[l]) + s * static_cast<std::size_t>(channels) * cells *
-                                                      sizeof(std::uint16_t);
-      targets[s * planes.size() + l] = {.planar = warped, .pixels = to,
-                                        .pitch = features_c8_ ? -2 * channels : 2 * channels};
+      void* to = static_cast<std::byte*>(planes[l]) +
+                 s * static_cast<std::size_t>(channels) * cells * sizeof(std::uint16_t);
+      targets[s * planes.size() + l] = {
+          .planar = warped, .pixels = to, .pitch = features_c8_ ? -2 * channels : 2 * channels};
     }
   }
   return targets;
@@ -170,15 +170,15 @@ std::expected<void, Refusal> GmfssFusedEngine::enqueue_native(
   return cuda_check(native_->run(stream, in, fused_address(out)), "GMFSS natif : GridNet");
 }
 
-std::expected<void, Refusal> GmfssFusedEngine::enqueue_ifnet(
-    cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared,
-    std::span<const Tensor> inputs, bool native) {
+std::expected<void, Refusal> GmfssFusedEngine::enqueue_ifnet(cudaStream_t stream,
+                                                             const std::shared_ptr<SharedActivations>& shared,
+                                                             std::span<const Tensor> inputs, bool native) {
   if (native) {
     KIRARI_TRACE("gmfss.fusion.ifnet.cuda");
-    return cuda_check(native_ifnet_->run(stream, fused_address(inputs[at_[kHalf0]]),
-                                        fused_address(inputs[at_[kHalf1]]),
-                                        fused_address(inputs[at_[kTime]]), rife_),
-                      "GMFSS natif : IFNet");
+    return cuda_check(
+        native_ifnet_->run(stream, fused_address(inputs[at_[kHalf0]]), fused_address(inputs[at_[kHalf1]]),
+                           fused_address(inputs[at_[kTime]]), rife_),
+        "GMFSS natif : IFNet");
   }
   KIRARI_TRACE("gmfss.fusion.ifnet");
   std::array<Tensor, 3> ifnet_in;

@@ -48,7 +48,7 @@ struct QkvParams {
   const uint4* w = nullptr;  // trois parties (q, k, v) de 128 sorties rangées pour le mma
   long tokens = 0;           // jetons d'une image
   int batch = 0;
-  int key_shift = 0;  // 0, ou lot / 2 (cross-attention)
+  int key_shift = 0;            // 0, ou lot / 2 (cross-attention)
   const float* bias = nullptr;  // Projection de propagation seule, 128 sorties.
 };
 

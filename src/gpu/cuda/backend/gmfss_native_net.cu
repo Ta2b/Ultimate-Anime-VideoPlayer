@@ -50,8 +50,8 @@ __global__ void pack_features(const __half* a, const __half* b, long plane, int 
   __shared__ __half tile[kPackChannels][kPackPixels + 1];
   const long x = static_cast<long>(blockIdx.x) * kPackPixels;
   const int c = static_cast<int>(blockIdx.y) * kPackChannels;
-  const __half* from = c < channels ? a + static_cast<long>(c) * plane
-                                   : b + static_cast<long>(c - channels) * plane;
+  const __half* from =
+      c < channels ? a + static_cast<long>(c) * plane : b + static_cast<long>(c - channels) * plane;
   const int lane = static_cast<int>(threadIdx.x);
   const long px = x + lane % kPackPixels;
   if (px < plane) {
@@ -113,8 +113,12 @@ class Net final : public GmfssNativeNet {
       return false;
     }
     out_ = static_cast<int>(grid.tensors.size()) - 1;
-    const gmfss_plan::Io io{.external = {}, .image = -1, .written = {0, 1, 2, 3},
-                             .kept = {out_}, .rgb = out_, .features_c8 = features_c8_};
+    const gmfss_plan::Io io{.external = {},
+                            .image = -1,
+                            .written = {0, 1, 2, 3},
+                            .kept = {out_},
+                            .rgb = out_,
+                            .features_c8 = features_c8_};
     if (!net_.plan(grid, io, pieces, tuner, error) || !check(error)) return false;
     use(std::vector<RifeNativePrecision>(kPieceNames.size(), {RifeNativeSums::kF32, RifeNativeSums::kF32}));
     const auto sent = [&](cudaError_t result) {
@@ -151,9 +155,7 @@ class Net final : public GmfssNativeNet {
   cudaError_t run(cudaStream_t stream, const GmfssNativeInputs& in, void* out) const override {
     const auto plane = [&](int level) { return static_cast<long>(height_ >> level) * (width_ >> level); };
     void* zone = zone_.as<void>();
-    const auto at = [&](int tensor) {
-      return gmfss_plan::ConvNet::at(zone, net_.tensor(tensor));
-    };
+    const auto at = [&](int tensor) { return gmfss_plan::ConvNet::at(zone, net_.tensor(tensor)); };
     const auto* w01 = static_cast<const __half*>(in.warped0[0]);
     const auto* w11 = static_cast<const __half*>(in.warped1[0]);
     const long p0 = plane(0);
@@ -166,11 +168,11 @@ class Net final : public GmfssNativeNet {
         const dim3 grid(static_cast<unsigned>((n + kPackPixels - 1) / kPackPixels),
                         static_cast<unsigned>(2 * count / kPackChannels));
         if (features_c8_) {
-          pack_features<true><<<grid, kPackThreads, 0, stream>>>(static_cast<const __half*>(a),
-                                                               static_cast<const __half*>(b), n, count, at(tensor));
+          pack_features<true><<<grid, kPackThreads, 0, stream>>>(
+              static_cast<const __half*>(a), static_cast<const __half*>(b), n, count, at(tensor));
         } else {
-          pack_features<false><<<grid, kPackThreads, 0, stream>>>(static_cast<const __half*>(a),
-                                                                static_cast<const __half*>(b), n, count, at(tensor));
+          pack_features<false><<<grid, kPackThreads, 0, stream>>>(
+              static_cast<const __half*>(a), static_cast<const __half*>(b), n, count, at(tensor));
         }
       };
       planes(w01 + 3 * p0, w11 + 3 * p0, p0, features, 1);
@@ -183,8 +185,8 @@ class Net final : public GmfssNativeNet {
     auto* rgb = static_cast<__half*>(out);
     if (!net_.run(stream, zone, partial_.as<float>(), {}, -1, rgb, planar_head_ ? &images : nullptr)) {
       const long full = 4 * p0;
-      unpack_image<<<blocks_for(full), 256, 0, stream>>>(gmfss_plan::ConvNet::at(zone, net_.tensor(out_)), full,
-                                                         rgb);
+      unpack_image<<<blocks_for(full), 256, 0, stream>>>(gmfss_plan::ConvNet::at(zone, net_.tensor(out_)),
+                                                         full, rgb);
     }
     return cudaGetLastError();
   }

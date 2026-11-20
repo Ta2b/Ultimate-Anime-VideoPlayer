@@ -17,7 +17,8 @@ __global__ void __launch_bounds__(rn::kThreads, 2) conv_rgb(rn::Params p) {
   extern __shared__ __align__(16) unsigned char shared[];
   auto* input = reinterpret_cast<__half*>(shared);
   const int warp = static_cast<int>(threadIdx.x) / 32, lane = static_cast<int>(threadIdx.x) % 32;
-  const int y0 = static_cast<int>(blockIdx.y) * rn::kWarps * Rows, x0 = static_cast<int>(blockIdx.x) * rn::kTW;
+  const int y0 = static_cast<int>(blockIdx.y) * rn::kWarps * Rows,
+            x0 = static_cast<int>(blockIdx.x) * rn::kTW;
   rn::Frag<A> acc[Rows * 2][2];
   rn::conv_sums<Kc, 16, 3, 1, Rows, rn::In::kNhwc, A, false>(acc, input, p, y0, x0, 0, 0, warp, lane);
 

@@ -73,7 +73,8 @@ struct VideoRect {
 double pixel_aspect(const RenderTarget& target) {
   // Le SAR des sources est un rapport de deux entiers positifs (AVRational).
   constexpr double largest = std::numeric_limits<int>::max();
-  return target.sample_aspect >= 1.0 / largest && target.sample_aspect <= largest ? target.sample_aspect : 1.0;
+  return target.sample_aspect >= 1.0 / largest && target.sample_aspect <= largest ? target.sample_aspect
+                                                                                  : 1.0;
 }
 
 VideoRect fit(const RenderTarget& target) {

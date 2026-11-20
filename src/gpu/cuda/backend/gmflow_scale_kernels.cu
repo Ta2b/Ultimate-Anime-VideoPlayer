@@ -150,8 +150,8 @@ cudaError_t launch_gmflow_position(cudaStream_t stream, int height, int width, i
 }
 
 cudaError_t launch_gmflow_eighth_input(cudaStream_t stream, const void* features, const void* positions,
-                                       int height, int width, int splits, void* tokens,
-                                       bool decimate, bool swapped) {
+                                       int height, int width, int splits, void* tokens, bool decimate,
+                                       bool swapped) {
   const Grid g = grid_of(height, width, splits);
   if (g.pixels() == 0 || !aligned(features, 16) || !aligned(positions, 16) || !aligned(tokens, 16) ||
       (decimate && features == tokens))
@@ -161,7 +161,8 @@ cudaError_t launch_gmflow_eighth_input(cudaStream_t stream, const void* features
   const auto* pos = static_cast<const __half*>(positions);
   auto* result = static_cast<__half*>(tokens);
   if (decimate)
-    input_kernel<false, true><<<grid, kThreads, 0, stream>>>(g, input, pos, nullptr, nullptr, result, swapped);
+    input_kernel<false, true>
+        <<<grid, kThreads, 0, stream>>>(g, input, pos, nullptr, nullptr, result, swapped);
   else
     input_kernel<false><<<grid, kThreads, 0, stream>>>(g, input, pos, nullptr, nullptr, result, false);
   return cudaGetLastError();

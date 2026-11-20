@@ -159,7 +159,8 @@ class ConvNet {
   // Avec rgb, essaie d'écrire directement en trois plans. Renvoie vrai si ces plans ont été écrits.
   // planar_head désigne les trois images de l'entrée x0 quand la fusion de sa lecture est validée.
   bool run(cudaStream_t stream, void* zone, float* partial, std::span<const void* const> bound,
-           int piece = -1, __half* rgb = nullptr, const std::array<const __half*, 3>* planar_head = nullptr) const;
+           int piece = -1, __half* rgb = nullptr,
+           const std::array<const __half*, 3>* planar_head = nullptr) const;
 
  private:
   void lifetimes(const prepare::GmfssGrid& grid, const Io& io);

@@ -1,7 +1,5 @@
 // Les quatre chaînes de convolutions de l'IFNet d'origine de Fortuna Union. Le modèle dérivé (gmfss_ifnet)
 // garde les warps, le flot accumulé et les masques ; les morceaux s'arrêtent avant le PixelShuffle.
-#include "prepare/gmfss_fused.h"
-
 #include <algorithm>
 #include <cmath>
 #include <format>
@@ -10,6 +8,7 @@
 #include <utility>
 
 #include "prepare/gmflow_onnx_view.h"
+#include "prepare/gmfss_fused.h"
 #include "prepare/onnx_split.h"
 
 namespace kirari::prepare {
@@ -24,8 +23,8 @@ struct BlockShape {
   int body;
 };
 
-constexpr std::array<BlockShape, 4> kShapes{{{8, 7, 96, 192}, {4, 12, 64, 128},
-                                            {2, 12, 48, 96}, {1, 12, 32, 64}}};
+constexpr std::array<BlockShape, 4> kShapes{
+    {{8, 7, 96, 192}, {4, 12, 64, 128}, {2, 12, 48, 96}, {1, 12, 32, 64}}};
 constexpr int kTailChannels = 24;  // PixelShuffle ×2 : quatre canaux de flot et deux de masque
 constexpr std::size_t kLayers = 11;
 
@@ -150,9 +149,9 @@ bool fp16_params(const OnnxView& view, const onnx::Node& node) {
   }
   if (node.op_type == "Mul") {
     return ordinary(&node, 2) && std::ranges::any_of(node.inputs, [&](const std::string& in) {
-      const auto* factor = view.constant(in);
-      return factor != nullptr && factor->data_type == onnx::kFloat16;
-    });
+             const auto* factor = view.constant(in);
+             return factor != nullptr && factor->data_type == onnx::kFloat16;
+           });
   }
   return node.op_type == "LeakyRelu" || node.op_type == "Add";
 }
@@ -167,8 +166,8 @@ bool layers_match(std::span<const RifeNativeLayer> layers, const BlockShape& sha
     const bool residual = i >= 2 && !last;
     const auto channels = static_cast<std::size_t>(layer.cout);
     const int kernel = last ? 4 : 3;
-    const auto weights = static_cast<std::size_t>(layer.cin) * channels *
-                         static_cast<std::size_t>(kernel * kernel);
+    const auto weights =
+        static_cast<std::size_t>(layer.cin) * channels * static_cast<std::size_t>(kernel * kernel);
     if (layer.kernel != kernel || layer.stride != (residual ? 1 : 2) ||
         (residual && layer.cout != shape.body) || layer.weights.size() != weights ||
         layer.bias.size() != channels || layer.slope.size() != (last ? 0 : channels) ||
@@ -179,9 +178,10 @@ bool layers_match(std::span<const RifeNativeLayer> layers, const BlockShape& sha
   return true;
 }
 
-std::expected<std::vector<RifeNativeLayer>, Refusal> read_block(
-    std::span<const std::byte> ifnet, const onnx::Graph& graph, const OnnxView& view, std::size_t block,
-    int height, int width) {
+std::expected<std::vector<RifeNativeLayer>, Refusal> read_block(std::span<const std::byte> ifnet,
+                                                                const onnx::Graph& graph,
+                                                                const OnnxView& view, std::size_t block,
+                                                                int height, int width) {
   const BlockShape& shape = kShapes[block];
   const std::string prefix = std::format("/ifnet/block{}/", block);
   const auto* first = view.node(prefix + "conv0/conv0.0/conv0.0.0/Conv", "Conv");
@@ -192,8 +192,8 @@ std::expected<std::vector<RifeNativeLayer>, Refusal> read_block(
   const std::string conv = prefix + "conv";
   const std::string transpose = prefix + "lastconv/lastconv.0/";
   auto body = graph.nodes | std::views::filter([&](const onnx::Node& node) {
-    return node.name.starts_with(conv) || node.name.starts_with(transpose);
-  });
+                return node.name.starts_with(conv) || node.name.starts_with(transpose);
+              });
   if (!std::ranges::all_of(body, [&](const onnx::Node& node) { return fp16_params(view, node); }))
     return unsupported(std::format("opérateur ou poids non FP16 dans le bloc {}", block));
 
@@ -211,7 +211,7 @@ std::expected<std::vector<RifeNativeLayer>, Refusal> read_block(
 }  // namespace
 
 std::expected<GmfssIfnetBlocks, Refusal> gmfss_ifnet_blocks(std::span<const std::byte> ifnet, int height,
-                                                           int width) {
+                                                            int width) {
   // Deux convolutions de pas 2 après une réduction par 8 : il faut une grille multiple de 32.
   if (height <= 0 || width <= 0 || height % 32 != 0 || width % 32 != 0)
     return refuse(RefusalCode::ShapeInvalid, "IFNet natif : dimensions multiples de 32 attendues");

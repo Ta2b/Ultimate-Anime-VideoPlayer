@@ -53,7 +53,7 @@ std::expected<std::vector<std::byte>, Refusal> gmfss_ifnet(std::span<const std::
 // Chaque bloc va de sa première Conv à sa ConvTranspose, avant le PixelShuffle à 6 canaux.
 using GmfssIfnetBlocks = std::array<std::vector<RifeNativeLayer>, 4>;
 std::expected<GmfssIfnetBlocks, Refusal> gmfss_ifnet_blocks(std::span<const std::byte> ifnet, int height,
-                                                           int width);
+                                                            int width);
 
 // Version de la dérivation : elle entre dans le nom des fichiers.
 inline constexpr std::string_view kGmfssFusedDerivation = "natif1";

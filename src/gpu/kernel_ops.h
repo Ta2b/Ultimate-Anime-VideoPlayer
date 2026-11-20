@@ -431,7 +431,8 @@ class KernelOps {
   }
   // Enfile les splats et la fusion native sur la même voie. Les caractéristiques peuvent rester dans
   // la zone du GridNet. FormatUnsupported signifie que l'appelant peut encore enchaîner les deux appels.
-  virtual std::expected<void, Refusal> gmfss_fuse_splats(Engine& /*fusion*/, std::span<const SplatJob> /*jobs*/,
+  virtual std::expected<void, Refusal> gmfss_fuse_splats(Engine& /*fusion*/,
+                                                         std::span<const SplatJob> /*jobs*/,
                                                          const Tensor& /*time*/, float /*t*/,
                                                          std::span<const Tensor> /*inputs*/,
                                                          std::span<Tensor> /*outputs*/) {

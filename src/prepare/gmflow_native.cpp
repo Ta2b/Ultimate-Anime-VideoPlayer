@@ -322,9 +322,7 @@ std::expected<void, Refusal> read_all(Reader& r, GmflowBackbone& b) {
   auto n = conv_norm(r, std::string(kNodes), "conv1/Conv", "norm1/InstanceNormalization", "conv1", false, 7,
                      2, image, {.tensor = b.image}, r.x);
   if (!n) return std::unexpected(std::move(n.error()));
-  const auto as_half = [](float v) {
-    return kernels::ref::half_to_float(kernels::ref::float_to_half(v));
-  };
+  const auto as_half = [](float v) { return kernels::ref::half_to_float(kernels::ref::float_to_half(v)); };
   for (std::size_t c = 0; c < b.pad.size(); ++c) b.pad[c] = as_half(norm.mean[c]);
   if (b.stem_input == GmflowStemInput::kFolded) {
     fold_image(norm, b.convs.back(), b);
@@ -451,7 +449,8 @@ Model index(const onnx::Graph& graph) {
 }
 }  // namespace
 
-std::expected<GmflowBackbone, Refusal> gmflow_backbone(std::span<const std::byte> pair, GmflowStemInput input) {
+std::expected<GmflowBackbone, Refusal> gmflow_backbone(std::span<const std::byte> pair,
+                                                       GmflowStemInput input) {
   auto parsed = onnx::read_onnx(pair);
   if (!parsed) return std::unexpected(Refusal{RefusalCode::ModelUnreadable, parsed.error().detail});
   const Model model = index(parsed->graph);
@@ -476,9 +475,8 @@ std::expected<GmflowUpsampler, Refusal> gmflow_upsampler(std::span<const std::by
       features == nullptr || features->outputs.size() != 1)
     return missing("upsampler : flot ou caractéristiques au quart");
   const std::string& in = first_node->inputs.front();
-  const auto producer = std::ranges::find_if(parsed->graph.nodes, [&](const onnx::Node& node) {
-    return node.outputs == std::vector{in};
-  });
+  const auto producer = std::ranges::find_if(
+      parsed->graph.nodes, [&](const onnx::Node& node) { return node.outputs == std::vector{in}; });
   if (producer == parsed->graph.nodes.end() || producer->op_type != "Concat" ||
       producer->inputs != std::vector{flow->outputs.front(), features->outputs.front()})
     return missing("upsampler : concaténation flot xy puis caractéristiques");

@@ -163,8 +163,7 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_gmfss_fused(GmfssFusedEngi
   if (auto ok = order_engine(&engine, inputs, outputs, false); !ok) return ok;
   const Shape shape = outputs.empty() ? Shape{} : outputs[0].shape;
   const char* mode = !engine.native() ? "TensorRT" : (packed_features ? "native, splats directs" : "native");
-  GpuTiming& timing = stage_named("GMFSS fusion {} {}×{}", mode,
-                                  shape.dims[3], shape.dims[2]);
+  GpuTiming& timing = stage_named("GMFSS fusion {} {}×{}", mode, shape.dims[3], shape.dims[2]);
   role(Role::Interpolation).begin(stream_);
   timing.begin(stream_);
   auto queued = engine.enqueue(stream_, zone, inputs, outputs, packed_features);

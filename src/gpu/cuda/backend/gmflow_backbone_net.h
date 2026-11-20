@@ -18,7 +18,7 @@ namespace kirari::gpu::cuda {
 struct GmflowFeatures {
   void* quarter = nullptr;
   void* eighth = nullptr;
-  bool quarter_swapped = false;  // au quart seulement, ordre physique B, A si vrai
+  bool quarter_swapped = false;      // au quart seulement, ordre physique B, A si vrai
   bool eighth_from_quarter = false;  // le consommateur lira directement les centres pairs du quart
 };
 

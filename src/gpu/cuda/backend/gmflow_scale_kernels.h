@@ -14,8 +14,8 @@ cudaError_t launch_gmflow_position(cudaStream_t stream, int height, int width, i
 // Caractéristiques et jetons [2][height × width][128] FP16. La table correspond à cette grille.
 // Avec decimate, les caractéristiques au quart sont deux fois plus larges et hautes que les jetons.
 cudaError_t launch_gmflow_eighth_input(cudaStream_t stream, const void* features, const void* positions,
-                                       int height, int width, int splits, void* tokens,
-                                       bool decimate = false, bool swapped = false);
+                                       int height, int width, int splits, void* tokens, bool decimate = false,
+                                       bool swapped = false);
 
 // height × width : grille au quart (double de celle du flot grossier). Les deux flots xy FP32
 // agrandis ×2 avec align_corners sont écrits dans quarter_flow, dans l'ordre 0→1, 1→0.

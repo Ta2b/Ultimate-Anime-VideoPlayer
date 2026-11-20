@@ -514,8 +514,7 @@ TEST_CASE("Écriture : un export refusé laisse intact le fichier qui portait d�
   std::filesystem::remove(output, error);
 }
 
-TEST_CASE("Écriture : annuler un export laisse finir l'autre vers la même destination",
-          "[export][writer]") {
+TEST_CASE("Écriture : annuler un export laisse finir l'autre vers la même destination", "[export][writer]") {
   const auto output = output_path("kirari-export-writer-overlap.mkv");
   auto first = ExportWriter::open(config_for(output), std::make_unique<HoldingEncoder>(1));
   REQUIRE(first);

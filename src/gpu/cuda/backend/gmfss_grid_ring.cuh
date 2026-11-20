@@ -41,8 +41,8 @@ __global__ void __launch_bounds__(rn::kThreads, 2) conv_band(rn::Params p, int f
       for (int n = 0; n < kChannels / 8; ++n) acc[f][n].clear();
     rn::accumulate<kChannels, kChannels, 3, 1, Rows, acc_type, Ahead>(acc, s, p.w, 0, 4, 0, 9, warp, lane);
   } else {
-    rn::conv_sums<kChannels, kChannels, 3, 1, Rows, rn::In::kNhwc, acc_type, Ahead>(
-        acc, s, p, y, x, 0, 0, warp, lane);
+    rn::conv_sums<kChannels, kChannels, 3, 1, Rows, rn::In::kNhwc, acc_type, Ahead>(acc, s, p, y, x, 0, 0,
+                                                                                    warp, lane);
   }
   __syncthreads();
   rn::stage<kChannels, Rows, acc_type>(acc, s, p.bias, warp, lane);
@@ -81,7 +81,7 @@ Band pick_band(int rows, bool ahead) {
 }
 
 inline void enqueue_residual(rn::Params first, rn::Params second, int first_rows, bool first_ahead,
-                              int second_rows, bool second_ahead, cudaStream_t stream) {
+                             int second_rows, bool second_ahead, cudaStream_t stream) {
   const Band produce = pick_band<false>(first_rows, first_ahead);
   const Band consume = pick_band<true>(second_rows, second_ahead);
   const int tile = first_rows * rn::kWarps;

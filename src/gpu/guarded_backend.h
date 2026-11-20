@@ -110,11 +110,10 @@ class GuardedKernelOps final : public KernelOps {
     return guarded_detail::call("soft_splat_fill", [&] { return in_->soft_splat_fill(jobs, time, t); });
   }
   std::expected<void, Refusal> gmfss_fuse_splats(Engine& fusion, std::span<const SplatJob> jobs,
-                                                const Tensor& time, float t, std::span<const Tensor> inputs,
-                                                std::span<Tensor> outputs) override {
-    return guarded_detail::call("gmfss_fuse_splats", [&] {
-      return in_->gmfss_fuse_splats(fusion, jobs, time, t, inputs, outputs);
-    });
+                                                 const Tensor& time, float t, std::span<const Tensor> inputs,
+                                                 std::span<Tensor> outputs) override {
+    return guarded_detail::call(
+        "gmfss_fuse_splats", [&] { return in_->gmfss_fuse_splats(fusion, jobs, time, t, inputs, outputs); });
   }
   std::expected<void, Refusal> gmfss_compose(const ComposeJob& job) override {
     return guarded_detail::call("gmfss_compose", [&] { return in_->gmfss_compose(job); });
@@ -125,11 +124,10 @@ class GuardedKernelOps final : public KernelOps {
   std::expected<void, Refusal> compose_layers(const LayerJob& job) override {
     return guarded_detail::call("compose_layers", [&] { return in_->compose_layers(job); });
   }
-  std::expected<void, Refusal> warp_layered(const LayerJob& job, const Motion& motion,
-                                            const Motion* previous, float t, bool poses,
-                                            bool same_sources) override {
-    return guarded_detail::call("warp_layered",
-                               [&] { return in_->warp_layered(job, motion, previous, t, poses, same_sources); });
+  std::expected<void, Refusal> warp_layered(const LayerJob& job, const Motion& motion, const Motion* previous,
+                                            float t, bool poses, bool same_sources) override {
+    return guarded_detail::call(
+        "warp_layered", [&] { return in_->warp_layered(job, motion, previous, t, poses, same_sources); });
   }
   std::expected<void, Refusal> warp_layered_ring(const LayerJob& job, const Motion& motion,
                                                  const Motion* previous, float t, bool poses,

@@ -5,9 +5,9 @@
 // rapporté à son étendue (au moins 1 : les caractéristiques et les flots ne sont pas des images).
 #include <algorithm>
 #include <chrono>
+#include <cuda_fp16.h>
 #include <format>
 #include <limits>
-#include <cuda_fp16.h>
 #include <utility>
 #include <vector>
 
@@ -43,8 +43,10 @@ std::vector<__half> test_frames(const Shape& shape) {
 
 std::expected<std::vector<__half>, Refusal> read_output(const Tensor& output) {
   std::vector<__half> host(elements(output.shape));
-  if (auto ok = cuda_check(cudaMemcpy(host.data(), fused_address(output), host.size() * 2, cudaMemcpyDeviceToHost),
-                            "GMFSS natif : copie de l'essai"); !ok)
+  if (auto ok =
+          cuda_check(cudaMemcpy(host.data(), fused_address(output), host.size() * 2, cudaMemcpyDeviceToHost),
+                     "GMFSS natif : copie de l'essai");
+      !ok)
     return std::unexpected(std::move(ok.error()));
   return host;
 }
@@ -170,14 +172,15 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_flow_native(
   if (worst < min_db)
     return std::format("GMFlow natif écarté : {:.1f} dB sur {} (seuil {:.0f}), flot TensorRT", worst,
                        names[worst_at], min_db);
-  auto ms = gmfss_trial::times(stream, 2, [&](std::size_t v) { return run(v == 0 ? nullptr : candidate->get()); },
-                               gmfss_trial::kPieceRounds);
+  auto ms = gmfss_trial::times(
+      stream, 2, [&](std::size_t v) { return run(v == 0 ? nullptr : candidate->get()); },
+      gmfss_trial::kPieceRounds);
   if (!ms) return std::unexpected(std::move(ms.error()));
   if (!gmfss_mix::beats((*ms)[0], (*ms)[1]))
     return std::format("GMFlow natif écarté : {:.2f} ms contre {:.2f} ms, flot TensorRT", (*ms)[1], (*ms)[0]);
   gmflow_ = std::move(*candidate);
-  return std::format("GMFlow natif retenu : {:.1f} dB au pire, paire {:.2f} ms contre {:.2f} ms",
-                     worst, (*ms)[1], (*ms)[0]);
+  return std::format("GMFlow natif retenu : {:.1f} dB au pire, paire {:.2f} ms contre {:.2f} ms", worst,
+                     (*ms)[1], (*ms)[0]);
 }
 
 }  // namespace kirari::gpu::cuda

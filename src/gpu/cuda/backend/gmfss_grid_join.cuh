@@ -40,8 +40,8 @@ __device__ __forceinline__ void sums_ring(rn::Frag<rn::Acc::kF16> (&acc)[Rows * 
       rn::prelu_tile<Kc, G::kIR * G::kIC>(s, p.in_slope);
       __syncthreads();
     }
-    rn::accumulate<Kc, kChannels, 3, 1, Rows, rn::Acc::kF16, Ahead>(
-        acc, s, p.w, slice, kChannels / 16, 0, 9, warp, lane);
+    rn::accumulate<Kc, kChannels, 3, 1, Rows, rn::Acc::kF16, Ahead>(acc, s, p.w, slice, kChannels / 16, 0, 9,
+                                                                    warp, lane);
   }
 }
 
@@ -59,8 +59,7 @@ __global__ void __launch_bounds__(rn::kThreads, 2) conv_band(rn::Params p, int f
   const int z = static_cast<int>(blockIdx.z);
   rn::Frag<kAcc> acc[Rows * 2][kChunks];
   if constexpr (Phase) {
-    rn::conv_sums<Kc, kChannels, 2, 1, Rows, rn::In::kNhwc, kAcc, false>(
-        acc, s, p, y, x, z, 0, warp, lane);
+    rn::conv_sums<Kc, kChannels, 2, 1, Rows, rn::In::kNhwc, kAcc, false>(acc, s, p, y, x, z, 0, warp, lane);
   } else {
     sums_ring<Kc, Rows, Ahead>(acc, s, p, y, x, warp, lane);
   }
@@ -122,7 +121,8 @@ inline void join(const Join& p, const Config& cfg, cudaStream_t stream) {
   const int height = p.up_second.oh;
   const auto transpose = up_band(cfg);
   const auto produce = gmfss_grid_ring::pick_band<false>(2, cfg.residual_ahead);
-  const auto residual = cfg.residual_k == 32 ? launch_band<32, 1, false, false> : launch_band<64, 1, false, false>;
+  const auto residual =
+      cfg.residual_k == 32 ? launch_band<32, 1, false, false> : launch_band<64, 1, false, false>;
   const auto add = cfg.add_ahead ? launch_band<64, 2, false, true, true> : launch_band<64, 2, false, true>;
   int res_written = 0, up_written = 0;
   for (int start = 0; start < height; start += kBandRows) {

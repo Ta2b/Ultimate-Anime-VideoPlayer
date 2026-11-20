@@ -17,7 +17,7 @@ __device__ __forceinline__ std::uint32_t activated_pair(__half lo, __half hi, fl
   if (slope != 1.F) {
     const float2 values = __half22float2(pair);
     pair = __floats2half2_rn(values.x < 0.F ? values.x * slope : values.x,
-                            values.y < 0.F ? values.y * slope : values.y);
+                             values.y < 0.F ? values.y * slope : values.y);
   }
   return static_cast<std::uint32_t>(__half_as_ushort(__low2half(pair))) |
          (static_cast<std::uint32_t>(__half_as_ushort(__high2half(pair))) << 16U);
@@ -48,10 +48,9 @@ __global__ void __launch_bounds__(rn::kThreads, 2) conv_planes(rn::Params p, Ima
     const auto* mid = images.middle + at;
     const auto* b = images.b + at;
     const float slope = p.in_slope;
-    out[0] = make_uint4(activated_pair(a[0], a[plane], slope),
-                        activated_pair(a[2 * plane], mid[0], slope),
-                        activated_pair(mid[plane], mid[2 * plane], slope),
-                        activated_pair(b[0], b[plane], slope));
+    out[0] =
+        make_uint4(activated_pair(a[0], a[plane], slope), activated_pair(a[2 * plane], mid[0], slope),
+                   activated_pair(mid[plane], mid[2 * plane], slope), activated_pair(b[0], b[plane], slope));
     out[1] = make_uint4(activated_pair(b[2 * plane], zero, slope), 0, 0, 0);
   }
   __syncthreads();
@@ -82,7 +81,8 @@ inline Launch pick(const rn::Config& config, RifeNativeSums sums) {
     if (config.ct == 64 && config.rows == 1) return launch<64, 1, rn::Acc::kF16>;
     if (config.ct == 64 && config.rows == 2) return launch<64, 2, rn::Acc::kF16>;
   }
-  if (sums == RifeNativeSums::kF32 && config.ct == 32 && config.rows == 2) return launch<32, 2, rn::Acc::kF32>;
+  if (sums == RifeNativeSums::kF32 && config.ct == 32 && config.rows == 2)
+    return launch<32, 2, rn::Acc::kF32>;
   return nullptr;
 }
 

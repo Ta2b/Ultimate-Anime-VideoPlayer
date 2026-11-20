@@ -149,8 +149,9 @@ class Net final : public GmflowPairFlowNet {
                                          out.half, g_.half_flow ? &normalization_ : nullptr);
         e != cudaSuccess)
       return e;
-    GmflowFeatures features{
-        .quarter = at(layout_.features4), .eighth = at(layout_.features8), .quarter_swapped = quarter_swapped_};
+    GmflowFeatures features{.quarter = at(layout_.features4),
+                            .eighth = at(layout_.features8),
+                            .quarter_swapped = quarter_swapped_};
     if (const auto e = backbone_->run(stream, pictures, features, reuse_left); e != cudaSuccess) return e;
     if (const auto e = match_eighth(stream, features); e != cudaSuccess) return e;
     if (const auto e = match_quarter(stream, features); e != cudaSuccess) return e;
@@ -194,9 +195,9 @@ class Net final : public GmflowPairFlowNet {
     void* input = at(layout_.input);
     void* result = at(layout_.result);
     void* flow = at(layout_.flow0);
-    if (const auto e = launch_gmflow_quarter_input(stream, features.quarter, at(layout_.flow1),
-                                                   at(layout_.pos4), h, w, splits_[1], input, flow,
-                                                   features.quarter_swapped);
+    if (const auto e =
+            launch_gmflow_quarter_input(stream, features.quarter, at(layout_.flow1), at(layout_.pos4), h, w,
+                                        splits_[1], input, flow, features.quarter_swapped);
         e != cudaSuccess)
       return e;
     if (const auto e = quarter_->run(stream, input, result, at(layout_.scratch)); e != cudaSuccess) return e;

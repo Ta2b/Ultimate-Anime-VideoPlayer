@@ -20,8 +20,8 @@ namespace kirari::prepare {
 // trident aux poids partagés (pas 1 vers le quart, pas 2 vers le huitième). La paire peut être en FP16 ou en
 // FP32. Refus : ModelUnreadable (ONNX illisible), FieldMissing (un nom, une forme ou un attribut que les
 // noyaux ne font pas, avec son nom).
-std::expected<GmflowBackbone, Refusal> gmflow_backbone(
-    std::span<const std::byte> pair, GmflowStemInput input = GmflowStemInput::kFolded);
+std::expected<GmflowBackbone, Refusal> gmflow_backbone(std::span<const std::byte> pair,
+                                                       GmflowStemInput input = GmflowStemInput::kFolded);
 
 // La 3 × 3 (flot xy puis 128 caractéristiques, Relu) et la 1 × 1 (9 masques de 4 × 4) de la paire.
 std::expected<GmflowUpsampler, Refusal> gmflow_upsampler(std::span<const std::byte> pair);

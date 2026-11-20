@@ -268,8 +268,8 @@ __device__ __forceinline__ void chunk(rn::Frag<A> (&o)[kTiles], Ring& ring, int&
 
 template <int Threads>
 __device__ __forceinline__ void paired_gemm2(rn::Frag<Acc::kF32> (&o)[kTiles],
-                                            const rn::Frag<Acc::kF32> (&h)[2 * kNP1],
-                                            Ring& ring, int& q, int lane) {
+                                             const rn::Frag<Acc::kF32> (&h)[2 * kNP1], Ring& ring, int& q,
+                                             int lane) {
 #pragma unroll
   for (int j = 0; j < kK2; j += 2) {
     std::uint32_t a[4];

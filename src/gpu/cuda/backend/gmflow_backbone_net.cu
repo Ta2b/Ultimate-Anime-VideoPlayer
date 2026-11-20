@@ -300,8 +300,8 @@ class Net final : public GmflowBackboneNet {
       if (shared && i + 1 == b.ops.size()) {
         const Placed& o = tensors_[static_cast<std::size_t>(b.eighth)];
         const Placed& q = tensors_[static_cast<std::size_t>(b.quarter)];
-        if (o.width * 2 == q.width && o.height * 2 == q.height && o.channels > 0 && o.channels == q.channels &&
-            o.channels % 8 == 0) {
+        if (o.width * 2 == q.width && o.height * 2 == q.height && o.channels > 0 &&
+            o.channels == q.channels && o.channels % 8 == 0) {
           layers_[i].decimate = true;
           continue;
         }
@@ -344,13 +344,14 @@ class Net final : public GmflowBackboneNet {
         p.first_image = reuse ? 1 : 0;
         p.swap_output_images = swapped && layer.to == quarter_;
         p.partial_stats = layer.out_stats != nullptr ? partial_stats_.as<float>() : nullptr;
-        layer.launch(dim3(layer.grid.x, layer.grid.y, batch * static_cast<unsigned>(p.tiles)),
-                     layer.smem, stream, p);
+        layer.launch(dim3(layer.grid.x, layer.grid.y, batch * static_cast<unsigned>(p.tiles)), layer.smem,
+                     stream, p);
         if (p.partial_stats != nullptr) {
           const auto cells = static_cast<int>(layer.grid.x * layer.grid.y);
           const dim3 blocks(static_cast<unsigned>(p.out_ld / gb::kNormChannels), batch);
           gb::norm_stats_kernel<<<blocks, gb::kNormChannels * gb::kNormGroups, 0, stream>>>(
-              p.partial_stats, layer.out_stats, cells, p.out_ld, p.first_image, layer.inv_pixels, layer.epsilon);
+              p.partial_stats, layer.out_stats, cells, p.out_ld, p.first_image, layer.inv_pixels,
+              layer.epsilon);
         }
       }
     }

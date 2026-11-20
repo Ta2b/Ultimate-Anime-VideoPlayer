@@ -193,11 +193,11 @@ struct Projection {
 
   cudaError_t project(cudaStream_t stream, const void* input, void* out, long pixels) const {
     const ga::QkvParams p{.query = static_cast<const __half*>(input),
-                           .out = static_cast<__half*>(out),
-                           .w = w.as<const uint4>(),
-                           .tokens = pixels,
-                           .batch = 2,
-                           .bias = bias.as<const float>()};
+                          .out = static_cast<__half*>(out),
+                          .w = w.as<const uint4>(),
+                          .tokens = pixels,
+                          .batch = 2,
+                          .bias = bias.as<const float>()};
     const dim3 grid(static_cast<unsigned>((pixels + ga::kRows - 1) / ga::kRows), 1, 2);
     ga::qkv_kernel<ga::Acc::kF32, true><<<grid, ga::kThreads, 0, stream>>>(p);
     return cudaGetLastError();
@@ -210,11 +210,10 @@ class PropagationNet final : public GmflowPropagationNet {
     return q_.upload(weights.query, error) && k_.upload(weights.keys, error);
   }
 
-  cudaError_t project(cudaStream_t stream, const void* features, long pixels, bool global,
-                      void* query, void* keys) const override {
-    if (pixels < 1 || pixels > std::numeric_limits<long>::max() / (2 * ga::kD) ||
-        features == nullptr || query == nullptr || keys == nullptr ||
-        features == query || features == keys || keys == query ||
+  cudaError_t project(cudaStream_t stream, const void* features, long pixels, bool global, void* query,
+                      void* keys) const override {
+    if (pixels < 1 || pixels > std::numeric_limits<long>::max() / (2 * ga::kD) || features == nullptr ||
+        query == nullptr || keys == nullptr || features == query || features == keys || keys == query ||
         !aligned16(features) || !aligned16(query) || !aligned16(keys))
       return cudaErrorInvalidValue;
     if (const auto e = q_.project(stream, features, query, pixels); e != cudaSuccess) return e;
@@ -227,8 +226,8 @@ class PropagationNet final : public GmflowPropagationNet {
 
 }  // namespace
 
-std::unique_ptr<GmflowPropagationNet> GmflowPropagationNet::create(
-    const prepare::GmflowPropagation& weights, std::string& error) {
+std::unique_ptr<GmflowPropagationNet> GmflowPropagationNet::create(const prepare::GmflowPropagation& weights,
+                                                                   std::string& error) {
   auto net = std::make_unique<PropagationNet>();
   if (!net->build(weights, error)) return nullptr;
   return net;

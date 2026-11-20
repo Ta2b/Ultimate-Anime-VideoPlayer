@@ -102,8 +102,8 @@ std::vector<uint4> stages(const GmflowMlpLayer& layer, int hidden, bool paired) 
         for (int kl = 0; kl < 2; ++kl)
           for (int np = 0; np < gm::kNP1; ++np)
             for (int lane = 0; lane < 32; ++lane)
-              out.push_back(fragment(w1, gm::kIn, (c + part) * gm::kHiddenTile + 16 * np,
-                                     16 * (ks + kl), lane));
+              out.push_back(
+                  fragment(w1, gm::kIn, (c + part) * gm::kHiddenTile + 16 * np, 16 * (ks + kl), lane));
     for (int part = 0; part < group; ++part)
       for (int j = 0; j < gm::kK2; ++j)
         for (int np = 0; np < gm::kNP2; ++np)
@@ -156,11 +156,10 @@ class Net final : public GmflowMlpNet {
       return false;
     // Seule la forme mesurée sur Ada et dont chaque split peut grouper les tranches par deux.
     const char* ab = std::getenv("KIRARI_AB_GMFLOW_MLP_PAIRS");
-    paired_ = major == 8 && minor == 9 && warps_ == 4 &&
-              hidden_ % (2 * kMaxSplits * gm::kHiddenTile) == 0 &&
+    paired_ = major == 8 && minor == 9 && warps_ == 4 && hidden_ % (2 * kMaxSplits * gm::kHiddenTile) == 0 &&
               (ab == nullptr || std::strcmp(ab, "0") != 0);
     const int smem = paired_ ? gm::Block<4>::kWideSmemBytes
-                              : (warps_ == 8 ? gm::Block<8>::kSmemBytes : gm::Block<4>::kSmemBytes);
+                             : (warps_ == 8 ? gm::Block<8>::kSmemBytes : gm::Block<4>::kSmemBytes);
     if (smem > std::max(optin, kDefaultSmem)) {
       error = "MLP de GMFlow : la carte n'a pas la mémoire partagée de ce bloc";
       return false;
