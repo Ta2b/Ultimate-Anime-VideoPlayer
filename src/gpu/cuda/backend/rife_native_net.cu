@@ -254,7 +254,7 @@ class Net final : public RifeNativeNet {
     if (ada_ && reduce == 1 && layer.sums == RifeNativeSums::kF16 && layer.cout == 16) {
       layer.staged_glue_smem = rn::staged_glue_smem(scales);
       if (layer.staged_glue_smem <= 48 * 1024) {
-        layer.staged_glue = rn::pick_staged_glue(static_cast<int>(scales.size()));
+        layer.staged_glue = rn::pick_staged_glue(scales);
         layer.staged_glue_grid = layer.glue_grid;
         layer.staged_glue_grid.x =
             static_cast<unsigned>((layer.ow + rn::kStagedGlueWidth - 1) / rn::kStagedGlueWidth);

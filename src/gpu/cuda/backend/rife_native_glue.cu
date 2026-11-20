@@ -32,7 +32,7 @@ __device__ __forceinline__ std::uint32_t half_bits(float lo, float hi) {
 
 // Les 16 canaux de la tranche Half de X en un point pleine résolution (x, y) : tranche 0, warps, instant,
 // masque ; tranche 1, attributs, flot × 1/d, zéros de rembourrage. fl : le flot accumulé au point.
-template <int K, int Half, bool Reuse, bool Packed>
+template <int K, int Half, bool Reuse, bool Packed, bool Fixed = false>
 __device__ __forceinline__ void glue_point(const FusedGlueParams& g, const warp::Staged (&src)[K], int x,
                                            int y, float flow_scale, float (&v)[16], float (&fl)[4],
                                            const __half* cached = nullptr) {
@@ -40,7 +40,7 @@ __device__ __forceinline__ void glue_point(const FusedGlueParams& g, const warp:
   warp::Axis ay{};
   if constexpr (Half == 1 && Reuse) {
     const auto& f = g.source[K - 1];
-    const float inv = 1.F / static_cast<float>(f.scale);
+    const float inv = Fixed ? 0.5F : 1.F / static_cast<float>(f.scale);
     ax = warp::coarse_axis(x, inv, 2 * f.width);
     ay = warp::coarse_axis(y, inv, 2 * f.height);
 #pragma unroll
@@ -75,7 +75,7 @@ __device__ __forceinline__ __half* flow_slot(const FusedGlueParams& params, std:
 // flot des pixels propres de la tuile dans g.x : tous sauf ceux de la première ligne
 // et de la première colonne, propres aux tuiles voisines. D = 2 : la moyenne des points (2x + tx, 2y + ty),
 // sommés dans l'ordre de warp::sum_quad (fused_glue) : ((00 + 10) + (01 + 11)) / 4.
-template <int K, int D, int Half, bool Reuse, bool Packed, class Geo = G>
+template <int K, int D, int Half, bool Reuse, bool Packed, class Geo = G, bool Fixed = false>
 __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, const warp::Staged (&src)[K],
                                           int y0, int x0) {
   static_assert(D == 1 || D == 2, "pleine résolution ou moitié");
@@ -89,7 +89,7 @@ __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, c
     if (y >= 0 && y < xh && x >= 0 && x < xw) {
       float fl[4];
       if constexpr (D == 1) {
-        glue_point<K, Half, Reuse, Packed>(g, src, x, y, 1.F, v, fl, slot + 16);
+        glue_point<K, Half, Reuse, Packed, Fixed>(g, src, x, y, 1.F, v, fl, slot + 16);
         if constexpr (Reuse && Half == 0) {
           // flow_at arrondit son dernier Add en FP16. Le padding est hors de la tranche lue par accumulate.
           *reinterpret_cast<uint2*>(slot + 16) = make_uint2(half_bits(fl[0], fl[1]), half_bits(fl[2], fl[3]));
@@ -293,7 +293,7 @@ __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedG
 
 // Les flots et le masque prennent cinq valeurs du rembourrage. Le warp repart de leurs valeurs
 // déjà arrondies en FP16 et la seconde tranche garde le même cache de flot qu'avec la tuile large.
-template <int K, class Geo>
+template <int K, class Geo, bool Fixed>
 __device__ __forceinline__ void stage_motion(__half* s, const FusedGlueParams& g,
                                              const warp::Staged (&src)[K], int x0, int y0) {
   for (int q = static_cast<int>(threadIdx.x); q < Geo::kIR * Geo::kIC; q += kThreads) {
@@ -303,7 +303,7 @@ __device__ __forceinline__ void stage_motion(__half* s, const FusedGlueParams& g
     if (x < 0 || x >= w || y < 0 || y >= h) continue;
     warp::Axis ax{}, ay{};
     float f[4];
-    glue::flow_at<K>(g, src, x, y, f, ax, ay);
+    glue::flow_at<K, Fixed>(g, src, x, y, f, ax, ay);
     auto* slot = s + (row * Geo::kIC + smem_col<2, Geo::kIC>(col)) * kLds;
     const auto pack = make_uint2(half_bits(f[0], f[1]), half_bits(f[2], f[3]));
     *reinterpret_cast<uint2*>(slot + 16) = pack;
@@ -342,7 +342,7 @@ struct Narrow {
 
 // La tuile 16 × 4 conserve un seul fragment M16 par warp. Avec les calculs du warp et du flot dans
 // deux étapes, leur consommation de registres n'est plus simultanée.
-template <int K, bool Packed>
+template <int K, bool Packed, bool Fixed = false>
 __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGlueParams g) {
   using N = Narrow;
   constexpr int CT = 16, Rows = 1;
@@ -360,9 +360,11 @@ __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGluePa
 #pragma unroll
   for (int i = 0; i < K; ++i) {
     const auto& f = g.source[i];
-    src[i] = glue::stage_source(f, i == K - 1, px, py, relay);
-    relay += (i == K - 1 ? glue::kLastStride : glue::kFlowStride) * glue_span(N::kIC - 1, f.scale) *
-             glue_span(N::kIR - 1, f.scale);
+    int scale = f.scale;
+    if constexpr (Fixed) scale = glue::last_scales<K>(i);
+    src[i] = glue::stage_source(f, i == K - 1, px, py, relay, Fixed ? scale : 0);
+    relay += (i == K - 1 ? glue::kLastStride : glue::kFlowStride) * glue_span(N::kIC - 1, scale) *
+             glue_span(N::kIR - 1, scale);
   }
   __syncthreads();
   Frag<Acc::kF16> a[Rows][CT / 8];
@@ -392,13 +394,13 @@ __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGluePa
       }
     }
   };
-  stage_motion<K, N>(s, g, src, x0, y0);
+  stage_motion<K, N, Fixed>(s, g, src, x0, y0);
   __syncthreads();
   warp_staged_tile<N, Packed>(s, g, x0, y0);
   __syncthreads();
   conv(0);
   __syncthreads();
-  glue_half<K, 1, 1, true, Packed, N>(s, g, src, y0, x0);
+  glue_half<K, 1, 1, true, Packed, N, Fixed>(s, g, src, y0, x0);
   __syncthreads();
   conv(1);
   __syncthreads();
@@ -427,10 +429,10 @@ __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGluePa
   }
 }
 
-template <int K>
+template <int K, bool Fixed = false>
 void staged_one(dim3 grid, int smem, cudaStream_t stream, const Params& p, const FusedGlueParams& g) {
   if (g.encode_hwc4)
-    glue_staged<K, true><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+    glue_staged<K, true, Fixed><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
   else
     glue_staged<K, false><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
 }
@@ -452,7 +454,7 @@ GlueLaunch by_tile(int ct) {
   return nullptr;
 }
 
-// Les découpages de RIFE : 4.25 (16, 8, 4, 2, 1) et 4.22 lite (8, 4, 2, 1). Le dernier bloc après trois ou
+// Les découpages de RIFE : 4.25 (8, 8, 4, 2, 1) et 4.22 lite (8, 4, 2, 1). Le dernier bloc après trois ou
 // quatre flots, l'avant-dernier à moitié après deux ou trois.
 template <int K>
 void d2_taps_one(dim3 grid, int smem, cudaStream_t stream, const Params& p, const FusedGlueParams& g) {
@@ -494,9 +496,16 @@ GlueLaunch pick_d2_taps(int flows) {
   return nullptr;
 }
 
-GlueLaunch pick_staged_glue(int flows) {
-  if (flows == 3) return staged_one<3>;
-  if (flows == 4) return staged_one<4>;
+template <int K>
+GlueLaunch staged_scales(std::span<const int> scales) {
+  for (std::size_t i = 0; i < scales.size(); ++i)
+    if (scales[i] != glue::last_scales<K>(static_cast<int>(i))) return staged_one<K>;
+  return staged_one<K, true>;
+}
+
+GlueLaunch pick_staged_glue(std::span<const int> scales) {
+  if (scales.size() == 3) return staged_scales<3>(scales);
+  if (scales.size() == 4) return staged_scales<4>(scales);
   return nullptr;
 }
 

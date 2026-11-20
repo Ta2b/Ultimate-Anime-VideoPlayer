@@ -110,7 +110,8 @@ GlueLaunch pick_d2_taps(int flows);
 int glue_smem(std::span<const int> scales, int reduce);
 // D1 en FP16 sur Ada : la tuile étroite sépare le flot et le warp dans le même bloc CUDA.
 inline constexpr int kStagedGlueWidth = 16;
-GlueLaunch pick_staged_glue(int flows);
+// Les échelles fixes ne sont retenues que pour les plans mesurés et l'encodage rangé par pixel.
+GlueLaunch pick_staged_glue(std::span<const int> scales);
 int staged_glue_smem(std::span<const int> scales);
 
 // La dernière couche du dernier bloc (la transposée), fin comprise (rife_native_finish.cu) : sa première

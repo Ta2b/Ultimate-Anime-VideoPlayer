@@ -18,6 +18,13 @@ namespace kirari::gpu::cuda::glue {
 constexpr int kFlowStride = 16;
 constexpr int kLastStride = 56;
 
+// Échelles du dernier bloc dans les découpages de RIFE 4.25 et 4.22 Lite.
+template <int K>
+__host__ __device__ constexpr int last_scales(int i) {
+  static_assert(K == 3 || K == 4);
+  return i < K - 3 ? 8 : 1 << (K - i);
+}
+
 // Z (DepthToSpace CRD de Y, facteur 2) lu dans un Y relevé : Z[c][zy][zx] = Y[4c + 2 (zy & 1) + (zx & 1)].
 __device__ __forceinline__ float z_at(const warp::Staged& s, int c, int zy, int zx) {
   return __half2float(s.at(zy >> 1, zx >> 1)[4 * c + 2 * (zy & 1) + (zx & 1)]);
@@ -34,8 +41,8 @@ __device__ __forceinline__ float z_enlarge(const warp::Staged& s, int c, const w
 // Relève dans at la région du Y de f que lisent les points pleine résolution px × py : les 16 canaux de flot,
 // ou les 52 du dernier bloc (last). Tous les fils du bloc participent ; l'appelant synchronise.
 __device__ __forceinline__ warp::Staged stage_source(const FusedFlowSource& f, bool last, warp::Span px,
-                                                     warp::Span py, __half* at) {
-  const float inv = 1.0F / static_cast<float>(f.scale);
+                                                     warp::Span py, __half* at, int scale = 0) {
+  const float inv = 1.0F / static_cast<float>(scale == 0 ? f.scale : scale);
   const warp::Span zr = warp::coarse_span(py.lo, py.hi, inv, 2 * f.height);
   const warp::Span zc = warp::coarse_span(px.lo, px.hi, inv, 2 * f.width);
   const warp::Span rows{zr.lo >> 1, zr.hi >> 1};
@@ -48,16 +55,17 @@ __device__ __forceinline__ warp::Staged stage_source(const FusedFlowSource& f, b
 
 // Le flot accumulé au point (px, py) (Add : sommes FP16 de chaque bloc, multiplié par l'échelle de son
 // Resize) ; ax, ay : les axes du dernier bloc, que lisent le masque et les attributs.
-template <int K>
+template <int K, bool Fixed = false>
 __device__ __forceinline__ void flow_at(const FusedGlueParams& p, const warp::Staged (&src)[K], int px,
                                         int py, float (&fl)[4], warp::Axis& ax, warp::Axis& ay) {
 #pragma unroll
   for (int j = 0; j < K; ++j) {
     const FusedFlowSource& f = p.source[j];
-    const float inv = 1.0F / static_cast<float>(f.scale);
+    float scale = static_cast<float>(f.scale);
+    if constexpr (Fixed) scale = static_cast<float>(last_scales<K>(j));
+    const float inv = 1.0F / scale;
     ax = warp::coarse_axis(px, inv, 2 * f.width);
     ay = warp::coarse_axis(py, inv, 2 * f.height);
-    const float scale = static_cast<float>(f.scale);
 #pragma unroll
     for (int k = 0; k < 4; ++k) {
       const float r = z_enlarge(src[j], k, ax, ay) * scale;
