@@ -59,7 +59,8 @@ GmflowTransformerNet::GmflowTransformerNet(std::unique_ptr<GmflowAttentionNet> a
 std::unique_ptr<GmflowTransformerNet> GmflowTransformerNet::create(const prepare::GmflowAttention& attention,
                                                                    const prepare::GmflowMlp& mlp, int scale,
                                                                    int height, int width,
-                                                                   GmflowMlpBlock block, std::string& error) {
+                                                                   GmflowMlpBlock block, std::string& error,
+                                                                   bool fast) {
   const std::uint64_t batch = scale == 0 ? 2 : 4;
   const auto area = static_cast<std::uint64_t>(height) * static_cast<std::uint64_t>(width);
   // La longueur d'une fenêtre est un int, les jetons du MLP sont des long et
@@ -72,10 +73,11 @@ std::unique_ptr<GmflowTransformerNet> GmflowTransformerNet::create(const prepare
     return nullptr;
   }
   if (!check_plans(attention, mlp, error)) return nullptr;
-  auto attn = GmflowAttentionNet::create(attention, scale, static_cast<int>(batch), height, width, error);
+  auto attn =
+      GmflowAttentionNet::create(attention, scale, static_cast<int>(batch), height, width, error, fast);
   if (!attn) return nullptr;
   const auto tokens = static_cast<long>(batch * area);
-  auto mlp_net = GmflowMlpNet::create(mlp, tokens, block, error);
+  auto mlp_net = GmflowMlpNet::create(mlp, tokens, block, error, fast);
   if (!mlp_net) return nullptr;
   const auto bytes = static_cast<std::size_t>(tokens) * kBytesPerToken;
   return std::unique_ptr<GmflowTransformerNet>(

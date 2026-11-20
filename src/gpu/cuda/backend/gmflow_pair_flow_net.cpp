@@ -92,7 +92,7 @@ Layout plan(Geometry g, std::size_t pos8, std::size_t pos4, std::size_t scratch)
 
 class Net final : public GmflowPairFlowNet {
  public:
-  explicit Net(Geometry g) : g_(g) {}
+  Net(Geometry g, bool fast) : g_(g), fast_(fast) {}
   ~Net() override {
     if (buffer_ != nullptr) static_cast<void>(cudaFree(buffer_));
   }
@@ -116,8 +116,8 @@ class Net final : public GmflowPairFlowNet {
     if (!backbone_) return build_error(error);
     eighth_ = GmflowTransformerNet::create(*attention, *mlp, 0, g_.h(3), g_.w(3), GmflowMlpBlock::k64, error);
     if (!eighth_) return build_error(error);
-    quarter_ =
-        GmflowTransformerNet::create(*attention, *mlp, 1, g_.h(2), g_.w(2), GmflowMlpBlock::k64, error);
+    quarter_ = GmflowTransformerNet::create(*attention, *mlp, 1, g_.h(2), g_.w(2), GmflowMlpBlock::k64, error,
+                                            fast_);
     if (!quarter_) return build_error(error);
     projection_ = GmflowPropagationNet::create(*proj, error);
     if (!projection_) return build_error(error);
@@ -201,7 +201,7 @@ class Net final : public GmflowPairFlowNet {
         e != cudaSuccess)
       return e;
     if (const auto e = quarter_->run(stream, input, result, at(layout_.scratch)); e != cudaSuccess) return e;
-    if (const auto e = launch_gmflow_local_match(stream, result, flow, h, w, flow); e != cudaSuccess)
+    if (const auto e = launch_gmflow_local_match(stream, result, flow, h, w, flow, fast_); e != cudaSuccess)
       return e;
     const auto qk = projections(2);
     if (const auto e =
@@ -225,6 +225,7 @@ class Net final : public GmflowPairFlowNet {
   }
 
   Geometry g_;
+  bool fast_;
   GmfssImageNormalization normalization_;
   std::array<int, 2> splits_{};
   Layout layout_{};
@@ -241,14 +242,31 @@ class Net final : public GmflowPairFlowNet {
 }  // namespace
 
 std::expected<std::unique_ptr<GmflowPairFlowNet>, Refusal> GmflowPairFlowNet::create(
-    std::span<const std::byte> pair, int height, int width) {
+    std::span<const std::byte> pair, int height, int width, bool fast) {
   const auto half = uses_half_flow(pair);
   if (!half) return std::unexpected(half.error());
   const Geometry g{height, width, *half};
   if (height < 32 || width < 32 || height > 2176 || width > 3840 || height % (g.half_flow ? 64 : 32) != 0 ||
       width % (g.half_flow ? 64 : 32) != 0)
     return refuse(RefusalCode::ShapeInvalid, "GMFlow natif : taille du réseau non multiple de 32");
-  auto net = std::make_unique<Net>(g);
+  if (fast) {
+    if (!g.half_flow || g.height != 576 || g.width != 960)
+      return refuse(RefusalCode::ShapeInvalid, "GMFlow rapide : format 1080p au demi-flot attendu");
+    int device = 0, major = 0, minor = 0;
+    if (auto ok = cuda_check(cudaGetDevice(&device), "GMFlow rapide : appareil CUDA"); !ok)
+      return std::unexpected(std::move(ok.error()));
+    if (auto ok = cuda_check(cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, device),
+                             "GMFlow rapide : architecture CUDA");
+        !ok)
+      return std::unexpected(std::move(ok.error()));
+    if (auto ok = cuda_check(cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, device),
+                             "GMFlow rapide : architecture CUDA");
+        !ok)
+      return std::unexpected(std::move(ok.error()));
+    if (major != 8 || minor != 9)
+      return refuse(RefusalCode::FormatUnsupported, "GMFlow rapide : GPU Ada attendu");
+  }
+  auto net = std::make_unique<Net>(g, fast);
   if (auto ok = net->build(pair); !ok) return std::unexpected(std::move(ok.error()));
   return net;
 }

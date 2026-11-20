@@ -4,6 +4,7 @@
 // des sommes de chaque réseau est celui de gmfss_trial.h, chacune des quatorze sorties jugée à part, l'écart
 // rapporté à son étendue (au moins 1 : les caractéristiques et les flots ne sont pas des images).
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cuda_fp16.h>
 #include <format>
@@ -55,7 +56,7 @@ std::expected<std::vector<__half>, Refusal> read_output(const Tensor& output) {
 
 std::expected<std::vector<std::string>, Refusal> GmfssPairEngine::try_native(
     const prepare::GmfssPairNets& nets_in, std::span<const std::byte> pair,
-    const std::shared_ptr<SharedActivations>& shared, double min_db) {
+    const std::shared_ptr<SharedActivations>& shared, double min_db, bool fast) {
   gmfss_trial::Scratch scratch;
   const auto device = [&](std::size_t count) -> std::expected<void*, Refusal> {
     void* at = nullptr;
@@ -127,7 +128,7 @@ std::expected<std::vector<std::string>, Refusal> GmfssPairEngine::try_native(
   if (!outcome->keep) return std::move(outcome->lines);
 
   // Juger GMFlow isolément, avec les mêmes FeatureNet et MetricNet et le même dessin.
-  if (auto result = try_flow_native(pair, scratch.stream, shared, frames, outputs, min_db); result)
+  if (auto result = try_flow_native(pair, scratch.stream, shared, frames, outputs, min_db, fast); result)
     outcome->lines.push_back(std::move(*result));
   else if (result.error().code == RefusalCode::DeviceLost)
     return std::unexpected(std::move(result.error()));
@@ -138,8 +139,8 @@ std::expected<std::vector<std::string>, Refusal> GmfssPairEngine::try_native(
 
 std::expected<std::string, Refusal> GmfssPairEngine::try_flow_native(
     std::span<const std::byte> pair, cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared,
-    const Tensor& frames, std::span<const Tensor> outputs, double min_db) {
-  auto candidate = GmflowPairFlowNet::create(pair, height_, width_);
+    const Tensor& frames, std::span<const Tensor> outputs, double min_db, bool fast) {
+  auto candidate = GmflowPairFlowNet::create(pair, height_, width_, fast);
   if (!candidate) return std::unexpected(std::move(candidate.error()));
   const auto run = [&](const GmflowPairFlowNet* gmflow) {
     return enqueue_native(stream, shared, frames, outputs, gmflow);
@@ -159,17 +160,35 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_flow_native(
     return std::unexpected(std::move(ok.error()));
   double worst = std::numeric_limits<double>::infinity();
   std::size_t worst_at = 0;
+  std::array<double, kOutputs> scores{};
   for (std::size_t i = 0; i < kOutputs; ++i) {
     auto found = read_output(outputs[i]);
     if (!found) return std::unexpected(std::move(found.error()));
     const double db = gmfss_trial::output_db(reference[i], *found);
+    scores[i] = db;
     if (db < worst) {
       worst = db;
       worst_at = i;
     }
   }
   const auto names = output_names();
-  if (worst < min_db)
+  std::string measured;
+  if (fast) {
+    // Les flots changent avec les sommes mixtes. Sur la mire, les six sorties motion
+    // de la voie rapide tiennent 39 dB dans le suffixe commun.
+    constexpr double kGmflowFastMotionMinDb = 38.0;
+    for (std::size_t i = 0; i < kOutputs; ++i) {
+      measured += std::format(" {} {:.1f} dB", names[i], scores[i]);
+    }
+    // Le moteur TensorRT peut intercaler les sorties. at_ traduit l'ordre logique du réseau.
+    for (std::size_t o = 0; o < kOutputs; ++o) {
+      const std::size_t i = at_[o];
+      const double floor = o < kMotion ? min_db : kGmflowFastMotionMinDb;
+      if (!(scores[i] >= floor))
+        return std::format("GMFlow rapide écarté : {:.1f} dB sur {} (seuil {:.0f}), flot TensorRT.{}",
+                           scores[i], names[i], floor, measured);
+    }
+  } else if (worst < min_db)
     return std::format("GMFlow natif écarté : {:.1f} dB sur {} (seuil {:.0f}), flot TensorRT", worst,
                        names[worst_at], min_db);
   auto ms = gmfss_trial::times(
@@ -179,6 +198,11 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_flow_native(
   if (!gmfss_mix::beats((*ms)[0], (*ms)[1]))
     return std::format("GMFlow natif écarté : {:.2f} ms contre {:.2f} ms, flot TensorRT", (*ms)[1], (*ms)[0]);
   gmflow_ = std::move(*candidate);
+  if (fast)
+    return std::format(
+        "GMFlow rapide retenu à la demande : paire {:.2f} ms contre {:.2f} ms, "
+        "{:.1f} dB au pire sur les tenseurs.{}",
+        (*ms)[1], (*ms)[0], worst, measured);
   return std::format("GMFlow natif retenu : {:.1f} dB au pire, paire {:.2f} ms contre {:.2f} ms", worst,
                      (*ms)[1], (*ms)[0]);
 }

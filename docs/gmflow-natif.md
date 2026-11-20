@@ -101,6 +101,24 @@ MetricNet et GridNet de GMFSS, pour qu'aucun moteur TensorRT ne soit plus constr
 comme le natif, en PyTorch) et `tools/gmfss/gmflow_natif_emule.py` (émulation contre ONNX Runtime). Pas de GPU
 pour cette étude : les temps du natif sont des estimations, les erreurs sont mesurées (émulation CPU).
 
+## Mode rapide facultatif
+
+`kirari play épisode.mkv --motion=gmfss --gmflow-fast` active l'essai du demi-flot mixte sur Ada
+à la taille de travail 1080p. Le lecteur vérifie la vitesse et les quatorze sorties de la paire au
+chargement. Le seuil reste de 45 dB pour les deux images réduites et les six caractéristiques.
+Les six tenseurs de mouvement doivent atteindre 38 dB chacun. TensorRT reprend le flot si
+l'essai échoue. Le mode par défaut applique 45 dB à toutes les sorties.
+
+Sur la RTX 4070 Ti, le banc isolé mesure 6,33 ms avec réemploi. Sur le même passage HDR,
+les confirmations Wayland à 165 Hz passent de 26,75 à 30,36 images nouvelles par seconde.
+Le 95e centile de leurs intervalles passe de 89,09 à 66,65 ms. Le test de chargement mesure
+20,42 → 13,11 ms pour la paire avec le nouveau flot.
+
+Les trois scènes comparées au rendu PyTorch FP32 gagnent respectivement 2,43, 0,70 et 0,55 dB.
+La mire synthétique donne 59,88 dB contre 59,94 pour TensorRT. Son erreur de pointe monte
+de 0,115 à 0,128 sur l'échelle RVB normalisée. L'écart se concentre près d'une occultation où
+le changement du flot déplace les poids photométriques du splatting.
+
 ## Ce qui tourne aujourd'hui
 
 - Le graphe paire d'union (`gmfss_fortuna_union_pair.onnx`, ou `_s05_pair` au demi-flot) tourne sous TensorRT **en

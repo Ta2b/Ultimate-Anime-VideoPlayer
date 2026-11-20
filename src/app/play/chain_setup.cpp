@@ -22,6 +22,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
+#include "gpu/gmfss_trials.h"
 #include "prepare/utf8.h"
 
 namespace kirari::app::play {
@@ -398,6 +399,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
                 (p.options.rife_native ? gpu::kTrialRifeNative : 0U) |
                 (p.options.gmfss_native ? gpu::kTrialGmfssNative : 0U) |
                 (p.options.gmfss_feature_reuse ? gpu::kTrialGmfssFeatureReuse : 0U) |
+                (p.options.gmflow_fast ? gpu::kTrialGmflowFast : 0U) |
                 (p.options.tfix_native ? gpu::kTrialTfixNative : 0U) |
                 ((p.options.nvof_roundtrip || p.options.nvof_layer_guard) ? gpu::kTrialNvofRoundtrip : 0U) |
                 (settings.fast_precision ? 0U : gpu::kStrictPrecision)};

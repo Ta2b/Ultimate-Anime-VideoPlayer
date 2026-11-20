@@ -87,8 +87,8 @@ struct Layer {
 
 class Net final : public GmflowAttentionNet {
  public:
-  Net(const GmflowAttention& a, int scale, int batch, int height, int width)
-      : batch_(batch), tokens_(static_cast<long>(height) * width) {
+  Net(const GmflowAttention& a, int scale, int batch, int height, int width, bool fast)
+      : fast_(fast), batch_(batch), tokens_(static_cast<long>(height) * width) {
     const int s = a.splits[static_cast<std::size_t>(scale)];
     grid_ = {.height = height, .width = width, .splits = s, .wh = height / s, .ww = width / s};
     grid_.length = grid_.wh * grid_.ww;
@@ -135,7 +135,10 @@ class Net final : public GmflowAttentionNet {
     q.key_shift = l.cross ? batch_ / 2 : 0;
     const dim3 qkv_grid(static_cast<unsigned>((tokens_ + ga::kRows - 1) / ga::kRows), 3,
                         static_cast<unsigned>(batch_));
-    ga::qkv_kernel<ga::Acc::kF32><<<qkv_grid, ga::kThreads, 0, stream>>>(q);
+    if (fast_)
+      ga::qkv_kernel<ga::Acc::kF16><<<qkv_grid, ga::kThreads, 0, stream>>>(q);
+    else
+      ga::qkv_kernel<ga::Acc::kF32><<<qkv_grid, ga::kThreads, 0, stream>>>(q);
     ga::AttnParams p;
     p.qkv = workspace_.as<const __half>();
     p.source = l.cross ? nullptr : static_cast<const __half*>(query);
@@ -148,7 +151,7 @@ class Net final : public GmflowAttentionNet {
     p.grid.sh = l.shifted ? grid_.wh / 2 : 0;
     p.grid.sw = l.shifted ? grid_.ww / 2 : 0;
     p.tokens = tokens_;
-    p.scale_log2 = scale_log2_;
+    p.scale_log2 = fast_ ? ga::kLog2e / 11.3125F : scale_log2_;
     p.mask_log2 = mask_log2_;
     p.eps = eps_;
     static const bool skip_padding = [] {
@@ -158,7 +161,12 @@ class Net final : public GmflowAttentionNet {
     p.skip_padding = skip_padding;
     const dim3 grid(static_cast<unsigned>((grid_.length + ga::kRows - 1) / ga::kRows),
                     static_cast<unsigned>(grid_.splits * grid_.splits), static_cast<unsigned>(batch_));
-    ga::attention_kernel<ga::Acc::kF32><<<grid, ga::kThreads, ga::kSmemBytes, stream>>>(p);
+    if (fast_) {
+      constexpr int smem = (ga::kRows + 32) * ga::kLds * 2 + 32 * 4;
+      ga::attention_kernel<ga::Acc::kF16, true><<<grid, ga::kThreads, smem, stream>>>(p);
+    } else {
+      ga::attention_kernel<ga::Acc::kF32><<<grid, ga::kThreads, ga::kSmemBytes, stream>>>(p);
+    }
     return cudaGetLastError();
   }
 
@@ -170,6 +178,7 @@ class Net final : public GmflowAttentionNet {
     return false;
   }
 
+  bool fast_;
   int batch_;
   long tokens_;
   ga::Grid grid_;
@@ -242,7 +251,7 @@ std::unique_ptr<GmflowPropagationNet> GmflowPropagationNet::create(const prepare
 
 std::unique_ptr<GmflowAttentionNet> GmflowAttentionNet::create(const GmflowAttention& attention, int scale,
                                                                int batch, int height, int width,
-                                                               std::string& error) {
+                                                               std::string& error, bool fast) {
   if (scale < 0 || scale > 1 || attention.layers.size() != static_cast<std::size_t>(prepare::kGmflowLayers)) {
     error = "attention de GMFlow : échelle ou couches";
     return nullptr;
@@ -260,7 +269,7 @@ std::unique_ptr<GmflowAttentionNet> GmflowAttentionNet::create(const GmflowAtten
       return nullptr;
     }
   }
-  auto net = std::make_unique<Net>(attention, scale, batch, height, width);
+  auto net = std::make_unique<Net>(attention, scale, batch, height, width, fast);
   if (!net->plan(attention, error)) return nullptr;
   return net;
 }

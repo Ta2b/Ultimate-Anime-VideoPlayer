@@ -21,7 +21,8 @@ class GmflowAttentionNet {
   // Sommes des GEMM (QKV, fusion) et de l'attention en f32. Rien et error rempli si la grille ne se coupe pas
   // en fenêtres égales, si le lot est impair ou si la mémoire manque.
   static std::unique_ptr<GmflowAttentionNet> create(const prepare::GmflowAttention& attention, int scale,
-                                                    int batch, int height, int width, std::string& error);
+                                                    int batch, int height, int width, std::string& error,
+                                                    bool fast = false);
   // Le tampon de q, k, v : [batch][height · width][384] FP16.
   virtual std::int64_t workspace_bytes() const = 0;
   // La couche layer (0 à 11) : query et keys [batch][height · width][128] FP16, out de même (distinct des

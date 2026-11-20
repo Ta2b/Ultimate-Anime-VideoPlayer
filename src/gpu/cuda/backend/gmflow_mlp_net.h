@@ -25,7 +25,7 @@ class GmflowMlpNet {
   // et error rempli si le MLP sort de ce que le noyau fait, si la carte n'a pas la mémoire partagée du bloc,
   // ou si la mémoire manque.
   static std::unique_ptr<GmflowMlpNet> create(const prepare::GmflowMlp& mlp, long max_tokens,
-                                              GmflowMlpBlock block, std::string& error);
+                                              GmflowMlpBlock block, std::string& error, bool fast = false);
   virtual std::int64_t workspace_bytes() const = 0;
   // La couche layer sur tokens jetons, x, message et out en [tokens][128] FP16 alignés sur 16 octets (sinon
   // cudaErrorInvalidValue) :

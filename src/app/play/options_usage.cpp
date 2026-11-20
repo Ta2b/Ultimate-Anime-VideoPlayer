@@ -75,6 +75,8 @@ std::string play_usage(bool debug) {
       "  --rife=N               ×N interpolation (0 none, 1, 1.5 to 9.5 by halves, 10; default: preset's)\n"
       "  --rife-model=FILE      RIFE model (default: the preset's, {} without one)\n"
       "  --motion=rife|drba|gmfss  RIFE, DistilDRBA or GMFSS union alone (default: the preset's)\n"
+      "  --gmflow-fast          optional faster GMFSS half-flow at 1080p on Ada, with small motion "
+      "differences\n"
       "  --gmfss-dir=FOLDER     GMFSS union's two graphs from this folder (default: beside RIFE, or the\n"
       "                         gmfss folder next to RIFE's)\n"
       "  --truehdr-peak=NITS    peak aimed at by the HDR grade, {} to {} (0 or default: the screen's,\n"

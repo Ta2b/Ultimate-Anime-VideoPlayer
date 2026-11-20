@@ -27,6 +27,7 @@
 #include "gpu/cuda/backend/span_fp8_engine.h"
 #include "gpu/cuda/backend/tfix_fused_engine.h"
 #include "gpu/cuda/backend/trt_engine.h"
+#include "gpu/gmfss_trials.h"
 #include "prepare/builder.h"
 #include "prepare/drba_split.h"
 #include "prepare/gmfss_fused.h"
@@ -158,6 +159,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->rife_native_ = (init.trials & kTrialRifeNative) != 0;
   backend->gmfss_native_ = (init.trials & kTrialGmfssNative) != 0;
   backend->gmfss_feature_reuse_ = (init.trials & kTrialGmfssFeatureReuse) != 0;
+  backend->gmflow_fast_ = (init.trials & kTrialGmflowFast) != 0;
   backend->span_fp8_native_blocks_ = (init.trials & kTrialSpanFp8NativeBlocks) != 0;
   backend->tfix_native_ = (init.trials & kTrialTfixNative) != 0;
   backend->nvof_roundtrip_ = (init.trials & kTrialNvofRoundtrip) != 0;

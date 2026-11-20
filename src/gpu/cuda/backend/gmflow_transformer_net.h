@@ -17,7 +17,8 @@ class GmflowTransformerNet {
   // même paire ONNX.
   static std::unique_ptr<GmflowTransformerNet> create(const prepare::GmflowAttention& attention,
                                                       const prepare::GmflowMlp& mlp, int scale, int height,
-                                                      int width, GmflowMlpBlock block, std::string& error);
+                                                      int width, GmflowMlpBlock block, std::string& error,
+                                                      bool fast = false);
 
   // Deux tenseurs de jetons FP16, en plus des allocations propres à l'attention
   // et au MLP.

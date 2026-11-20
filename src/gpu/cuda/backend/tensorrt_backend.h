@@ -401,6 +401,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool rife_native_ = false;   // encodeur et blocs du RIFE fusionné par les noyaux natifs (kTrialRifeNative)
   bool gmfss_native_ = false;  // GridNet de la fusion de GMFSS par les noyaux natifs (kTrialGmfssNative)
   bool gmfss_feature_reuse_ = false;
+  bool gmflow_fast_ = false;
   bool tfix_native_ = false;  // convolutions de TemporalFix fusionné par les noyaux natifs (kTrialTfixNative)
   bool warp_l2_ = false;      // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
   std::optional<std::size_t> l2_persisting_;  // persisting_l2, une fois

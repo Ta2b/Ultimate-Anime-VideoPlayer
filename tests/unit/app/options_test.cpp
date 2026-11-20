@@ -443,6 +443,8 @@ TEST_CASE("kirari play : l'aide ne cite aucune option inconnue de l'analyseur", 
   // GMFSS natif par défaut : --gmfss-native reste lu sans --debug, l'essai est de l'éteindre.
   CHECK(parse_play_options(std::vector<std::string_view>{"video.mkv"})->gmfss_native);
   CHECK(parse_play_options(std::vector<std::string_view>{"video.mkv", "--gmfss-native"})->gmfss_native);
+  CHECK_FALSE(parse({"video.mkv"})->gmflow_fast);
+  CHECK(parse({"video.mkv", "--gmflow-fast"})->gmflow_fast);
   CHECK_FALSE(parse_play_options(std::vector<std::string_view>{"video.mkv", "--no-gmfss-native"}));
   CHECK_FALSE(parse({"video.mkv", "--no-gmfss-native"})->gmfss_native);
   // Les tuiles de SPAN : allumées par défaut, --no-span-tiles les coupe, --span-tiles reste accepté.

@@ -65,7 +65,7 @@ class GmfssPairEngine final : public Engine {
   // paire entière reste).
   std::expected<std::vector<std::string>, Refusal> try_native(
       const prepare::GmfssPairNets& nets, std::span<const std::byte> pair,
-      const std::shared_ptr<SharedActivations>& shared, double min_db);
+      const std::shared_ptr<SharedActivations>& shared, double min_db, bool fast = false);
   bool native() const { return native_on_; }
 
   // Les sorties de la paire, dans l'ordre de kOutputNames (gmfss_pair_engine.cpp) : half0, half1, puis par
@@ -93,7 +93,7 @@ class GmfssPairEngine final : public Engine {
   std::expected<std::string, Refusal> try_flow_native(std::span<const std::byte> pair, cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& shared,
                                                       const Tensor& frames, std::span<const Tensor> outputs,
-                                                      double min_db);
+                                                      double min_db, bool fast);
   // Un réseau natif (GmfssPairNativeNet::kFeatureNet, ses deux images ; kMetricNet) sur ce que le flot a
   // écrit : la fin de enqueue_native, et le temps d'un morceau à l'essai.
   std::expected<void, Refusal> enqueue_piece(cudaStream_t stream, int piece, const Tensor& frames,

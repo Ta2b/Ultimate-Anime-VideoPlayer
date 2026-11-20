@@ -23,7 +23,8 @@ class GmflowPairFlowNet {
  public:
   virtual ~GmflowPairFlowNet() = default;
   static std::expected<std::unique_ptr<GmflowPairFlowNet>, Refusal> create(std::span<const std::byte> pair,
-                                                                           int height, int width);
+                                                                           int height, int width,
+                                                                           bool fast = false);
   // Les deux images pleines [2][3][2h][2w] FP16. Une instance par voie.
   // follows : A est exactement la même source que B du dernier appel.
   virtual cudaError_t run(cudaStream_t stream, const void* frames, const GmflowPairOutput& out,

@@ -113,17 +113,17 @@ std::vector<uint4> stages(const GmflowMlpLayer& layer, int hidden, bool paired) 
   return out;
 }
 
-template <int Warps, bool Paired = false>
+template <int Warps, bool Paired = false, gm::Acc A = gm::Acc::kF32>
 void launch(dim3 grid, cudaStream_t stream, const gm::Params& p) {
   constexpr auto smem = Paired ? gm::Block<Warps>::kWideSmemBytes : gm::Block<Warps>::kSmemBytes;
-  gm::mlp_kernel<Warps, gm::Acc::kF32, Paired><<<grid, gm::Block<Warps>::kThreads, smem, stream>>>(p);
+  gm::mlp_kernel<Warps, A, Paired><<<grid, gm::Block<Warps>::kThreads, smem, stream>>>(p);
 }
 
 // Le noyau du bloc demandé, réglé pour sa mémoire partagée (au-delà de 48 Ko, et la part de la mémoire
 // partagée au plus haut pour deux blocs par SM).
-template <int Warps, bool Paired = false>
+template <int Warps, bool Paired = false, gm::Acc A = gm::Acc::kF32>
 cudaError_t prepare_kernel() {
-  const auto kernel = gm::mlp_kernel<Warps, gm::Acc::kF32, Paired>;
+  const auto kernel = gm::mlp_kernel<Warps, A, Paired>;
   constexpr auto smem = Paired ? gm::Block<Warps>::kWideSmemBytes : gm::Block<Warps>::kSmemBytes;
   if (const cudaError_t e = cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
       e != cudaSuccess)
@@ -141,7 +141,7 @@ class Net final : public GmflowMlpNet {
  public:
   Net(GmflowMlpBlock block, long max_tokens) : warps_(static_cast<int>(block)), max_tokens_(max_tokens) {}
 
-  bool build(const GmflowMlp& mlp, std::string& error) {
+  bool build(const GmflowMlp& mlp, std::string& error, bool fast) {
     if (!fits(mlp)) {
       error = "MLP de GMFlow : 128 canaux, couche cachée par 64 et poids à leur taille attendus";
       return false;
@@ -164,9 +164,15 @@ class Net final : public GmflowMlpNet {
       error = "MLP de GMFlow : la carte n'a pas la mémoire partagée de ce bloc";
       return false;
     }
+    fast_ = fast && paired_;
+    if (fast && !fast_) {
+      error = "MLP de GMFlow rapide : forme ou GPU incompatibles";
+      return false;
+    }
     const cudaError_t prepared =
         paired_ ? prepare_kernel<4, true>() : (warps_ == 8 ? prepare_kernel<8>() : prepare_kernel<4>());
     if (!sent(prepared, error)) return false;
+    if (fast_ && !sent(prepare_kernel<4, true, gm::Acc::kF16>(), error)) return false;
     layers_ = std::vector<Layer>(mlp.layers.size());
     for (std::size_t i = 0; i < mlp.layers.size(); ++i) {
       const GmflowMlpLayer& from = mlp.layers[i];
@@ -198,14 +204,17 @@ class Net final : public GmflowMlpNet {
     p.out = static_cast<__half*>(out);
     p.tokens = tokens;
     p.hidden = hidden_;
-    p.splits = splits_for(blocks);
+    const bool fast = fast_ && layer < 5;
+    p.splits = fast ? 1 : splits_for(blocks);
     p.partial = p.splits > 1 ? partial_.as<float>() : nullptr;
     p.w = l.w.as<const uint4>();
     p.gamma = l.gamma.as<const float>();
     p.beta = l.beta.as<const float>();
     p.eps = l.eps;
     const dim3 grid(static_cast<unsigned>(blocks), static_cast<unsigned>(p.splits));
-    if (paired_) {
+    if (fast) {
+      launch<4, true, gm::Acc::kF16>(grid, stream, p);
+    } else if (paired_) {
       launch<4, true>(grid, stream, p);
     } else if (warps_ == 8) {
       launch<8>(grid, stream, p);
@@ -259,6 +268,7 @@ class Net final : public GmflowMlpNet {
   int hidden_ = 0;
   int sms_ = 1;
   bool paired_ = false;
+  bool fast_ = false;
   std::vector<Layer> layers_;
   std::int64_t partial_floats_ = 0;
   Buffer partial_;
@@ -267,13 +277,13 @@ class Net final : public GmflowMlpNet {
 }  // namespace
 
 std::unique_ptr<GmflowMlpNet> GmflowMlpNet::create(const prepare::GmflowMlp& mlp, long max_tokens,
-                                                   GmflowMlpBlock block, std::string& error) {
+                                                   GmflowMlpBlock block, std::string& error, bool fast) {
   if (max_tokens < 1) {
     error = "MLP de GMFlow : au moins un jeton";
     return nullptr;
   }
   auto net = std::make_unique<Net>(block, max_tokens);
-  if (!net->build(mlp, error)) return nullptr;
+  if (!net->build(mlp, error, fast)) return nullptr;
   return net;
 }
 

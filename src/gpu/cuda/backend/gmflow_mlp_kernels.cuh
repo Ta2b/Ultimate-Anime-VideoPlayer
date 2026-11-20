@@ -198,7 +198,24 @@ __device__ __forceinline__ void gemm1_stage(rn::Frag<A> (&h)[2 * kNP1], const In
 }
 
 // GELU exacte du graphe : x · (erf(x / √2) + 1) · 0,5.
+__device__ __forceinline__ float half_round(float v) {
+  return __half2float(__float2half_rn(v));
+}
+
+template <Acc A>
 __device__ __forceinline__ float gelu(float v) {
+  if constexpr (A == Acc::kF16) {
+    // Approximation 7.1.25 d'Abramowitz–Stegun avec les frontières FP16 du moteur de référence.
+    const float z = half_round(v * 0.70703125F);
+    const float denom = fmaf(fabsf(z), 0.470470011F, 1.F);
+    float t, exp;
+    asm("rcp.approx.ftz.f32 %0, %1;" : "=f"(t) : "f"(denom));
+    const float power = (z * z) * (-1.4426950216F);
+    asm("ex2.approx.ftz.f32 %0, %1;" : "=f"(exp) : "f"(power));
+    const float polynomial = fmaf(t, fmaf(t, -0.7478556037F, 0.09587980062F), -0.3480240107F);
+    const float error_function = copysignf(fmaf(t * polynomial, exp, 1.F), z);
+    return half_round(.5F * v) * half_round(1.F + half_round(error_function));
+  }
   return 0.5F * v * (1.F + erff(v * kInvSqrt2));
 }
 
@@ -214,8 +231,8 @@ __device__ __forceinline__ void gelu_stage(const rn::Frag<A> (&h)[2 * kNP1], int
 #pragma unroll
   for (int half = 0; half < 2; ++half) {
     const float2 lo = h[2 * j + half].pair(0), hi = h[2 * j + half].pair(1);
-    a[2 * half] = pack_half2(gelu(lo.x), gelu(lo.y));
-    a[2 * half + 1] = pack_half2(gelu(hi.x), gelu(hi.y));
+    a[2 * half] = pack_half2(gelu<A>(lo.x), gelu<A>(lo.y));
+    a[2 * half + 1] = pack_half2(gelu<A>(hi.x), gelu<A>(hi.y));
   }
 }
 
@@ -226,8 +243,8 @@ __device__ __forceinline__ void gelu_to_a(const rn::Frag<A> (&h)[2 * kNP1], std:
 #pragma unroll
     for (int half = 0; half < 2; ++half) {
       const float2 lo = h[2 * j + half].pair(0), hi = h[2 * j + half].pair(1);
-      a[j][2 * half] = pack_half2(gelu(lo.x), gelu(lo.y));
-      a[j][2 * half + 1] = pack_half2(gelu(hi.x), gelu(hi.y));
+      a[j][2 * half] = pack_half2(gelu<A>(lo.x), gelu<A>(lo.y));
+      a[j][2 * half + 1] = pack_half2(gelu<A>(hi.x), gelu<A>(hi.y));
     }
 }
 
@@ -266,10 +283,9 @@ __device__ __forceinline__ void chunk(rn::Frag<A> (&o)[kTiles], Ring& ring, int&
   for (int nt = 0; nt < kTiles; ++nt) o[nt].promote();
 }
 
-template <int Threads>
-__device__ __forceinline__ void paired_gemm2(rn::Frag<Acc::kF32> (&o)[kTiles],
-                                             const rn::Frag<Acc::kF32> (&h)[2 * kNP1], Ring& ring, int& q,
-                                             int lane) {
+template <int Threads, Acc A>
+__device__ __forceinline__ void paired_gemm2(rn::Frag<A> (&o)[kTiles], const rn::Frag<A> (&h)[2 * kNP1],
+                                             Ring& ring, int& q, int lane) {
 #pragma unroll
   for (int j = 0; j < kK2; j += 2) {
     std::uint32_t a[4];
@@ -283,10 +299,10 @@ __device__ __forceinline__ void paired_gemm2(rn::Frag<Acc::kF32> (&o)[kTiles],
 
 // Deux tranches cachées partagent chaque ldmatrix de X. Les sommes de W1 restent indépendantes et W2
 // consomme toujours les deux tranches de gauche à droite. Sa GELU libère H un pas K à la fois.
-template <int Threads>
-__device__ __forceinline__ void chunk_pair(rn::Frag<Acc::kF32> (&o)[kTiles], Ring& ring, int& q,
-                                           std::uint32_t a_base, int lane) {
-  rn::Frag<Acc::kF32> h0[2 * kNP1], h1[2 * kNP1];
+template <int Threads, Acc A>
+__device__ __forceinline__ void chunk_pair(rn::Frag<A> (&o)[kTiles], Ring& ring, int& q, std::uint32_t a_base,
+                                           int lane) {
+  rn::Frag<A> h0[2 * kNP1], h1[2 * kNP1];
 #pragma unroll
   for (int nt = 0; nt < 2 * kNP1; ++nt) {
     h0[nt].clear();
@@ -341,7 +357,14 @@ __device__ __forceinline__ void finish_rows(const rn::Frag<A> (&o)[kTiles], __ha
       const float2 bt = __ldg(reinterpret_cast<const float2*>(p.beta + ch));
       auto* at = reinterpret_cast<__half2*>(row + ch);
       const float2 x = __half22float2(*at);
-      *at = rn::to_half2(x.x + ((v.x - mean) * r * gm.x + bt.x), x.y + ((v.y - mean) * r * gm.y + bt.y));
+      if constexpr (A == Acc::kF16) {
+        // La normalisation et l'affine reviennent séparément en Half avant le résiduel.
+        const float nx = half_round((v.x - mean) * r);
+        const float ny = half_round((v.y - mean) * r);
+        *at = rn::to_half2(x.x + half_round(fmaf(nx, gm.x, bt.x)), x.y + half_round(fmaf(ny, gm.y, bt.y)));
+      } else {
+        *at = rn::to_half2(x.x + ((v.x - mean) * r * gm.x + bt.x), x.y + ((v.y - mean) * r * gm.y + bt.y));
+      }
     }
   }
   __syncwarp();
@@ -406,7 +429,6 @@ __global__ void __launch_bounds__(Warps * 32, Warps == 4 ? 2 : 1) mlp_kernel(Par
   for (int nt = 0; nt < kTiles; ++nt) o[nt].clear();
   int q = c0 * kGroupsPerChunk;
   if constexpr (Paired) {
-    static_assert(A == Acc::kF32);
 #pragma unroll 1
     for (int c = c0; c < c1; c += 2) chunk_pair<B::kThreads>(o, ring, q, a_base, lane);
   } else {

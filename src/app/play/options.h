@@ -209,6 +209,7 @@ struct PlayOptions {
   // avec GMFSS union au menu (interp_retired.h) ; --no-gmfss-native (essai) laisse tout GMFSS à TensorRT et
   // le retire du menu.
   bool gmfss_native = true;
+  bool gmflow_fast = false;
   bool gmfss_feature_reuse = true;  // reprend FeatureNet quand deux paires partagent la même source
   // --gmfss-budget : coûts mesurés à la taille de l'essai.
   struct GmfssBudget {
