@@ -259,7 +259,8 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
           .full_width = w,
           .x = at_ptr(layout_.x[i + 1]),
           .packed_x2 = packed_tail_ && b + 1 == kLastBlock ? at_ptr(packed_x_) : nullptr,
-          .compact_time = packed_tail_ && b + 1 == kLastBlock};
+          .compact_time = packed_tail_ && b + 1 == kLastBlock,
+          .scalar_time = scalar_time};
       if (auto ok = cuda_check(launch_drba_glue(glue, stream), "drba_glue<<<>>>"); !ok) return ok;
     }
   }

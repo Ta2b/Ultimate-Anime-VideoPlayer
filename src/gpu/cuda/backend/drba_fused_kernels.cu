@@ -18,8 +18,7 @@ __device__ __forceinline__ float rounded(float v) {
 
 // Le côté choisi du graphe : vrai si tau < 1 (image 0), faux sinon (image 2). tau = 2 × plan 6 de pair01 ;
 // le Clip du graphe, ((1 - tau) × 4096) borné à [0, 1], vaut 0 ou 1 pour un tau FP16 (jamais tau = 1 envoyé).
-__device__ __forceinline__ bool before_side(const __half* pair01, std::size_t full_plane) {
-  const float tau = 2.0F * __half2float(pair01[6 * full_plane]);
+__device__ __forceinline__ bool before_side(float tau) {
   return fminf(fmaxf((1.0F - tau) * 4096.0F, 0.0F), 1.0F) >= 0.5F;
 }
 
@@ -137,6 +136,7 @@ struct Section {
   int time_channel;
 };
 
+template <bool ScalarTime>
 __global__ void __launch_bounds__(256) pre_kernel(DrbaPreParams p) {
   const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   const std::size_t full_plane = static_cast<std::size_t>(p.height) * static_cast<std::size_t>(p.width);
@@ -183,11 +183,11 @@ __global__ void __launch_bounds__(256) pre_kernel(DrbaPreParams p) {
   // Plans du temps : u × 2, un pixel sur s de pair01[6].
   const auto* u = static_cast<const __half*>(p.pair01) + 6 * full_plane;
 #pragma unroll
-  for (int k = 0; k < 3; ++k) {
+  for (int k = ScalarTime ? 2 : 0; k < 3; ++k) {
     if (j < sections[k].plane) {
       const Section& sec = sections[k];
       std::size_t at = 0;
-      if (!p.scalar_time) {
+      if constexpr (!ScalarTime) {
         const int oy = static_cast<int>(j / static_cast<std::size_t>(sec.ow));
         const int ox = static_cast<int>(j % static_cast<std::size_t>(sec.ow));
         at = static_cast<std::size_t>(sec.s * oy) * static_cast<std::size_t>(p.width) +
@@ -292,9 +292,10 @@ __global__ void __launch_bounds__(kGlueThreads, Packed ? 5 : 0) glue_kernel(Drba
   };
   // Z du bloc précédent : à la moitié de la résolution de X_k.
   const SourceZ z{static_cast<const __half*>(p.y), p.height / 2, p.width / 2};
-  const bool before =
-      before_side(static_cast<const __half*>(p.pair01),
-                  static_cast<std::size_t>(p.full_height) * static_cast<std::size_t>(p.full_width));
+  const auto* pair01 = static_cast<const __half*>(p.pair01);
+  const auto full_plane = static_cast<std::size_t>(p.full_height) * static_cast<std::size_t>(p.full_width);
+  const float tau = 2.0F * __half2float(pair01[6 * full_plane]);
+  const bool before = before_side(tau);
 
   // Flot (canaux 105-108) : Resize ×2 arrondi FP16, puis × 2 (exact).
   float flow[4];
@@ -326,7 +327,8 @@ __global__ void __launch_bounds__(kGlueThreads, Packed ? 5 : 0) glue_kernel(Drba
   }
   if constexpr (Packed) {
     store(56, x[56 * plane + o]);
-    store(95, x[(p.compact_time ? kFirstTimeChannel : kTimeChannel) * plane + o]);
+    store(kTimeChannel, p.scalar_time ? __float2half_rn(tau)
+                                      : x[(p.compact_time ? kFirstTimeChannel : kTimeChannel) * plane + o]);
 #pragma unroll
     for (int c = 109; c < kPackedX2; ++c) store(c, __ushort_as_half(0));
     __syncthreads();
@@ -337,6 +339,8 @@ __global__ void __launch_bounds__(kGlueThreads, Packed ? 5 : 0) glue_kernel(Drba
       store_packed(packed, tile + group * kPackedGroup * kSharedStride + j, j, p.width, group,
                    kFirstDynamicX2);
     }
+  } else if (p.scalar_time) {
+    store(kTimeChannel, __float2half_rn(tau));
   }
 }
 
@@ -373,7 +377,7 @@ __global__ void __launch_bounds__(256) finish_kernel(DrbaFinishParams p) {
       static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
   const auto* pair01 = static_cast<const __half*>(p.pair01);
   const auto* pair12 = static_cast<const __half*>(p.pair12);
-  const bool before = before_side(pair01, plane);
+  const bool before = before_side(2.0F * __half2float(pair01[6 * plane]));
   float r[5];
   if constexpr (S != 0)
     enlarge<5>(TileZ<tw, th>{inputs, z.zh, z.zw, left, top}, 0, S, x, y, r);
@@ -420,12 +424,18 @@ unsigned blocks_for(std::size_t elements) {
 
 cudaError_t launch_drba_pre(const DrbaPreParams& params, cudaStream_t stream) {
   std::size_t elements = 0;
-  for (const int s : {params.reduce0, params.reduce1, params.reduce2}) {
+  const int reduces[]{params.reduce0, params.reduce1, params.reduce2};  // NOLINT(modernize-avoid-c-arrays)
+  for (int k = 0; k < 3; ++k) {
+    const int s = reduces[k];
     const std::size_t plane =
         static_cast<std::size_t>(params.height / s) * static_cast<std::size_t>(params.width / s);
-    elements += (params.times_only ? 1U : 10U) * plane;
+    elements += ((params.times_only ? 0U : 9U) + (k == 0 || !params.scalar_time ? 1U : 0U)) * plane;
   }
-  pre_kernel<<<blocks_for(elements), 256, 0, stream>>>(params);
+  const auto blocks = blocks_for(elements);
+  if (params.scalar_time)
+    pre_kernel<true><<<blocks, 256, 0, stream>>>(params);
+  else
+    pre_kernel<false><<<blocks, 256, 0, stream>>>(params);
   return cudaGetLastError();
 }
 

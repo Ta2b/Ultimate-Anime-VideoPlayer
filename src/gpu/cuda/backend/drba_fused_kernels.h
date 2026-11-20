@@ -29,7 +29,7 @@ struct DrbaPreParams {
   void* x1 = nullptr;
   void* x2 = nullptr;
   bool times_only = false;   // les plans du temps seuls (D6 : mêmes images, autre instant)
-  bool scalar_time = false;  // rife_time n'a réécrit que le premier demi-flottant du plan
+  bool scalar_time = false;  // rife_time n'a réécrit que le premier demi-flottant ; glue prépare X1 et X2
   bool compact_x2 = false;   // X2 planaire contient 57 plans fixes et le temps au plan 57
 };
 
@@ -54,6 +54,7 @@ struct DrbaGlueParams {
   void* x = nullptr;
   void* packed_x2 = nullptr;  // HWC8 109 plans, 112 valeurs par pixel
   bool compact_time = false;  // le temps est lu dans le plan 57 du tampon compact
+  bool scalar_time = false;   // le temps est lu directement dans pair01 puis dupliqué dans X_k
 };
 
 struct DrbaFinishParams {

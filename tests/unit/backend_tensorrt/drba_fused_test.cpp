@@ -93,7 +93,7 @@ TEST_CASE("DistilDRBA fusionné : les noyaux de réduction sont exacts",
           "[backend_tensorrt][cuda][drba_fused]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
   constexpr int h = 128;
-  constexpr int w = 192;
+  constexpr int w = 256;
   for (const int tail : {4, 8}) {
     INFO("réduction " << tail);
     const kernels::DrbaFusedPlan plan{.tail = tail};
@@ -160,6 +160,7 @@ TEST_CASE("DistilDRBA fusionné : les noyaux de réduction sont exacts",
     const Halves scalar{kernels::ref::float_to_half(0.375F)};
     upload_halves(d01.get(), scalar, 6 * area);
     for (const bool times_only : {false, true}) {
+      REQUIRE(cudaMemset(base, 0, layout.bytes) == cudaSuccess);
       REQUIRE(gpu::cuda::launch_drba_pre({.height = h,
                                           .width = w,
                                           .reduce0 = kernels::drba_fused_reduce(plan, 0),
@@ -178,8 +179,38 @@ TEST_CASE("DistilDRBA fusionné : les noyaux de réduction sont exacts",
         const auto plane = static_cast<std::size_t>(dims.width) * static_cast<std::size_t>(dims.height);
         const int channel = k == 0 ? 57 : kernels::kDrbaFusedTimeChannel;
         const auto time = download_halves(x[k], static_cast<std::size_t>(channel) * plane, plane);
-        const auto expected = kernels::ref::float_to_half(0.75F);
+        const auto expected = kernels::ref::float_to_half(k == 0 ? 0.75F : 0.0F);
         CHECK(std::ranges::all_of(time, [&](std::uint16_t v) { return v == expected; }));
+      }
+      for (int k : {1, 2}) {
+        const auto dims = kernels::drba_fused_x(plan, k, h, w);
+        const auto plane = static_cast<std::size_t>(dims.width) * static_cast<std::size_t>(dims.height);
+        const gpu::cuda::DrbaGlueParams glue{
+            .height = dims.height,
+            .width = dims.width,
+            .y = base + layout.y[static_cast<std::size_t>(k) - 1U],
+            .pair01 = d01.get(),
+            .full_height = h,
+            .full_width = w,
+            .x = x[k],
+            .scalar_time = true,
+        };
+        const auto expected = kernels::ref::float_to_half(0.75F);
+        REQUIRE(gpu::cuda::launch_drba_glue(glue, nullptr) == cudaSuccess);
+        const auto time = download_halves(x[k], 95U * plane, plane);
+        CHECK(std::ranges::all_of(time, [&](std::uint16_t v) { return v == expected; }));
+        if (k != 2) continue;
+        // Avec un plan NCHW volontairement différent, le rangement HWC8 doit lire le scalaire lui aussi.
+        Device packed(112U * plane * 2U);
+        Halves obsolete(plane, 0);
+        upload_halves(x[k], obsolete, 95U * plane);
+        auto packed_glue = glue;
+        packed_glue.packed_x2 = packed.get();
+        REQUIRE(gpu::cuda::launch_drba_glue(packed_glue, nullptr) == cudaSuccess);
+        const auto values = download_halves(packed.get(), 0, 112U * plane);
+        std::size_t wrong = 0;
+        for (std::size_t i = 0; i < plane; ++i) wrong += values[112U * i + 95U] != expected;
+        CHECK(wrong == 0);
       }
     }
 
