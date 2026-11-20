@@ -152,7 +152,9 @@ par seconde de vidéo hors des écarts qui finissent sur une paire laissée à d
 `FrameStats::moving_frames`). En mode Rapide, un dessin tenu est planifié : il ne compte ni dans les manquées
 ni dans « sans interpolation à dessein », et la cadence moyenne mêle ces images qui ne changent pas à celles
 que le GPU n'a pas su faire (sur l'extrait de Re:Zero, 148 dessins tenus et 23 coupes pesaient 17 i/s sur 141).
-Porte du chantier 0.3 : 165 i/s tenus en ×7 avec le GPU sous 60 %, lue sur la cadence en mouvement.
+Porte du chantier 0.3 : 165 i/s tenus en ×7 avec le GPU sous 60 %, lue sur la cadence en mouvement. Passée au PC le
+19 novembre 2026 (#856, #877, #904, #940) : 160,3 i/s en mouvement pour un plafond de l'écran à 163,4, GPU à 54 %
+(118 i/s avant).
 
 ### Ce qui reste fixe
 

@@ -271,7 +271,7 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   qu'ils éclairent à 450-520 nits. Le halo, grand, domine à peine sa zone (0,02 PQ en médiane) et la lueur
   ne s'y déclenche pas. Baisser le « Blanc des surfaces » ne les détache pas non plus (essai à 60 %, plus
   haut). Pour qu'elles ressortent, il faudra que la passe anime les reconnaisse comme émetteurs. **Chantier en
-  pause depuis le 19 novembre 2026** (Tatoub) : la rc.1 sort avec ce rendu. Reprise : rejouer la passe anime
+  pause depuis le 19 novembre 2026** (Tatoub) : la 0.13.0-rc.2 (publiée le 20 novembre) sort avec ce rendu. Reprise : rejouer la passe anime
   sur la source de 16:23 et 16:45 (pas sur les PQ de sortie), mesurer l'écart bloc-zone de la corne et du
   halo dans la source, puis reconnaître une lueur à sa forme (petit cœur blanc entouré d'un dégradé
   coloré) plutôt qu'à son seul écart à la zone. La vue `--effect-mask-view` ne peint que le masque de la

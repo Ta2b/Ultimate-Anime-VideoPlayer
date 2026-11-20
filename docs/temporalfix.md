@@ -133,7 +133,9 @@ Natif (essai, `--tfix-native`) : les cinq morceaux de convolutions par nos noyau
 TensorRT, même colle rangée par pixel ([`tfix-natif.md`](tfix-natif.md)).
 
 Cible du lot B : 12 ms ou moins par image à pleine taille en 1080p sur la RTX 4070 Ti (27,9 ms pour le graphe
-entier), à 52 dB ou plus face au graphe entier. Pas encore mesuré : porte du groupe de tests 2, sur le PC.
+entier), à 52 dB ou plus face au graphe entier. Porte passée au PC le 19 novembre 2026 : 27,9 → 10,85 ms par image,
+à 52 dB ou plus (#853, #862, #864, #879, #882). TemporalFix natif (`--tfix-native`, essai) : fenêtre 2,01 ms contre
+2,16 pour TensorRT, 56,2 dB, 7,33 ms par image en lecture contre 7,71 ([`tfix-natif.md`](tfix-natif.md)).
 
 ## Coût dans l'Auto
 
