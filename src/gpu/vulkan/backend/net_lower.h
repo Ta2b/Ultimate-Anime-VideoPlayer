@@ -22,9 +22,10 @@
 namespace kirari::gpu::vk::net {
 
 // Version de l'abaissement : change à chaque changement des shaders, des constantes ou du
-// rangement des poids, ou des passes du graphe (11 : ConvTranspose à peu de canaux en une Conv) ; un
+// rangement des poids, ou des passes du graphe (11 : ConvTranspose à peu de canaux en une Conv ; 12 : découpe
+// de K des matrices coopératives, un septième binding) ; un
 // artefact d'une autre version est refusé au chargement.
-inline constexpr std::uint32_t kLoweringVersion = 11;
+inline constexpr std::uint32_t kLoweringVersion = 12;
 
 // Variantes candidates d'un nœud, la première étant celle par défaut ; une seule pour les
 // opérations sans réglage. Refus OperatorUnknown : opérateur sans noyau Vulkan.
@@ -84,6 +85,13 @@ class Lowerer {
   std::expected<void, Refusal> average_pool(std::size_t index);
   std::expected<void, Refusal> conv(std::size_t index, const KernelChoice& choice);
   std::expected<void, Refusal> conv_matrix(std::size_t index, const KernelChoice& choice);
+  // Découpe de K : la somme des split tranches partielles du tampon de travail et l'épilogue
+  // (net_conv_reduce, constantes de la Conv directe), après la Conv découpée ; io : {x, biais, pente,
+  // résiduel, y}.
+  std::expected<void, Refusal> reduce_split(std::size_t index, std::span<const Bound> tensors,
+                                            std::vector<std::uint32_t> constants,
+                                            const std::array<Binding, 5>& io, std::uint64_t outputs,
+                                            std::uint32_t split);
   // Variante coopmat_m8, en tuiles 8 × 16 × 16 (net_conv_m8.cpp).
   std::expected<void, Refusal> conv_matrix_m8(std::size_t index, const KernelChoice& choice);
   std::expected<void, Refusal> conv_transpose(std::size_t index, const KernelChoice& choice);

@@ -16,6 +16,9 @@
 // avec l'identité (rangée après le biais), l'activation se fait élément par élément et la tuile
 // float16 s'écrit d'un coopMatStore ; la dernière tuile, incomplète, reprend le chemin par la
 // mémoire partagée. Entrée float16 en Nhwc16 exigée (l'hôte ne propose cette variante qu'alors).
+// Avec SPLIT > 1 (découpe de K, pour les petites images où la grille ne remplit pas l'appareil), chaque
+// groupe ne parcourt qu'une tranche des étapes et écrit ses sommes brutes dans le tampon de travail ;
+// net_conv_reduce les ajoute et applique l'épilogue, comme pour la Conv directe découpée.
 // Référence : gpu/ir/op_window.cpp (eval_conv).
 #extension GL_KHR_cooperative_matrix : require
 #extension GL_KHR_memory_scope_semantics : require
@@ -97,6 +100,10 @@ layout(constant_id = 38) const uint HALO = 0;
 // Tuiles de 16 canaux de sortie par groupe (V1, découpage des canaux) : 0, toutes ; sinon NTG,
 // diviseur de NT, et la grille en z compte N × NT / NTG groupes (l'image, puis la part des canaux).
 layout(constant_id = 39) const uint NTG = 0;
+// Tranches de K (découpe de K) : 1, aucune ; sinon la grille en z compte SPLIT fois N × NT / NTW groupes, la
+// tranche en premier rang, et chaque groupe parcourt les étapes [s × STEPS / SPLIT, (s + 1) × STEPS / SPLIT).
+// L'hôte ne la propose qu'avec HALO = 0 et DIRECT_EPI = 0, jamais dans la variante _m8.
+layout(constant_id = 40) const uint SPLIT = 1;
 
 const uint NT = (COUT + 15u) / 16u;
 const uint NP = NT * 16u;
@@ -128,6 +135,10 @@ layout(std430, binding = 2) readonly buffer BiasH { float16_t v[]; } bias_h;  //
 layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
 KIRARI_NET_BUFFER(4, res, readonly)
 KIRARI_NET_BUFFER(5, dst, writeonly)
+#ifndef KIRARI_COOPMAT_M8
+// Sommes partielles de la découpe de K, rangées comme net_conv_reduce les lit.
+layout(std430, binding = 6) writeonly buffer Partial { float v[]; } partial;
+#endif
 
 shared uvec4 tile_a[2u * ABUF];
 shared uvec4 tile_b[2u * BBUF];
@@ -208,8 +219,12 @@ void main() {
   const uint sb = SPACE > 1u ? SPACE : 1u;
   const TDesc yd = TDesc(N, COUT / (sb * sb), HOUT * sb, WOUT * sb, LY, CYP);
   const TDesc rd = TDesc(N, COUT, HOUT, WOUT, LR, CRP);
-  uint n = gl_WorkGroupID.z % N;
-  uint j0 = (gl_WorkGroupID.z / N) * NTW;  // première tuile de canaux du groupe
+  const uint zs = N * (NT / NTW);           // groupes en z d'une tranche de K
+  const uint split = gl_WorkGroupID.z / zs;  // tranche de K du groupe
+  const uint s_begin = split * STEPS / SPLIT;
+  const uint s_end = (split + 1u) * STEPS / SPLIT;
+  uint n = (gl_WorkGroupID.z % zs) % N;
+  uint j0 = ((gl_WorkGroupID.z % zs) / N) * NTW;  // première tuile de canaux du groupe
   uint first_pixel = gl_WorkGroupID.x * BM;
   uint sg = gl_SubgroupID;
   // HALO : le groupe (x, y) couvre les colonnes x0… x0 + 15 des lignes row0… row0 + ROWS − 1.
@@ -256,13 +271,13 @@ void main() {
     }
   }
 #endif
-  if (HALO == 0u) stage_a(0u, n, first_pixel, 0u);
-  if (SHARED_B == 1u) stage_b(0u, 0u);
+  if (HALO == 0u) stage_a(0u, n, first_pixel, s_begin);
+  if (SHARED_B == 1u) stage_b(0u, s_begin);
   if (HALO == 0u) barrier();
-  for (uint s = 0u; s < (HALO == 1u ? 0u : STEPS); ++s) {
-    uint buf = s & 1u;
+  for (uint s = s_begin; s < (HALO == 1u ? 0u : s_end); ++s) {
+    uint buf = (s - s_begin) & 1u;
     // L'autre tampon a été lu à l'étape s − 1, avant la barrière qui l'a close.
-    if (s + 1u < STEPS) {
+    if (s + 1u < s_end) {
       stage_a(buf ^ 1u, n, first_pixel, s + 1u);
       if (SHARED_B == 1u) stage_b(buf ^ 1u, s + 1u);
     }
@@ -341,6 +356,12 @@ void main() {
         if (e / 16u < count && co < COUT) {
           uint oy = p / WOUT;
           uint ox = p % WOUT;
+#ifndef KIRARI_COOPMAT_M8
+          if (SPLIT > 1u) {
+            partial.v[(((split * N + n) * COUT + co) * HOUT + oy) * WOUT + ox] = tile_c[sg * TC + e];
+            continue;
+          }
+#endif
 #if defined(KIRARI_COOPMAT_ACC16) || defined(KIRARI_COOPMAT_M8)
           // Les sommes float16, comme celles de la variante _m8, ne partent jamais du biais (initialisation sous #if
           // plus haut) : il s'ajoute toujours ici, quel que soit DIRECT_EPI (C49-03).

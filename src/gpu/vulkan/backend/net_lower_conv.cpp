@@ -230,6 +230,89 @@ bool winograd_eligible(const ir::Graph& graph, const ir::Node& node, const Targe
   return win && win->kh == 3 && win->kw == 3 && win->sh == 1 && win->sw == 1 && win->dh == 1 && win->dw == 1;
 }
 
+// Réglages de la variante coopmat : {tm, sous-groupes, B partagée, épilogue en registres, halo, tuiles de
+// canaux par groupe, tranches de K}, les absents à 0 (une tranche de K).
+struct MatrixTuning {
+  std::uint32_t tm, subgroups, shared_b, direct, halo, ntg, split;
+};
+
+MatrixTuning matrix_tuning(const KernelChoice& c) {
+  const auto at = [&c](std::size_t i) { return c.tuning.size() > i ? c.tuning[i] : 0U; };
+  return {at(0), at(1), at(2), at(3), at(4), at(5), std::max(1U, at(6))};
+}
+
+// La découpe de K tient-elle ? Au plus kMaxSplit tranches et une étape par tranche, sans halo ni épilogue en
+// registres.
+bool split_fits(const MatrixTuning& t, std::uint32_t steps) {
+  return t.split <= kMaxSplit && (t.split == 1 || (t.halo == 0 && t.direct == 0 && t.split <= steps));
+}
+
+// Constantes de net_conv_reduce après une Conv coopmat découpée : les 30 premières de la Conv, puis celles de
+// la Conv directe (quads, groupe de 256, un pixel, DepthToSpace, sans grille FP8, tranches).
+std::vector<std::uint32_t> matrix_reduce_constants(const std::vector<std::uint32_t>& conv,
+                                                   const ir::Epilogue& e, std::uint32_t split) {
+  std::vector<std::uint32_t> out(conv.begin(), conv.begin() + 30);
+  out.insert(out.end(), {1U, 256U, 1U});
+  for (const std::uint32_t c : space_constants(e)) out.push_back(c);
+  out.insert(out.end(), {0U, 0U, split});
+  return out;
+}
+
+// Canaux découpés sur la grille (sixième réglage : tuiles de 16 canaux par groupe, V1) : des tuiles de pixels
+// plus hautes (tm) là où toutes les tuiles de canaux d'un groupe ne tiendraient pas ; en fin de liste, pour
+// l'autotuner seul.
+void add_matrix_ntg_candidates(const Target& target, const ir::Dims& result,
+                               std::vector<KernelChoice>& matrix) {
+  const std::uint32_t tiles = matrix_tiles(static_cast<std::uint32_t>(result[1]));
+  const std::uint64_t pixels = static_cast<std::uint64_t>(result[2]) * static_cast<std::uint64_t>(result[3]);
+  for (const std::uint32_t ntg : {2U, 4U, 8U}) {
+    if (ntg >= tiles || tiles % ntg != 0) continue;
+    const std::uint64_t z = static_cast<std::uint64_t>(result[0]) * (tiles / ntg);
+    if (z > kMaxGroups) continue;
+    for (const std::uint32_t subgroups : {2U, 4U, 8U}) {
+      for (const std::uint32_t tm : {2U, 4U, 8U}) {
+        const std::uint64_t block = static_cast<std::uint64_t>(subgroups) * tm * 16;
+        if (tm * ntg > 16 || (pixels + block - 1) / block > target.max_workgroup_count_x ||
+            subgroups * matrix_subgroup(target) > target.max_workgroup_invocations ||
+            detail::matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
+          continue;
+        }
+        matrix.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups, 0, 0, 0, ntg}});
+      }
+    }
+  }
+}
+
+// Découpe de K des matrices coopératives (septième réglage) : pour les petites images, où div_up(pixels, bm)
+// groupes ne remplissent pas l'appareil (les blocs de DistilDRBA et de RIFE à 768 × 1280 descendent à 12 ×
+// 20), chaque tranche des étapes dans ses groupes, puis net_conv_reduce. Sommes en float ou en float16, sans
+// halo ni épilogue en registres ; en fin de liste, l'autotuner seul la retient, contre le noyau direct.
+void add_matrix_split_candidates(const ir::Graph& graph, const ir::Node& node, const Target& target,
+                                 const ir::Dims& result, std::vector<KernelChoice>& out) {
+  const auto win = conv_window(graph, node);
+  const ir::Tensor& x = graph.tensors[node.inputs[ir::kConvX]];
+  const std::uint64_t pixels = static_cast<std::uint64_t>(result[2]) * static_cast<std::uint64_t>(result[3]);
+  if (!win || x.dims.size() != 4 || pixels > kSplitMaxPixels) return;
+  const auto cinp = static_cast<std::uint32_t>((x.dims[1] + 15) / 16 * 16);
+  const std::uint32_t tiles = matrix_tiles(static_cast<std::uint32_t>(result[1]));
+  for (const std::uint32_t subgroups : {4U, 2U}) {
+    for (const std::uint32_t tm : {1U, 2U}) {
+      if (tm * tiles > 16 || subgroups * matrix_subgroup(target) > target.max_workgroup_invocations ||
+          detail::matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
+        continue;
+      }
+      const std::uint32_t steps =
+          win->kh * win->kw * cinp / matrix_step_channels(cinp, subgroups, tm, 0, target.max_shared_memory);
+      for (const std::uint32_t split : {2U, 4U, 8U}) {
+        if (split > steps || static_cast<std::uint64_t>(result[0]) * tiles * split > kMaxGroups) continue;
+        out.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups, 0, 0, 0, 0, split}});
+        if (target.matrix_f16_acc && subgroups == 4)
+          out.push_back({.variant = std::string(kMatrixAcc16), .tuning = {tm, subgroups, 0, 0, 0, 0, split}});
+      }
+    }
+  }
+}
+
 // Les variantes que l'autotuner seul retient, derrière le noyau direct, qui reste le choix par défaut et sa
 // référence : FP8 et INT8 (Conv quantifiées, net_conv_low_bit.h), tuiles 8 × 16 × 16 (les autres,
 // net_conv_m8.h).
@@ -327,25 +410,8 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
         matrix.push_back(std::move(c));
       }
     }
-    // Canaux découpés sur la grille (sixième réglage : tuiles de 16 canaux par groupe, V1) : des
-    // tuiles de pixels plus hautes (tm) là où toutes les tuiles de canaux d'un groupe ne
-    // tiendraient pas ; en fin de liste, pour l'autotuner seul.
-    for (const std::uint32_t ntg : {2U, 4U, 8U}) {
-      if (ntg >= tiles || tiles % ntg != 0) continue;
-      const std::uint64_t z = static_cast<std::uint64_t>(result[0]) * (tiles / ntg);
-      if (z > kMaxGroups) continue;
-      for (const std::uint32_t subgroups : {2U, 4U, 8U}) {
-        for (const std::uint32_t tm : {2U, 4U, 8U}) {
-          const std::uint64_t block = static_cast<std::uint64_t>(subgroups) * tm * 16;
-          if (tm * ntg > 16 || (pixels + block - 1) / block > target.max_workgroup_count_x ||
-              subgroups * matrix_subgroup(target) > target.max_workgroup_invocations ||
-              detail::matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
-            continue;
-          }
-          matrix.push_back({.variant = std::string(kMatrix), .tuning = {tm, subgroups, 0, 0, 0, ntg}});
-        }
-      }
-    }
+    add_matrix_ntg_candidates(target, result, matrix);
+    add_matrix_split_candidates(graph, node, target, result, matrix);
   }
   if (target.matrix_first) std::swap(out, matrix);
   const bool packed = conv && !quantized(node) && target.f16_math && target.f16_storage &&
@@ -533,12 +599,20 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
        {div_up(across, wg), yc.h, z});
   program_.dispatches.back().subgroup = sg;
   if (split == 1) return {};
-  const std::uint64_t outputs = static_cast<std::uint64_t>(x->desc.n) * yc.c * yc.h * yc.w;
+  return reduce_split(index, tensors, std::move(reduce_constants),
+                      {x->binding, b, slope, residual, y->binding},
+                      static_cast<std::uint64_t>(x->desc.n) * yc.c * yc.h * yc.w, split);
+}
+
+std::expected<void, Refusal> Lowerer::reduce_split(std::size_t index, std::span<const Bound> tensors,
+                                                   std::vector<std::uint32_t> constants,
+                                                   const std::array<Binding, 5>& io, std::uint64_t outputs,
+                                                   std::uint32_t split) {
   program_.scratch_bytes = std::max<std::uint64_t>(program_.scratch_bytes, outputs * split * 4);
   auto reduce = shader("net_conv_reduce", tensors);
   if (!reduce) return std::unexpected(reduce.error());
-  emit_linear(index, *reduce, std::move(reduce_constants),
-              {x->binding, scratch, b, slope, residual, y->binding}, {}, outputs);
+  emit_linear(index, *reduce, std::move(constants),
+              {io[0], Binding{.kind = BindingKind::Scratch}, io[1], io[2], io[3], io[4]}, {}, outputs);
   return {};
 }
 
@@ -547,7 +621,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   const bool acc16 = choice.variant == kMatrixAcc16;
   const std::optional<ir::QuantGrid> low_bit = low_bit_grid(choice.variant);  // FP8 ou INT8 : mêmes réglages
   if ((!acc16 && !low_bit && choice.variant != kMatrix) || choice.tuning.size() < 2 ||
-      choice.tuning.size() > (low_bit ? 3U : 6U))
+      choice.tuning.size() > (low_bit ? 3U : 7U))
     return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat incomplet");
   if (acc16 && !target_.matrix_f16_acc) {
     return refuse_node(RefusalCode::FeatureUnavailable, n, "tuiles à sommes float16 absentes du pilote");
@@ -556,14 +630,9 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
     return refuse_node(RefusalCode::FeatureUnavailable, n,
                        "matrices coopératives indisponibles pour ce nœud");
   }
-  const std::uint32_t tm = choice.tuning[0];
-  const std::uint32_t subgroups = choice.tuning[1];
-  const std::uint32_t shared_b = choice.tuning.size() >= 3 ? choice.tuning[2] : 0;  // B en mémoire partagée
-  const std::uint32_t direct = choice.tuning.size() >= 4 ? choice.tuning[3] : 0;    // épilogue en registres
+  const auto [tm, subgroups, shared_b, direct, halo, ntg, split] = matrix_tuning(choice);
   if (direct > 1 || (direct == 1 && (acc16 || !direct_epilogue_eligible(graph_, n))))
     return refuse_node(RefusalCode::InputMismatch, n, "épilogue en registres impossible pour ce nœud");
-  const std::uint32_t halo = choice.tuning.size() >= 5 ? choice.tuning[4] : 0;  // tuiles 2D avec halo
-  const std::uint32_t ntg = choice.tuning.size() == 6 ? choice.tuning[5] : 0;   // tuiles de canaux par groupe
   if (halo > 1 || (halo == 1 && shared_b != 0))
     return refuse_node(RefusalCode::InputMismatch, n, "tuiles à halo hors de leurs bornes");
   const std::uint32_t sgs = matrix_subgroup(target_);
@@ -577,7 +646,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   const std::uint32_t tiles = matrix_tiles(yc.c);
   const std::uint32_t np_shared = shared_b == 1 ? tiles * 16 : 0;
   const std::uint32_t ntw = ntg == 0 ? tiles : ntg;
-  if (ntg > tiles || (ntg != 0 && tiles % ntg != 0) || x->desc.n * (tiles / ntw) > kMaxGroups)
+  if (ntg > tiles || (ntg != 0 && tiles % ntg != 0) || x->desc.n * (tiles / ntw) * split > kMaxGroups)
     return refuse_node(RefusalCode::InputMismatch, n, "découpage des canaux hors de ses bornes");
   if (tm < 1 || subgroups < 1 || tm * ntw > 16 || wg > target_.max_workgroup_invocations || shared_b > 1 ||
       detail::matrix_shared_bytes(subgroups, tm, 16, np_shared) > target_.max_shared_memory) {
@@ -625,16 +694,15 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   constants.push_back(tm);
   constants.push_back(wg);
   constants.push_back(sgs);
-  constants.push_back(
+  const std::uint32_t kc =
       halo == 1 ? matrix_halo_step_channels(ckp(x->desc), subgroups, hpix, target_.max_shared_memory)
-                : matrix_step_channels(ckp(x->desc), subgroups, tm, np_shared, target_.max_shared_memory));
+                : matrix_step_channels(ckp(x->desc), subgroups, tm, np_shared, target_.max_shared_memory);
+  if (!split_fits(matrix_tuning(choice), win->kh * win->kw * ckp(x->desc) / kc))
+    return refuse_node(RefusalCode::InputMismatch, n, "découpe de K hors de ses bornes");
+  constants.push_back(kc);
   for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
   constants.push_back(shared_b);
-  if (!low_bit) {
-    constants.push_back(direct);
-    constants.push_back(halo);
-    constants.push_back(ntg);
-  }
+  if (!low_bit) constants.insert(constants.end(), {direct, halo, ntg, split});
   const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
   Binding w;
   Binding b;
@@ -655,15 +723,20 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
     b = {.kind = BindingKind::Blob, .index = add_blob(std::move(bias))};
   }
   if (x->desc.n > kMaxGroups) return refuse_node(RefusalCode::ShapeInvalid, n, "trop d'images");
+  std::vector<Binding> bindings{x->binding, w, b, slope, residual, y->binding};
+  if (!low_bit) bindings.push_back(split > 1 ? Binding{.kind = BindingKind::Scratch} : Binding{});
   emit(index,
        low_bit ? std::string(detail::low_bit_shader(*low_bit))
                : (acc16 ? "net_conv_coopmat_acc16" : "net_conv_coopmat_f16"),
-       std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
+       constants, bindings, {},
        halo == 1
            ? std::array<std::uint32_t, 3>{div_up(yc.w, 16), div_up(yc.h, rows), x->desc.n * (tiles / ntw)}
-           : std::array<std::uint32_t, 3>{div_up(pixels, bm), 1, x->desc.n * (tiles / ntw)});
+           : std::array<std::uint32_t, 3>{div_up(pixels, bm), 1, x->desc.n * (tiles / ntw) * split});
   if (sgs != target_.subgroup_size) program_.dispatches.back().subgroup = sgs;
-  return {};
+  if (split == 1) return {};
+  return reduce_split(index, tensors, matrix_reduce_constants(constants, attrs->epilogue, split),
+                      {x->binding, b, slope, residual, y->binding},
+                      static_cast<std::uint64_t>(x->desc.n) * yc.c * pixels, split);
 }
 
 std::expected<void, Refusal> Lowerer::conv_transpose(std::size_t index, const KernelChoice& choice) {

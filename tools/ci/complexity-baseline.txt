@@ -48,9 +48,9 @@ src/gpu/vulkan/backend/kernel_frames.cpp	kirari::gpu::vk::VulkanKernelOps::stagi
 src/gpu/vulkan/backend/net_alias.cpp	kirari::gpu::vk::net::Planner::slice_channels	26	24
 src/gpu/vulkan/backend/net_autotune.cpp	kirari::gpu::vk::net::Autotuner::choose	34	142
 src/gpu/vulkan/backend/net_autotune.cpp	kirari::gpu::vk::net::Autotuner::measure_with	66	204
-src/gpu/vulkan/backend/net_lower_conv.cpp	kirari::gpu::vk::net::Lowerer::conv	60	116
-src/gpu/vulkan/backend/net_lower_conv.cpp	kirari::gpu::vk::net::Lowerer::conv_matrix	60	123
-src/gpu/vulkan/backend/net_lower_conv.cpp	kirari::gpu::vk::net::candidates	95	182
+src/gpu/vulkan/backend/net_lower_conv.cpp	kirari::gpu::vk::net::Lowerer::conv	59	112
+src/gpu/vulkan/backend/net_lower_conv.cpp	kirari::gpu::vk::net::Lowerer::conv_matrix	60	122
+src/gpu/vulkan/backend/net_lower_conv.cpp	kirari::gpu::vk::net::candidates	85	165
 src/gpu/vulkan/compute/context_create.cpp	kirari::gpu::vk::VkContext::create_device	29	113
 src/gpu/vulkan/compute/spirv_access.cpp	kirari::gpu::vk::spirv_readonly_bindings	37	51
 src/kernels/ref/frame_stats.cpp	kirari::kernels::ref::frame_counts	27	83
