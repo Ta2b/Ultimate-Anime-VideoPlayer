@@ -375,7 +375,7 @@ std::expected<bool, Refusal> SpanFp8Engine::try_vertical_net(const span_fp8::Pac
   const int height = static_cast<int>(input_.dims[2]), width = static_cast<int>(input_.dims[3]);
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string why;
-  weights.winograd = SpanWinograd::Vertical;
+  weights.winograd = SpanWinograd::VerticalUnrolled;
   auto candidate = SpanFp8Net::create(weights, height, width, status, why);
   if (!candidate) return reject("poids : " + why);
   if (candidate->workspace_bytes() != net_->workspace_bytes()) return reject("taille de la zone différente");

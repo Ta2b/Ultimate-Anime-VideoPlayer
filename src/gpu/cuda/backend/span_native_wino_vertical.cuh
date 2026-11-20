@@ -124,7 +124,7 @@ __device__ __forceinline__ void store_output(const __half* s, const Params& p, i
 // Une transformée F(2,3) par paire de lignes. L'axe horizontal garde les trois prises directes.
 // Deux warps en C64 et trois en C48 partagent les canaux de sortie d'une paire. V reste dans les registres.
 // Le masque reste celui des tuiles 32 × 8 de SPAN, deux rangées de blocs ici.
-template <int C, bool Gate>
+template <int C, bool Gate, bool Flat = false>
 __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
   static_assert(C == 48 || C == 64);
   static_assert((kWidth * kHeight * kStride<C> + C * C) * sizeof(__half) <= kShared<C>);
@@ -155,38 +155,44 @@ __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
   const unsigned base =
       shared +
       static_cast<unsigned>(((local_y * kRawWidth + (lane & 15)) * kStride<C> + (lane >> 4) * 8) * 2);
-#pragma unroll 1
-  for (int dx = 0; dx < 3; ++dx) {
-#pragma unroll 1
-    for (int step = 0; step < kInner; ++step) {
-      std::uint32_t a[2][4][4];
+  const auto accumulate = [&](int dx, int step) {
+    std::uint32_t a[2][4][4];
+#pragma unroll
+    for (int f = 0; f < 2; ++f)
+#pragma unroll
+      for (int r = 0; r < 4; ++r)
+        ldmatrix4(a[f][r], base + static_cast<std::uint32_t>(
+                                      ((r * kRawWidth + dx + 16 * f) * kStride<C> + step * 16) * 2));
+#pragma unroll
+    for (int point = 0; point < kPoints; ++point) {
+      constexpr int kStart[4]{0, 1, 2, 1}, kEnd[4]{2, 2, 1, 3};
+      std::uint32_t v[2][4];
 #pragma unroll
       for (int f = 0; f < 2; ++f)
 #pragma unroll
-        for (int r = 0; r < 4; ++r)
-          ldmatrix4(a[f][r], base + static_cast<std::uint32_t>(
-                                        ((r * kRawWidth + dx + 16 * f) * kStride<C> + step * 16) * 2));
+        for (int n = 0; n < 4; ++n)
+          v[f][n] = transform_word(a[f][kStart[point]][n], a[f][kEnd[point]][n], point == 1);
+      const auto* weights =
+          p.w + ((((dx * kPoints + point) * kInner + step) * kInner) + channel / 16) * 32 + lane;
 #pragma unroll
-      for (int point = 0; point < kPoints; ++point) {
-        constexpr int kStart[4]{0, 1, 2, 1}, kEnd[4]{2, 2, 1, 3};
-        std::uint32_t v[2][4];
+      for (int tile = 0; tile < kGroup / 16; ++tile) {
+        const uint4 w = __ldg(weights + tile * 32);
 #pragma unroll
-        for (int f = 0; f < 2; ++f)
-#pragma unroll
-          for (int n = 0; n < 4; ++n)
-            v[f][n] = transform_word(a[f][kStart[point]][n], a[f][kEnd[point]][n], point == 1);
-        const auto* weights =
-            p.w + ((((dx * kPoints + point) * kInner + step) * kInner) + channel / 16) * 32 + lane;
-#pragma unroll
-        for (int tile = 0; tile < kGroup / 16; ++tile) {
-          const uint4 w = __ldg(weights + tile * 32);
-#pragma unroll
-          for (int f = 0; f < 2; ++f) {
-            acc[f][point][2 * tile].mma(v[f], w.x, w.y);
-            acc[f][point][2 * tile + 1].mma(v[f], w.z, w.w);
-          }
+        for (int f = 0; f < 2; ++f) {
+          acc[f][point][2 * tile].mma(v[f], w.x, w.y);
+          acc[f][point][2 * tile + 1].mma(v[f], w.z, w.w);
         }
       }
+    }
+  };
+  if constexpr (Flat) {
+#pragma unroll 3
+    for (int stage = 0; stage < 3 * kInner; ++stage) accumulate(stage / kInner, stage % kInner);
+  } else {
+#pragma unroll 1
+    for (int dx = 0; dx < 3; ++dx) {
+#pragma unroll 1
+      for (int step = 0; step < kInner; ++step) accumulate(dx, step);
     }
   }
   __syncthreads();

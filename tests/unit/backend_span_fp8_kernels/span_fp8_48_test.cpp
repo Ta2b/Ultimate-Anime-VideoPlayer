@@ -566,7 +566,8 @@ TEST_CASE("SPAN FP16 natif : Winograd suit le chemin direct, et les bandes ne le
     net->bind(workspace.data);
     const auto grid = net->tile_grid();
     REQUIRE(grid.accepts_shift(2, 4));
-    CHECK(grid.accepts_shift(2, 2) == (winograd != SpanWinograd::Vertical));
+    const bool vertical = winograd == SpanWinograd::Vertical || winograd == SpanWinograd::VerticalUnrolled;
+    CHECK(grid.accepts_shift(2, 2) == !vertical);
     if (winograd != SpanWinograd::On && band == 5) check_layered_tiles(*net, in, workspace);
     return launch_once(*net, in);
   };
@@ -575,6 +576,7 @@ TEST_CASE("SPAN FP16 natif : Winograd suit le chemin direct, et les bandes ne le
   INFO("SNR de Winograd contre le chemin direct : " << snr << " dB");
   CHECK(snr >= 50.0);
   CHECK(run(mode, 5) == wino);
+  if (channels == 64 && mode == SpanWinograd::Vertical) CHECK(run(SpanWinograd::VerticalUnrolled, 5) == wino);
 }
 
 }  // namespace kirari::gpu::cuda

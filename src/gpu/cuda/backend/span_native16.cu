@@ -295,8 +295,10 @@ class NativeBody final : public SpanFp8Body {
                   ? C == 48
                   : weights.shared_weights == SpanSharedWeights::On;
     wino_ = C == sn::kWinoC && A == sn::Acc::kF16 && weights.winograd == SpanWinograd::On;
-    vertical_ = (C == 64 || C == 48) && A == sn::Acc::kF16 && !weights.compact_workspace &&
-                weights.winograd == SpanWinograd::Vertical;
+    vertical_ =
+        (C == 64 || C == 48) && A == sn::Acc::kF16 && !weights.compact_workspace &&
+        (weights.winograd == SpanWinograd::Vertical || weights.winograd == SpanWinograd::VerticalUnrolled);
+    unrolled_ = weights.winograd == SpanWinograd::VerticalUnrolled;
     if constexpr (A == sn::Acc::kF16 && C == 64) {
       // La porte à 64 canaux réemploie l'épilogue sur le chemin mesuré en 1080p sur Ada.
       gate_cache_ =
@@ -460,6 +462,13 @@ class NativeBody final : public SpanFp8Body {
         p.y1 = rows.to;
         const int first = rows.from & ~(sn::vertical::kHeight - 1);
         const dim3 grid(grid_.x, static_cast<unsigned>((rows.to - 1 - first) / sn::vertical::kHeight + 1));
+        if constexpr (C == 64) {
+          if (unrolled_) {
+            sn::vertical::convolution<C, Mode == M::kGate, true>
+                <<<grid, sn::vertical::kWorkers<C>, sn::vertical::kShared<C>, stream>>>(p);
+            return;
+          }
+        }
         sn::vertical::convolution<C, Mode == M::kGate>
             <<<grid, sn::vertical::kWorkers<C>, sn::vertical::kShared<C>, stream>>>(p);
         return;
@@ -494,6 +503,7 @@ class NativeBody final : public SpanFp8Body {
   int band_ = 0;          // lignes de demi-résolution par bande (SpanFp8Weights::band), 0 : l'image entière
   bool shared_ = false;   // poids partagés (SpanFp8Weights::shared_weights)
   bool layered_masks_ = false;
+  bool unrolled_ = false;
   bool vertical_ = false;    // Winograd le long des paires de lignes
   bool wino_ = false;        // les 3×3 des blocs par Winograd (SpanFp8Weights::winograd)
   bool gate_cache_ = false;  // conserver v float2 entre 1×1 et produit de la porte
