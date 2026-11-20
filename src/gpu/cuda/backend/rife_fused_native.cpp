@@ -54,14 +54,14 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
     std::span<const Tensor> outputs, std::size_t elements) {
   forget_passes();
   // Trois passes : directe, capture du graphe, rejeu ; la dernière est comparée. Quand le réseau du dernier
-  // bloc refait X à la volée (il n'y écrit que le flot, canaux 24 à 27, que lit la fin), X part de NaN avant
+  // bloc refait X à la volée, son flot compact part de NaN avant
   // la dernière passe, puis son flot est relu : un pixel oublié y reste non fini. La sortie ne suffit pas à
   // le voir, la fin d'une variante image ramenant un flot NaN au bord de la fenêtre (warp::tap_at) ; une
   // sortie entière à NaN le rend alors à la comparaison, qui écarte l'option.
   const int last = plan_.blocks - 1;
   const bool glue = glued(last);
-  kernels::FusedDims x = kernels::rife_fused_x(plan_, last, height_, width_);
-  x.channels = pitch(x.channels);
+  const auto flow_elements =
+      static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_) * kRifeCompactFlowPitch;
   const auto x_last = [&] {
     return static_cast<std::byte*>(shared->data()) + scratch_offset_ +
            layout_.x[static_cast<std::size_t>(last)];
@@ -78,9 +78,8 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
         return std::unexpected(std::move(ok.error()));
     }
     if (pass == 2 && glue) {
-      if (auto ok =
-              cuda_check(cudaMemsetAsync(x_last(), 0xFF, static_cast<std::size_t>(x.elements()) * 2U, stream),
-                         "RIFE natif : X du dernier bloc à NaN");
+      if (auto ok = cuda_check(cudaMemsetAsync(x_last(), 0xFF, flow_elements * sizeof(__half), stream),
+                               "RIFE natif : X du dernier bloc à NaN");
           !ok)
         return std::unexpected(std::move(ok.error()));
     }
@@ -93,12 +92,10 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
   // En variante mouvement, la fin sort le flot tel quel : un NaN s'y voit déjà, la relecture n'y sert pas.
   bool unwritten = false;
   if (glue && !motion_) {
-    const auto pixels = static_cast<std::size_t>(x.height) * static_cast<std::size_t>(x.width);
-    std::vector<__half> flow(pixels * 4U);
-    const std::size_t row = static_cast<std::size_t>(x.channels) * 2U;
-    if (auto ok =
-            cuda_check(cudaMemcpy2D(flow.data(), 8, x_last() + 48, row, 8, pixels, cudaMemcpyDeviceToHost),
-                       "RIFE natif : flot du dernier bloc");
+    std::vector<__half> flow(flow_elements);
+    if (auto ok = cuda_check(
+            cudaMemcpy(flow.data(), x_last(), flow_elements * sizeof(__half), cudaMemcpyDeviceToHost),
+            "RIFE natif : flot du dernier bloc");
         !ok)
       return std::unexpected(std::move(ok.error()));
     unwritten = !std::ranges::all_of(flow, [](__half v) { return std::isfinite(__half2float(v)); });

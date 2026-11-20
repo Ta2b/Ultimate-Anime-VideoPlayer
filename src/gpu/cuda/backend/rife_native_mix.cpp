@@ -384,6 +384,11 @@ std::expected<RifeFusedEngine::CachedTrial, Refusal> RifeFusedEngine::try_cached
   set_route({});
   auto reference = trial_output(stream, shared, pair.input, pair.outputs, pair.elements);
   if (!reference) return abandon(std::move(reference.error()));
+  RifeNativeTrial trial(*this, stream, shared, pair.input);
+  if (const int last = route.back(); last >= 0) {
+    if (auto ok = trial.tune_staged_glue(*natives_[static_cast<std::size_t>(last)]); !ok)
+      return abandon(std::move(ok.error()));
+  }
   set_route(route);
   set_fused_end(verdict.fused_end);
   auto chain = trial_output(stream, shared, pair.input, pair.outputs, pair.elements);
@@ -393,13 +398,14 @@ std::expected<RifeFusedEngine::CachedTrial, Refusal> RifeFusedEngine::try_cached
   const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
   const bool held = rife_verdict::still_holds(verdict, db);
   settle(held ? route : std::vector<int>{}, verdict.fused_end);
-  return CachedTrial{
-      .held = held,
-      .lines = {std::format("RIFE natif {} ({}×{}, {}, fin {} ; chaîne contre TensorRT {:.1f} dB, {:.1f} au "
-                            "verdict ; {} réseau(x) réglé(s), {:.1f} s)",
-                            held ? "repris du verdict gardé" : "du verdict gardé rejeté, essai refait", w, h,
-                            mix_name(verdict.options), verdict.fused_end ? "fondue" : "à part", db,
-                            verdict.trt_db, rungs.size(), seconds)}};
+  std::vector<std::string> lines = trial.notes();
+  lines.push_back(
+      std::format("RIFE natif {} ({}×{}, {}, fin {} ; chaîne contre TensorRT {:.1f} dB, {:.1f} au "
+                  "verdict ; {} réseau(x) réglé(s), {:.1f} s)",
+                  held ? "repris du verdict gardé" : "du verdict gardé rejeté, essai refait", w, h,
+                  mix_name(verdict.options), verdict.fused_end ? "fondue" : "à part", db, verdict.trt_db,
+                  rungs.size(), seconds));
+  return CachedTrial{.held = held, .lines = std::move(lines)};
 }
 
 }  // namespace kirari::gpu::cuda

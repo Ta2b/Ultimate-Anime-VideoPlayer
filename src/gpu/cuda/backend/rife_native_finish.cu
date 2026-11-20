@@ -109,7 +109,8 @@ __global__ void __launch_bounds__(kThreads, 2) finish_four(Params p, FusedFinish
 #pragma unroll
         for (int frag = 0; frag < 2; ++frag) {
           std::uint32_t a[4];
-          ldmatrix4(a, base + static_cast<std::uint32_t>(((row * kColsIn + col + 16 * frag) * kLd + sub * 16) * 2));
+          ldmatrix4(
+              a, base + static_cast<std::uint32_t>(((row * kColsIn + col + 16 * frag) * kLd + sub * 16) * 2));
           acc[frag][0].mma(a, lo.x, lo.y);
           acc[frag][1].mma(a, lo.z, lo.w);
           acc[frag][2].mma(a, hi.x, hi.y);

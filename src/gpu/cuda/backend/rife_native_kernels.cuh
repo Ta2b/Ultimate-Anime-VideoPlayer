@@ -549,8 +549,8 @@ __device__ __forceinline__ void conv_sums(Frag<A> (&acc)[Rows * 2][CT / 8], __ha
     if constexpr (I == In::kImage) {
       load_image<S, G::kIR, G::kIC>(s, p, ty0 * S + origin_y, tx0 * S + origin_x);
     } else {
-      load_nhwc<Kc, S, G::kIR, G::kIC, I == In::kBlocked8>(s, p, q * Kc,
-                                                            ty0 * S + origin_y, tx0 * S + origin_x);
+      load_nhwc<Kc, S, G::kIR, G::kIC, I == In::kBlocked8>(s, p, q * Kc, ty0 * S + origin_y,
+                                                           tx0 * S + origin_x);
       cp_async_wait_all();
     }
     __syncthreads();

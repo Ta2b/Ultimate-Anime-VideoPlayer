@@ -8,6 +8,7 @@
 // donnent.
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "gpu/cuda/backend/conv_stream_kernels.cuh"
@@ -20,6 +21,76 @@ template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, Acc A, bool Ahea
 void launch_one(dim3 grid, int smem, cudaStream_t stream, const Params& p) {
   conv_kernel<Kc, CT, KH, S, Rows, I, O, A, Ahead>
       <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p);
+}
+
+// L'entrée RGB ne remplit que deux mots du fragment A, et une prise de la transposée ne contribue à
+// l'accumulateur que pour les deux lignes de sa parité. Les produits non nuls restent dans leur ordre.
+template <int Rows, bool Image>
+__global__ void __launch_bounds__(kThreads, 2) compact_encoder_kernel(Params p) {
+  using G = Geometry<3, Image ? 2 : 1, Rows>;
+  extern __shared__ __align__(16) unsigned char raw[];
+  auto* s = reinterpret_cast<__half*>(raw);
+  const int warp = static_cast<int>(threadIdx.x) / 32, lane = static_cast<int>(threadIdx.x) % 32;
+  const int t = lane & 3, g = lane / 4;
+  const int y0 = static_cast<int>(blockIdx.y) * G::kTH, x0 = static_cast<int>(blockIdx.x) * kTW;
+  if constexpr (Image) {
+    auto* tile = reinterpret_cast<uint2*>(s);
+    for (int i = static_cast<int>(threadIdx.x); i < G::kIR * G::kIC; i += kThreads) {
+      const int y = 2 * y0 - 1 + i / G::kIC, x = 2 * x0 - 1 + i % G::kIC;
+      uint2 v{};
+      if (y >= 0 && y < p.ih && x >= 0 && x < p.iw) {
+        const long at = static_cast<long>(y) * p.iw + x;
+        const auto red = __half_as_ushort(p.in[at]);
+        const auto green = static_cast<std::uint32_t>(__half_as_ushort(p.in[at + p.in_plane]));
+        const auto blue = __half_as_ushort(p.in[at + 2 * p.in_plane]);
+        v = make_uint2(red | (green << 16), blue);
+      }
+      tile[i] = v;
+    }
+  } else {
+    load_nhwc<16, 1, G::kIR, G::kIC>(s, p, 0, y0 - 1, x0 - 1);
+    cp_async_wait_all();
+  }
+  __syncthreads();
+  Frag<Acc::kF32> acc[Rows * 2][2];
+#pragma unroll
+  for (int f = 0; f < Rows * 2; ++f) {
+    acc[f][0].clear();
+    acc[f][1].clear();
+  }
+#pragma unroll
+  for (int tap = 0; tap < 9; ++tap) {
+    const int dy = tap / 3, dx = tap % 3;
+    const uint4 w = __ldg(p.w + 32 * tap + lane);
+#pragma unroll
+    for (int f = 0; f < Rows * 2; ++f) {
+      const int y = warp * Rows + f / 2, x = (f & 1) * 16;
+      std::uint32_t a[4]{};
+      if constexpr (Image) {
+        const auto* from = reinterpret_cast<const std::uint32_t*>(s);
+        if (t < 2) {
+          const int at = 2 * ((2 * y + dy) * G::kIC + 2 * (x + g) + dx) + t;
+          a[0] = from[at];
+          a[1] = from[at + 32];
+        }
+      } else {
+        constexpr int kLds = 24;
+        const int at = ((y + dy) * G::kIC + x + dx + (lane & 15)) * kLds + (lane / 16) * 8;
+        ldmatrix4(a, smem_u32(s) + static_cast<std::uint32_t>(2 * at));
+      }
+      if (Image || dy < 2) acc[f][0].mma(a, w.x, w.y);
+      if (Image || dy > 0) acc[f][1].mma(a, w.z, w.w);
+    }
+  }
+  __syncthreads();
+  stage<16, Rows, Acc::kF32>(acc, s, p.bias, warp, lane);
+  __syncthreads();
+  store<16, Rows, Image ? Out::kNhwc : Out::kPlanes4>(s, p, y0, x0, 0, 0);
+}
+
+template <int Rows, bool Image>
+void launch_compact_encoder(dim3 grid, int smem, cudaStream_t stream, const Params& p) {
+  compact_encoder_kernel<Rows, Image><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p);
 }
 
 template <int Kc, int KH, int S, int Rows, In I, Out O, Acc A, bool Ahead = false>
@@ -121,6 +192,16 @@ Launch pick_for(RifeNativeSums sums, Kind kind, int kc, int ct, int rows, bool a
   return nullptr;
 }
 
+Launch pick_compact_encoder(RifeNativeSums sums, Kind kind, const Config& cfg) {
+  if (sums != RifeNativeSums::kF32 || cfg.kc != 16 || cfg.ct != 16 || cfg.ksplit != 1 || cfg.ahead ||
+      cfg.bands != 0)
+    return nullptr;
+  if (kind == Kind::kImage && cfg.rows == 1) return launch_compact_encoder<1, true>;
+  if (kind == Kind::kPlanes4 && cfg.rows == 1) return launch_compact_encoder<1, false>;
+  if (kind == Kind::kPlanes4 && cfg.rows == 2) return launch_compact_encoder<2, false>;
+  return nullptr;
+}
+
 Launch pick_blocked8(RifeNativeSums sums, const Config& cfg) {
   if (cfg.bands != 0) return nullptr;
   switch (sums) {
@@ -156,6 +237,12 @@ std::vector<Config> configs(RifeNativeSums sums, Kind kind, const Extent& extent
               std::min((want + blocks - 1) / blocks, static_cast<long>(extent.cin / kc) * taps));
           if (cfg.ksplit > 1) out.push_back(cfg);
         }
+  if (extent.cin == 16 && extent.cout == 16 && extent.phases == 1) {
+    for (const int rows : {2, 1}) {
+      const Config cfg{.kc = 16, .ct = 16, .rows = rows, .compact_encoder = true};
+      if (pick_compact_encoder(sums, kind, cfg) != nullptr) out.push_back(cfg);
+    }
+  }
   return out;
 }
 

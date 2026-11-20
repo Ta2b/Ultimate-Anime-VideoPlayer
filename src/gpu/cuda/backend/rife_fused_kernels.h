@@ -43,6 +43,9 @@ struct FusedEntryParams {
   int x_pitch = 0;                 // 0 : plans ; 16 : par pixel (HWC8)
 };
 
+// La colle native du dernier bloc écrit seulement ses quatre canaux de flot, groupés par pixel.
+inline constexpr int kRifeCompactFlowPitch = 4;
+
 // L'entrée X_k d'un bloc k ≥ 1 (28 canaux) : flot accumulé des blocs 0 à k-1, warp des images et de leurs
 // encodages, masque et attributs du bloc k-1.
 struct FusedGlueParams {
@@ -58,7 +61,7 @@ struct FusedGlueParams {
   const void* encode = nullptr;    // A
   const void* encode_b = nullptr;  // B
   void* x = nullptr;
-  int x_pitch = 0;  // 0 : plans ; 32 : par pixel (HWC8)
+  int x_pitch = 0;  // 0 : plans ; 32 : HWC8 ; 4 : flot seul, colle native du dernier bloc
 };
 
 // La fin : flot du dernier bloc ajouté, puis soit l'image (warp des deux images, masque sigmoïde, mélange),
@@ -67,11 +70,11 @@ struct FusedFinishParams {
   int height = 0;
   int width = 0;
   const void* input = nullptr;
-  const void* x_last = nullptr;  // entrée du dernier bloc : canaux 24-27 = flot accumulé
+  const void* x_last = nullptr;  // flot compact, ou canaux 24–27 de X
   const void* y_last = nullptr;  // sortie du dernier bloc : 52 canaux à (height / 2) × (width / 2)
   int y_height = 0;
   int y_width = 0;
-  int x_pitch = 0;  // rangement de x_last et de y_last (voir plus haut)
+  int x_pitch = 0;  // 0 : plans ; 32 : HWC8 ; 4 : flot compact
   int y_pitch = 0;
   void* image = nullptr;  // 3 plans, ou nul
   void* flow = nullptr;   // 4 plans (variante mouvement)

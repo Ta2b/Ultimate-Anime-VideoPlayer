@@ -14,13 +14,15 @@
 
 namespace kirari::gpu::cuda::finish {
 
-// Le flot accumulé au pixel i (canaux 24 à 27 de X du dernier bloc) : une lecture de 8 octets par pixel
-// (pas 32), ou quatre plans de plane éléments.
+// Le flot accumulé au pixel i : une lecture groupée de 8 octets en compact ou dans les canaux 24 à 27
+// du pixel de X (HWC8), ou quatre lectures dans les plans de plane éléments.
 __device__ __forceinline__ void accumulated(const FusedFinishParams& p, std::size_t i, std::size_t plane,
                                             float (&acc)[4]) {
   const auto* last_x = static_cast<const __half*>(p.x_last);
   if (p.x_pitch > 0) {
-    const uint2 word = *reinterpret_cast<const uint2*>(last_x + i * static_cast<std::size_t>(p.x_pitch) + 24);
+    const int first = p.x_pitch == kRifeCompactFlowPitch ? 0 : 24;
+    const uint2 word =
+        *reinterpret_cast<const uint2*>(last_x + i * static_cast<std::size_t>(p.x_pitch) + first);
     const float2 a = __half22float2(*reinterpret_cast<const __half2*>(&word.x));
     const float2 b = __half22float2(*reinterpret_cast<const __half2*>(&word.y));
     acc[0] = a.x;

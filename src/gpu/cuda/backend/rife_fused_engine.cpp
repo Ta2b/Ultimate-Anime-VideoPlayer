@@ -187,23 +187,24 @@ std::expected<void, Refusal> RifeFusedEngine::use_zone(const std::shared_ptr<Sha
 }
 
 FusedGlueParams RifeFusedEngine::glue_params(const void* in, int block, std::byte* base, std::size_t encode_a,
-                                             std::size_t encode_b) const {
+                                             std::size_t encode_b, bool native) const {
   const int h = height_;
   const int w = width_;
   const auto at_ptr = [base](std::size_t offset) { return static_cast<void*>(base + offset); };
   const auto i = static_cast<std::size_t>(block);
   const kernels::FusedDims next = kernels::rife_fused_x(plan_, block, h, w);
-  FusedGlueParams glue{.height = h,
-                       .width = w,
-                       .reduce = plan_.reduce[i],
-                       .out_height = next.height,
-                       .out_width = next.width,
-                       .flows = block,
-                       .input = in,
-                       .encode = at_ptr(encode_a),
-                       .encode_b = at_ptr(encode_b),
-                       .x = at_ptr(layout_.x[i]),
-                       .x_pitch = pitch(next.channels)};
+  FusedGlueParams glue{
+      .height = h,
+      .width = w,
+      .reduce = plan_.reduce[i],
+      .out_height = next.height,
+      .out_width = next.width,
+      .flows = block,
+      .input = in,
+      .encode = at_ptr(encode_a),
+      .encode_b = at_ptr(encode_b),
+      .x = at_ptr(layout_.x[i]),
+      .x_pitch = native && block + 1 == plan_.blocks ? kRifeCompactFlowPitch : pitch(next.channels)};
   for (int k = 0; k < block; ++k) {
     const auto j = static_cast<std::size_t>(k);
     const kernels::FusedDims yk = kernels::rife_fused_y(plan_, k, h, w);
@@ -232,7 +233,7 @@ std::expected<void, Refusal> RifeFusedEngine::run_block(cudaStream_t stream,
   const auto i = static_cast<std::size_t>(b);
   if (net != nullptr) {
     std::optional<FusedGlueParams> glue;
-    if (net->glues(b)) glue = glue_params(in, b, base, encode_a, encode_b);
+    if (net->glues(b)) glue = glue_params(in, b, base, encode_a, encode_b, true);
     return cuda_check(net->block(stream, b, base + layout_.x[i], base + layout_.y[i], arena->data(),
                                  glue ? &*glue : nullptr, finish),
                       "RIFE natif : bloc");
@@ -331,15 +332,18 @@ FusedFinishParams RifeFusedEngine::finish_params(const void* in, std::byte* base
   const auto at_ptr = [base](std::size_t offset) { return static_cast<void*>(base + offset); };
   const auto last = static_cast<std::size_t>(plan_.blocks - 1);
   const kernels::FusedDims y_last = kernels::rife_fused_y(plan_, plan_.blocks - 1, h, w);
-  FusedFinishParams finish{.height = h,
-                           .width = w,
-                           .input = in,
-                           .x_last = at_ptr(layout_.x[last]),
-                           .y_last = at_ptr(layout_.y[last]),
-                           .y_height = y_last.height,
-                           .y_width = y_last.width,
-                           .x_pitch = pitch(kernels::rife_fused_x(plan_, plan_.blocks - 1, h, w).channels),
-                           .y_pitch = pitch(y_last.channels)};
+  FusedFinishParams finish{
+      .height = h,
+      .width = w,
+      .input = in,
+      .x_last = at_ptr(layout_.x[last]),
+      .y_last = at_ptr(layout_.y[last]),
+      .y_height = y_last.height,
+      .y_width = y_last.width,
+      .x_pitch = glued(plan_.blocks - 1)
+                     ? kRifeCompactFlowPitch
+                     : pitch(kernels::rife_fused_x(plan_, plan_.blocks - 1, h, w).channels),
+      .y_pitch = pitch(y_last.channels)};
   if (motion_) {
     finish.flow = fused_address(outputs[0]);
     finish.mask = fused_address(outputs[1]);

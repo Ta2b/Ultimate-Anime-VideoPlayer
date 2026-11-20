@@ -42,6 +42,8 @@ class RifeNativeTrial {
   // deux.
   std::expected<std::vector<std::vector<double>>, Refusal> times(std::span<RifeNativeNet* const> nets,
                                                                  std::span<const char* const> names);
+  // Compare les deux tuiles D1 sur les Y déjà produits par la passe de référence.
+  std::expected<void, Refusal> tune_staged_glue(RifeNativeNet& net);
   // Le temps de chaque couche de net (rejoué en graphe, le meilleur de trois) : une ligne de journal par
   // couche, name nommant le réseau ; une ligne par morceau dont le profil échoue sans perte du contexte.
   std::expected<std::vector<std::string>, Refusal> profile(const RifeNativeNet& net, std::string_view name);

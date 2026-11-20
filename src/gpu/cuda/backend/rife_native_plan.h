@@ -37,6 +37,7 @@ struct Config {
   int ksplit = 1;
   bool ahead = false;
   int bands = 0;
+  bool compact_encoder = false;
 };
 
 constexpr int kernel_size(Kind kind) {
@@ -63,6 +64,8 @@ struct Extent {
 // l'avance seulement en pas 1 (kSame), tranche de 32 ou 64, hors f32 : les ResConv des blocs, où les poids
 // d'une couche large viennent du L2.
 Launch pick_for(RifeNativeSums sums, Kind kind, int kc, int ct, int rows, bool ahead = false);
+// Formes exactes de l'encodeur : RGB sans rembourrage en mémoire partagée, transposée sans prises nulles.
+Launch pick_compact_encoder(RifeNativeSums sums, Kind kind, const Config& cfg);
 // Les trois premières convolutions du GridNet peuvent lire les plans de groupes de huit canaux.
 Launch pick_blocked8(RifeNativeSums sums, const Config& cfg);
 // Les formes à essayer au réglage : toute tranche, tuile, hauteur et avance qu'un noyau fait, chacune sans
@@ -103,6 +106,10 @@ using GlueLaunch = void (*)(dim3 grid, int smem, cudaStream_t stream, const Para
 GlueLaunch pick_glue(RifeNativeSums sums, int flows, int reduce, int ct);
 // Ses octets de mémoire partagée, pour des sources d'échelles scales (la dernière porte 52 canaux).
 int glue_smem(std::span<const int> scales, int reduce);
+// D1 en FP16 sur Ada : la tuile étroite sépare le flot et le warp dans le même bloc CUDA.
+inline constexpr int kStagedGlueWidth = 16;
+GlueLaunch pick_staged_glue(int flows);
+int staged_glue_smem(std::span<const int> scales);
 
 // La dernière couche du dernier bloc (la transposée), fin comprise (rife_native_finish.cu) : sa première
 // tuile de 32 canaux seulement (le flot du bloc et le masque y sont), puis fused_finish dans son épilogue au

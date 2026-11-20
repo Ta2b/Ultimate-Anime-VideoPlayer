@@ -10,8 +10,8 @@
 // Il faut 28 Ko de tuile et au plus 15 Ko de relèvement (des
 // échelles d'au moins 2, que glue_layer exige), deux blocs par multiprocesseur ; un seul sur Turing (64 Ko),
 // sauf pour le relèvement de 4.25 lite. En pleine résolution, seul le flot accumulé (canaux 24 à 27) part en
-// mémoire, dans X, pour la fin (fused_finish) : chaque pixel par la tuile qui le possède. À moitié, rien : la
-// colle du bloc suivant refait son flot depuis les Y.
+// mémoire, groupé par pixel, pour la fin (fused_finish) : chaque pixel par la tuile qui le possède. À moitié,
+// rien : la colle du bloc suivant refait son flot depuis les Y.
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -65,21 +65,26 @@ __device__ __forceinline__ void glue_point(const FusedGlueParams& g, const warp:
   }
 }
 
+__device__ __forceinline__ __half* flow_slot(const FusedGlueParams& params, std::size_t pixel) {
+  const int first = params.x_pitch == kRifeCompactFlowPitch ? 0 : 24;
+  return static_cast<__half*>(params.x) + pixel * params.x_pitch + first;
+}
+
 // La tranche Half de X sur la tuile d'entrée d'origine (y0, x0), au pas kLds, colonnes paires puis impaires
 // (smem_col) ; zéros hors de X. D = 1 : le point pleine résolution lui-même ; la tranche 1 écrit aussi le
-// flot des pixels propres de la tuile dans g.x (pas 32, canaux 24 à 27) : tous sauf ceux de la première ligne
+// flot des pixels propres de la tuile dans g.x : tous sauf ceux de la première ligne
 // et de la première colonne, propres aux tuiles voisines. D = 2 : la moyenne des points (2x + tx, 2y + ty),
 // sommés dans l'ordre de warp::sum_quad (fused_glue) : ((00 + 10) + (01 + 11)) / 4.
-template <int K, int D, int Half, bool Reuse>
+template <int K, int D, int Half, bool Reuse, class Geo = G>
 __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, const warp::Staged (&src)[K],
                                           int y0, int x0) {
   static_assert(D == 1 || D == 2, "pleine résolution ou moitié");
   static_assert(!Reuse || K > 1);
   const int xh = D == 1 ? g.height : g.out_height, xw = D == 1 ? g.width : g.out_width;
-  for (int q = static_cast<int>(threadIdx.x); q < G::kIR * G::kIC; q += kThreads) {
-    const int r = q / G::kIC, col = q - r * G::kIC;
+  for (int q = static_cast<int>(threadIdx.x); q < Geo::kIR * Geo::kIC; q += kThreads) {
+    const int r = q / Geo::kIC, col = q - r * Geo::kIC;
     const int y = y0 + r, x = x0 + col;
-    __half* const slot = s + (r * G::kIC + smem_col<2, G::kIC>(col)) * kLds;
+    __half* const slot = s + (r * Geo::kIC + smem_col<2, Geo::kIC>(col)) * kLds;
     float v[16] = {};
     if (y >= 0 && y < xh && x >= 0 && x < xw) {
       float fl[4];
@@ -92,7 +97,7 @@ __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, c
         if (Half == 1 && r > 0 && col > 0) {
           const std::size_t pixel =
               static_cast<std::size_t>(y) * static_cast<std::size_t>(g.width) + static_cast<std::size_t>(x);
-          *reinterpret_cast<uint2*>(static_cast<__half*>(g.x) + pixel * 32 + 24) =
+          *reinterpret_cast<uint2*>(flow_slot(g, pixel)) =
               make_uint2(half_bits(v[8], v[9]), half_bits(v[10], v[11]));
         }
       } else {
@@ -180,6 +185,147 @@ __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedG
   store<CT, 1, Out::kNhwc>(s, p, ty0, tx0, 0, 0);
 }
 
+// Les flots et le masque prennent cinq valeurs du rembourrage. Le warp repart de leurs valeurs
+// déjà arrondies en FP16 et la seconde tranche garde le même cache de flot qu'avec la tuile large.
+template <int K, class Geo>
+__device__ __forceinline__ void stage_motion(__half* s, const FusedGlueParams& g,
+                                             const warp::Staged (&src)[K], int x0, int y0) {
+  for (int q = static_cast<int>(threadIdx.x); q < Geo::kIR * Geo::kIC; q += kThreads) {
+    const int row = q / Geo::kIC, col = q % Geo::kIC;
+    const int y = y0 + row, x = x0 + col;
+    const int h = g.height, w = g.width;
+    if (x < 0 || x >= w || y < 0 || y >= h) continue;
+    warp::Axis ax{}, ay{};
+    float f[4];
+    glue::flow_at<K>(g, src, x, y, f, ax, ay);
+    auto* slot = s + (row * Geo::kIC + smem_col<2, Geo::kIC>(col)) * kLds;
+    const auto pack = make_uint2(half_bits(f[0], f[1]), half_bits(f[2], f[3]));
+    *reinterpret_cast<uint2*>(slot + 16) = pack;
+    slot[20] = __float2half_rn(glue::z_enlarge(src[K - 1], 4, ax, ay));
+  }
+}
+
+template <class Geo>
+__device__ __forceinline__ void warp_staged_tile(__half* s, const FusedGlueParams& g, int x0, int y0) {
+  for (int q = static_cast<int>(threadIdx.x); q < Geo::kIR * Geo::kIC; q += kThreads) {
+    const int r = q / Geo::kIC, c = q % Geo::kIC;
+    const int x = x0 + c, y = y0 + r;
+    auto* slot = s + (r * Geo::kIC + smem_col<2, Geo::kIC>(c)) * kLds;
+    float v[28]{};
+    if (x >= 0 && x < g.width && y >= 0 && y < g.height) {
+      const auto pack = *reinterpret_cast<const uint2*>(slot + 16);
+      const float2 a = half_pair(pack.x), b = half_pair(pack.y);
+      const float flow[4]{a.x, a.y, b.x, b.y};
+      glue::warped(g, x, y, flow, v);
+      v[14] = glue::instant(g);
+      v[15] = __half2float(slot[20]);
+    }
+    auto* to = reinterpret_cast<uint4*>(slot);
+    to[0] = make_uint4(half_bits(v[0], v[1]), half_bits(v[2], v[3]), half_bits(v[4], v[5]),
+                       half_bits(v[6], v[7]));
+    to[1] = make_uint4(half_bits(v[8], v[9]), half_bits(v[10], v[11]), half_bits(v[12], v[13]),
+                       half_bits(v[14], v[15]));
+  }
+}
+
+struct Narrow {
+  static constexpr int kTH = kWarps, kWidth = kStagedGlueWidth, kIR = (kTH - 1) * 2 + 3,
+                       kIC = (kWidth - 1) * 2 + 3;
+  static constexpr int kEven = (kIC + 1) / 2;
+};
+
+// La tuile 16 × 4 conserve un seul fragment M16 par warp. Avec les calculs du warp et du flot dans
+// deux étapes, leur consommation de registres n'est plus simultanée.
+template <int K>
+__global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGlueParams g) {
+  using N = Narrow;
+  constexpr int CT = 16, Rows = 1;
+  constexpr int kNP = CT / 16, kO = CT + 8;
+  extern __shared__ __align__(16) unsigned char raw[];
+  auto* s = reinterpret_cast<__half*>(raw);
+  auto* relay = s + N::kIR * N::kIC * kLds;
+  const int warp = static_cast<int>(threadIdx.x) / 32, lane = static_cast<int>(threadIdx.x) % 32;
+  const int yo = static_cast<int>(blockIdx.y) * N::kTH, xo = static_cast<int>(blockIdx.x) * N::kWidth;
+  const int y0 = 2 * yo - 1, x0 = 2 * xo - 1;
+  const int xh = g.height, xw = g.width;
+  const warp::Span px{max(x0, 0), min(x0 + N::kIC - 1, xw - 1)};
+  const warp::Span py{max(y0, 0), min(y0 + N::kIR - 1, xh - 1)};
+  warp::Staged src[K];
+#pragma unroll
+  for (int i = 0; i < K; ++i) {
+    const auto& f = g.source[i];
+    src[i] = glue::stage_source(f, i == K - 1, px, py, relay);
+    relay += (i == K - 1 ? glue::kLastStride : glue::kFlowStride) * glue_span(N::kIC - 1, f.scale) *
+             glue_span(N::kIR - 1, f.scale);
+  }
+  __syncthreads();
+  Frag<Acc::kF16> a[Rows][CT / 8];
+#pragma unroll
+  for (int row = 0; row < Rows; ++row)
+#pragma unroll
+    for (int c = 0; c < CT / 8; ++c) a[row][c].clear();
+  const auto conv = [&](int sub) {
+    const auto base = smem_u32(s) + static_cast<std::uint32_t>(((lane & 15) * kLds + (lane / 16) * 8) * 2);
+#pragma unroll 1
+    for (int tap = 0; tap < 9; ++tap) {
+      const int dy = tap / 3, dx = tap % 3;
+      const int col = ((dx & 1) == 0 ? 0 : N::kEven) + (dx / 2);
+      uint4 weights[kNP];
+#pragma unroll
+      for (int n = 0; n < kNP; ++n) weights[n] = __ldg(p.w + ((tap * 2 + sub) * kNP + n) * 32 + lane);
+#pragma unroll
+      for (int row = 0; row < Rows; ++row) {
+        const int y = (warp * Rows + row) * 2 + dy;
+        std::uint32_t v[4];
+        ldmatrix4(v, base + static_cast<std::uint32_t>((y * N::kIC + col) * kLds * 2));
+#pragma unroll
+        for (int n = 0; n < kNP; ++n) {
+          a[row][2 * n].mma(v, weights[n].x, weights[n].y);
+          a[row][2 * n + 1].mma(v, weights[n].z, weights[n].w);
+        }
+      }
+    }
+  };
+  stage_motion<K, N>(s, g, src, x0, y0);
+  __syncthreads();
+  warp_staged_tile<N>(s, g, x0, y0);
+  __syncthreads();
+  conv(0);
+  __syncthreads();
+  glue_half<K, 1, 1, true, N>(s, g, src, y0, x0);
+  __syncthreads();
+  conv(1);
+  __syncthreads();
+  const int t = lane & 3, g8 = lane / 4;
+#pragma unroll
+  for (int row = 0; row < Rows; ++row)
+#pragma unroll
+    for (int n = 0; n < CT / 8; ++n) {
+      const int ch = n * 8 + 2 * t;
+      const auto b = __ldg(reinterpret_cast<const float2*>(p.bias + ch));
+#pragma unroll
+      for (int i = 0; i < 2; ++i) {
+        const auto v = a[row][n].pair(i);
+        const int pixel = (warp * Rows + row) * N::kWidth + g8 + 8 * i;
+        *reinterpret_cast<__half2*>(s + pixel * kO + ch) = to_half2(v.x + b.x, v.y + b.y);
+      }
+    }
+  __syncthreads();
+  for (int i = static_cast<int>(threadIdx.x); i < N::kTH * N::kWidth * (CT / 8); i += kThreads) {
+    const int q = i / (CT / 8), ch = i % (CT / 8) * 8;
+    const int y = yo + q / N::kWidth, x = xo + q % N::kWidth;
+    if (y >= p.oh || x >= p.ow) continue;
+    const auto from = *reinterpret_cast<const uint4*>(s + q * kO + ch);
+    const long dst = static_cast<long>(y) * p.ow + x;
+    *reinterpret_cast<uint4*>(p.out + dst * p.out_ld + ch) = finish8(from, p, dst, ch);
+  }
+}
+
+template <int K>
+void staged_one(dim3 grid, int smem, cudaStream_t stream, const Params& p, const FusedGlueParams& g) {
+  glue_staged<K><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+}
+
 template <int K, int D, int CT, Acc A>
 void glue_one(dim3 grid, int smem, cudaStream_t stream, const Params& p, const FusedGlueParams& g) {
   glue_conv_kernel<K, D, CT, A, true><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
@@ -215,6 +361,20 @@ GlueLaunch pick_glue(RifeNativeSums sums, int flows, int reduce, int ct) {
       return by_flows<Acc::kF32>(flows, reduce, ct);
   }
   return nullptr;
+}
+
+GlueLaunch pick_staged_glue(int flows) {
+  if (flows == 3) return staged_one<3>;
+  if (flows == 4) return staged_one<4>;
+  return nullptr;
+}
+
+int staged_glue_smem(std::span<const int> scales) {
+  int halves = Narrow::kIR * Narrow::kIC * kLds;
+  for (std::size_t j = 0; j < scales.size(); ++j)
+    halves += (j + 1 == scales.size() ? glue::kLastStride : glue::kFlowStride) *
+              glue_span(Narrow::kIC - 1, scales[j]) * glue_span(Narrow::kIR - 1, scales[j]);
+  return halves * 2;
 }
 
 int glue_smem(std::span<const int> scales, int reduce) {

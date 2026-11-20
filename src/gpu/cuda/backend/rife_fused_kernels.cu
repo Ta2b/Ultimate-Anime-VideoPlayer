@@ -285,8 +285,9 @@ cudaError_t launch_fused_glue(const FusedGlueParams& params, cudaStream_t stream
 }
 
 cudaError_t launch_fused_finish(const FusedFinishParams& params, cudaStream_t stream) {
-  // Les lectures groupées (8 octets) demandent les pas de HWC8 : 32 pour x_last, 56 pour y_last.
-  if ((params.x_pitch != 0 && params.x_pitch != 32) || (params.y_pitch != 0 && params.y_pitch != 56))
+  // Pour X, la lecture groupée accepte aussi les quatre canaux contigus de la colle native.
+  if ((params.x_pitch != 0 && params.x_pitch != 32 && params.x_pitch != kRifeCompactFlowPitch) ||
+      (params.y_pitch != 0 && params.y_pitch != 56))
     return cudaErrorInvalidValue;
   const dim3 block(32, 8);
   const FusedFinishParams p = with_window(params);

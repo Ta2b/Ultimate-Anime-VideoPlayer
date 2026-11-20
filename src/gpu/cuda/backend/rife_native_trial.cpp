@@ -2,6 +2,7 @@
 #include "gpu/cuda/backend/rife_native_trial.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cuda_fp16.h>
@@ -190,9 +191,50 @@ std::expected<double, Refusal> RifeNativeTrial::time(int piece, const RifeNative
   return static_cast<double>(ms) / (2 * kReps);
 }
 
+std::expected<void, Refusal> RifeNativeTrial::tune_staged_glue(RifeNativeNet& net) {
+  const int piece = pieces() - 1;
+  const int block = piece - 1;
+  if (!net.glues(block) || !net.use_staged_glue(block, true)) return {};
+  const auto attempt = [&]() -> std::expected<void, Refusal> {
+    std::array<Exec, 2> graphs;
+    for (std::size_t v = 0; v < graphs.size(); ++v) {
+      net.use_staged_glue(block, v != 0);
+      auto graph = capture(piece, &net, v == 0 ? "colle 32 × 4" : "colle 16 × 4");
+      if (!graph) return std::unexpected(std::move(graph.error()));
+      graphs[v] = std::move(*graph);
+    }
+    std::array<std::vector<double>, 2> samples;
+    for (int round = 0; round < 3; ++round) {
+      for (const std::size_t v : {std::size_t{0}, std::size_t{1}}) {
+        const std::size_t mode = round % 2 == 0 ? v : 1 - v;
+        net.use_staged_glue(block, mode != 0);
+        auto ms = time(piece, &net, graphs[mode].get());
+        if (!ms) return std::unexpected(std::move(ms.error()));
+        samples[mode].push_back(*ms);
+      }
+    }
+    const double wide = median(std::move(samples[0])), staged = median(std::move(samples[1]));
+    const bool keep = staged < wide * 0.98;
+    net.use_staged_glue(block, keep);
+    notes_.push_back(
+        std::format("RIFE natif, {} : colle 32 × 4 {:.3f} ms, colle 16 × 4 {:.3f} ms ({} gardée)",
+                    piece_name(piece), wide, staged, keep ? "16 × 4" : "32 × 4"));
+    return {};
+  };
+  auto measured = attempt();
+  if (measured) return {};
+  net.use_staged_glue(block, false);
+  if (measured.error().code == RefusalCode::DeviceLost) return measured;
+  notes_.push_back(
+      std::format("RIFE natif, {} : colle 32 × 4 gardée ({})", piece_name(piece), measured.error().detail));
+  return {};
+}
+
 std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
     std::span<RifeNativeNet* const> nets, std::span<const char* const> names) {
   if (names.size() < nets.size()) return refuse(RefusalCode::ShapeInvalid, "RIFE natif : un réseau sans nom");
+  for (RifeNativeNet* net : nets)
+    if (auto ok = tune_staged_glue(*net); !ok) return std::unexpected(std::move(ok.error()));
   std::vector<const RifeNativeNet*> options{nullptr};
   options.insert(options.end(), nets.begin(), nets.end());
   const auto count = static_cast<std::size_t>(pieces());
@@ -287,7 +329,7 @@ std::expected<std::vector<std::string>, Refusal> RifeNativeTrial::profile_piece(
     const auto [encode_a, encode_b] = engine_.trial_encodes();
     glue = engine_.glue_params(fused_address(input_), p - 1,
                                static_cast<std::byte*>(shared_->data()) + engine_.scratch_offset_, encode_a,
-                               encode_b);
+                               encode_b, true);
   }
   cudaGraph_t graph = nullptr;
   cudaError_t e = cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal);

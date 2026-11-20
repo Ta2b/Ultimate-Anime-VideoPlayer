@@ -2,6 +2,7 @@
 // au chargement (rife_native_bench.cu). Lu par nvcc seulement (C++20).
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -94,6 +95,10 @@ struct Layer {
   int glue_smem = 0;
   std::vector<int> glue_scales;
   int glue_reduce = 1;
+  GlueLaunch staged_glue = nullptr;
+  dim3 staged_glue_grid;
+  int staged_glue_smem = 0;
+  bool stage_motion = false;
   // La dernière couche du dernier bloc, fin comprise (pick_finish) : son noyau (nul sinon), ses poids rangés
   // pour une tuile de 32, ses tuiles de 32 par phase, sa grille et sa mémoire partagée.
   FinishLaunch finish = nullptr;
@@ -123,8 +128,9 @@ inline bool can_stream(const Layer& layer) {
 inline bool shape(Layer& layer, const Config& cfg) {
   const bool stream = cfg.bands > 0;
   if (stream && !can_stream(layer)) return false;
-  const Launch launch = stream ? pick_stream(layer.sums, layer.kind, cfg)
-                               : pick_for(layer.sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
+  const Launch launch = cfg.compact_encoder ? pick_compact_encoder(layer.sums, layer.kind, cfg)
+                        : stream            ? pick_stream(layer.sums, layer.kind, cfg)
+                                 : pick_for(layer.sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
   if (launch == nullptr || layer.cin % cfg.kc != 0 || layer.cout % cfg.ct != 0) return false;
   layer.cfg = cfg;
   layer.launch = launch;
@@ -134,8 +140,15 @@ inline bool shape(Layer& layer, const Config& cfg) {
   const int grid_y = stream ? conv_stream::strips_for(tiles_y, cfg.bands) : tiles_y;
   layer.grid = dim3(static_cast<unsigned>((layer.ow + kTW - 1) / kTW), static_cast<unsigned>(grid_y),
                     static_cast<unsigned>(layer.phases * layer.tiles * cfg.ksplit));
-  layer.smem = stream ? conv_stream::smem_bytes(cfg.kc, cfg.rows)
-                      : smem_bytes(cfg.kc, cfg.ct, kernel_size(layer.kind), stride_of(layer.kind), cfg.rows);
+  if (cfg.compact_encoder && layer.kind == Kind::kImage) {
+    using Input = Geometry<3, 2, 1>;
+    layer.smem = std::max(Input::kIR * Input::kIC * static_cast<int>(sizeof(uint2)),
+                          th * kTW * (cfg.ct + 8) * static_cast<int>(sizeof(__half)));
+  } else {
+    layer.smem = stream
+                     ? conv_stream::smem_bytes(cfg.kc, cfg.rows)
+                     : smem_bytes(cfg.kc, cfg.ct, kernel_size(layer.kind), stride_of(layer.kind), cfg.rows);
+  }
   return true;
 }
 
@@ -171,11 +184,12 @@ inline void enqueue(const Layer& layer, cudaStream_t stream, const Params& p) {
 }
 
 // La colle g convient-elle au noyau à entrée calculée de layer : même réduction, X à la taille de l'entrée
-// de la couche et l'image d fois plus grande, X au pas 32 (le flot y est écrit en pleine résolution),
+// de la couche et l'image d fois plus grande, X au pas 32 ou flot compact en pleine résolution,
 // sources aux échelles prévues, rangées au pas 56 ?
 inline bool glue_fits(const Layer& layer, const FusedGlueParams& g) {
   const int d = layer.glue_reduce;
-  if (layer.glue == nullptr || g.reduce != d || g.x_pitch != 32 || g.out_height != layer.ih ||
+  const bool valid_pitch = g.x_pitch == 32 || (d == 1 && g.x_pitch == kRifeCompactFlowPitch);
+  if (layer.glue == nullptr || g.reduce != d || !valid_pitch || g.out_height != layer.ih ||
       g.out_width != layer.iw || g.height != d * layer.ih || g.width != d * layer.iw ||
       g.flows != static_cast<int>(layer.glue_scales.size()))
     return false;
@@ -189,7 +203,7 @@ inline bool glue_fits(const Layer& layer, const FusedGlueParams& g) {
 // le double de la grille de chaque phase) ?
 inline bool finish_fits(const Layer& layer, const FusedFinishParams& f) {
   return layer.finish != nullptr && f.height == 4 * layer.oh && f.width == 4 * layer.ow &&
-         (f.x_pitch == 0 || f.x_pitch == 32);
+         (f.x_pitch == 0 || f.x_pitch == 32 || f.x_pitch == kRifeCompactFlowPitch);
 }
 
 // Le banc du réglage, sur la voie stream : une entrée de valeurs variées entre -1 et 1 (un défaut de
@@ -235,6 +249,7 @@ class Bench {
                 .out_bytes = layer.out_bytes(),
                 .partial_bytes = layer.partial_bytes(),
                 .sums = layer.sums,
+                .bit_exact = layer.cfg.compact_encoder,
                 .enqueue = [&layer, w](cudaStream_t stream, const __half* in, __half* out, float* partial) {
                   rife_native::enqueue(layer, stream, params(layer, in, out, partial, w));
                 }};

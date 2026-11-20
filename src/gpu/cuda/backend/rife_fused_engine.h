@@ -151,9 +151,9 @@ class RifeFusedEngine final : public Engine {
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                    const Tensor& input, std::span<const Tensor> outputs, const Pass& pass);
   // La colle du bloc block (1 et après), de in (l'entrée), des encodages aux décalages encode_a et encode_b
-  // et des Y des blocs d'avant vers X_block.
+  // et des Y des blocs d'avant vers X_block. En natif, le dernier bloc n'écrit que son flot compact.
   FusedGlueParams glue_params(const void* in, int block, std::byte* base, std::size_t encode_a,
-                              std::size_t encode_b) const;
+                              std::size_t encode_b, bool native = false) const;
   std::expected<void, Refusal> launch_glue(cudaStream_t stream, const void* in, int block, std::byte* base,
                                            std::size_t encode_a, std::size_t encode_b);
   // Le bloc b, de X_b vers Y_b, par net (natif) ou par TensorRT (net nul). Un réseau qui calcule l'entrée de

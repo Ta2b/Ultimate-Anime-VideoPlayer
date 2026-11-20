@@ -46,6 +46,7 @@ struct RifeNativeTuned {
   int ksplit = 1;
   bool ahead = false;  // poids une prise à l'avance (rife_native_kernels.cuh, accumulate)
   int bands = 0;       // bandes par bloc en flux ; 0 pour les tuiles
+  bool compact_encoder = false;
 };
 
 class RifeNativeNet {
@@ -54,18 +55,17 @@ class RifeNativeNet {
 
   virtual ~RifeNativeNet() = default;
   // pieces : l'encodeur puis les blocs ; reduce : d_k de chaque bloc ; height × width : la taille remplie.
-  // Chaque couche prend la forme (tranche, tuile, lignes par warp, parts de K, poids à l'avance ou flux) la plus
-  // rapide sur cette carte, chronométrée ici sur la voie stream (comme AnimeJaNai), ou celle que tuned garde
-  // déjà ; tuned reçoit les nouvelles. Rien et error rempli si une couche sort de ce que les noyaux font, si
-  // les poids ne s'envoient pas, ou sur une erreur CUDA du réglage.
+  // Chaque couche prend la forme (tranche, tuile, lignes par warp, parts de K, poids à l'avance ou flux) la
+  // plus rapide sur cette carte, chronométrée ici sur la voie stream (comme AnimeJaNai), ou celle que tuned
+  // garde déjà ; tuned reçoit les nouvelles. Rien et error rempli si une couche sort de ce que les noyaux
+  // font, si les poids ne s'envoient pas, ou sur une erreur CUDA du réglage.
   static std::unique_ptr<RifeNativeNet> create(const std::vector<RifeNativePiece>& pieces,
                                                const std::vector<int>& reduce, int height, int width,
                                                RifeNativePrecision precision, cudaStream_t stream,
                                                std::vector<RifeNativeTuned>& tuned, std::string& error);
   // L'IFNet de GMFSS utilise les mêmes convolutions, sans encodeur ni colle RIFE.
-  static std::unique_ptr<RifeNativeNet> create_ifnet(
-      const std::array<RifeNativePiece, 4>& pieces, int height, int width, cudaStream_t stream,
-      std::string& error);
+  static std::unique_ptr<RifeNativeNet> create_ifnet(const std::array<RifeNativePiece, 4>& pieces, int height,
+                                                     int width, cudaStream_t stream, std::string& error);
   // La zone de travail (activations entre les couches) : octets, et son adresse pour les appels suivants.
   virtual std::int64_t workspace_bytes() const = 0;
   // L'encodeur sur une image (3 plans height × width) vers encoded (4 plans).
@@ -86,6 +86,8 @@ class RifeNativeNet {
   virtual bool can_glue(int k) const = 0;
   virtual bool glues(int k) const = 0;
   virtual void use_glue(int k, bool on) = 0;
+  // Choisit la forme étroite de la colle D1, si le réseau la propose.
+  virtual bool use_staged_glue(int k, bool on) = 0;
   // Le profil d'un morceau (0 : l'encodeur, 1 + k : le bloc k) : ses couches comme encode ou block (glue
   // comme pour block), marks[0] enregistré avant la première et marks[i + 1] après la couche i
   // (cudaEventRecordExternal : la capture d'un graphe les garde). marks.size() doit valoir layers(piece) + 1.
