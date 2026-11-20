@@ -244,7 +244,7 @@ class Net final : public RifeNativeNet {
     // À demi-résolution, deux sorties voisines utilisent les mêmes quatre texels de chaque flot.
     if (ada_ && reduce == 2 && layer.sums == RifeNativeSums::kF16 && layer.cout == 32 &&
         std::ranges::all_of(scales, [](int scale) { return scale % 4 == 0; })) {
-      if (const auto reuse = rn::pick_d2_taps(flows)) layer.glue = reuse;
+      if (const auto reuse = rn::pick_d2_taps(scales)) layer.glue = reuse;
     }
     layer.glue_scales = scales;
     layer.glue_reduce = reduce;

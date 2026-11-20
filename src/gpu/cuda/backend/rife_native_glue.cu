@@ -150,12 +150,29 @@ struct QuadAxes {
   warp::Axis left, right, above, below;
 };
 
-__device__ __forceinline__ QuadAxes d2_axes(const FusedFlowSource& source, int x, int y) {
-  const float inv = 1.F / static_cast<float>(source.scale);
-  return {.left = warp::coarse_axis(2 * x, inv, 2 * source.width),
-          .right = warp::coarse_axis(2 * x + 1, inv, 2 * source.width),
-          .above = warp::coarse_axis(2 * y, inv, 2 * source.height),
-          .below = warp::coarse_axis(2 * y + 1, inv, 2 * source.height)};
+template <bool Fixed>
+__device__ __forceinline__ QuadAxes d2_axes(const FusedFlowSource& source, int x, int y, int scale) {
+  const float inv = 1.F / static_cast<float>(scale);
+  if constexpr (!Fixed) {
+    return {.left = warp::coarse_axis(2 * x, inv, 2 * source.width),
+            .right = warp::coarse_axis(2 * x + 1, inv, 2 * source.width),
+            .above = warp::coarse_axis(2 * y, inv, 2 * source.height),
+            .below = warp::coarse_axis(2 * y + 1, inv, 2 * source.height)};
+  } else {
+    // Pour ces échelles dyadiques, le changement de texel tombe entre deux couples (2x, 2x + 1).
+    const auto pair = [&](int at, int n, warp::Axis& a, warp::Axis& b) {
+      const float raw = (static_cast<float>(2 * at) + 0.5F) * inv - 0.5F;
+      const float limit = static_cast<float>(n - 1);
+      const float lo = fminf(fmaxf(raw, 0.F), limit), hi = fminf(fmaxf(raw + inv, 0.F), limit);
+      const int i0 = static_cast<int>(lo), i1 = min(i0 + 1, n - 1);
+      a = {i0, i1, lo - static_cast<float>(i0)};
+      b = {i0, i1, hi - static_cast<float>(i0)};
+    };
+    QuadAxes axes{};
+    pair(x, 2 * source.width, axes.left, axes.right);
+    pair(y, 2 * source.height, axes.above, axes.below);
+    return axes;
+  }
 }
 
 __device__ __forceinline__ float4 d2_sample(const warp::Staged& source, int c, const QuadAxes& q) {
@@ -175,7 +192,7 @@ __device__ __forceinline__ float d2_average(float4 v) {
   return ((v.x + v.y) + (v.z + v.w)) * 0.25F;
 }
 
-template <int K, int Half, bool Packed>
+template <int K, int Half, bool Packed, bool Fixed>
 __device__ __forceinline__ void glue_shared_taps(__half* s, const FusedGlueParams& g,
                                                  const warp::Staged (&src)[K], int y0, int x0) {
   static_assert(K > 1);
@@ -184,13 +201,15 @@ __device__ __forceinline__ void glue_shared_taps(__half* s, const FusedGlueParam
     auto* slot = s + (r * G::kIC + smem_col<2, G::kIC>(c)) * kLds;
     float v[16]{};
     if (x >= 0 && y >= 0 && x < g.out_width && y < g.out_height) {
-      const auto last = d2_axes(g.source[K - 1], x, y);
+      const auto last = d2_axes<Fixed>(g.source[K - 1], x, y, Fixed ? 4 : g.source[K - 1].scale);
       if constexpr (Half == 0) {
         float4 f[4];
 #pragma unroll
         for (int i = 0; i < K; ++i) {
-          const auto axes = i == K - 1 ? last : d2_axes(g.source[i], x, y);
-          const auto scale = static_cast<float>(g.source[i].scale);
+          int source_scale = g.source[i].scale;
+          if constexpr (Fixed) source_scale = glue::last_scales<K + 1>(i);
+          const auto axes = i == K - 1 ? last : d2_axes<Fixed>(g.source[i], x, y, source_scale);
+          const auto scale = static_cast<float>(source_scale);
 #pragma unroll
           for (int ch = 0; ch < 4; ++ch) {
             const float4 a = d2_sample(src[i], ch, axes);
@@ -261,8 +280,10 @@ __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedG
   const warp::Span py{D * max(y0, 0), D * min(y0 + G::kIR - 1, xh - 1) + D - 1};
 #pragma unroll
   for (int j = 0; j < K; ++j) {
-    src[j] = glue::stage_source(g.source[j], j == K - 1, px, py, relay);
-    relay += (j == K - 1 ? glue::kLastStride : glue::kFlowStride) * glue_capacity(g.source[j].scale, D);
+    int scale = g.source[j].scale;
+    if constexpr (kTaps == 3) scale = glue::last_scales<K + 1>(j);
+    src[j] = glue::stage_source(g.source[j], j == K - 1, px, py, relay, kTaps == 3 ? scale : 0);
+    relay += (j == K - 1 ? glue::kLastStride : glue::kFlowStride) * glue_capacity(scale, D);
   }
   __syncthreads();
 
@@ -273,14 +294,14 @@ __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedG
     for (int nt = 0; nt < CT / 8; ++nt) acc[f][nt].clear();
   // Les deux tranches, comme les deux tours de conv_kernel<16, …> : prises 0 à 8 de chacune.
   if constexpr (kTaps > 1)
-    glue_shared_taps<K, 0, Packed>(s, g, src, y0, x0);
+    glue_shared_taps<K, 0, Packed, kTaps == 3>(s, g, src, y0, x0);
   else
     glue_half<K, D, 0, Reuse, Packed>(s, g, src, y0, x0);
   __syncthreads();
   accumulate<16, CT, 3, 2, 1, A>(acc, s, p.w, 0, 2, 0, 9, warp, lane);
   __syncthreads();
   if constexpr (kTaps > 0)
-    glue_shared_taps<K, 1, Packed>(s, g, src, y0, x0);
+    glue_shared_taps<K, 1, Packed, kTaps == 3>(s, g, src, y0, x0);
   else
     glue_half<K, D, 1, Reuse, Packed>(s, g, src, y0, x0);
   __syncthreads();
@@ -456,15 +477,22 @@ GlueLaunch by_tile(int ct) {
 
 // Les découpages de RIFE : 4.25 (8, 8, 4, 2, 1) et 4.22 lite (8, 4, 2, 1). Le dernier bloc après trois ou
 // quatre flots, l'avant-dernier à moitié après deux ou trois.
-template <int K>
+template <int K, bool Fixed>
 void d2_taps_one(dim3 grid, int smem, cudaStream_t stream, const Params& p, const FusedGlueParams& g) {
   if (g.encode_hwc4)
-    glue_conv_kernel<K, 2, 32, Acc::kF16, true, true, 2>
+    glue_conv_kernel<K, 2, 32, Acc::kF16, true, true, Fixed ? 3 : 2>
         <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
   else
     // En plans, garder l'ancienne évaluation du flot évite les débordements de registres.
     glue_conv_kernel<K, 2, 32, Acc::kF16, true, false, 1>
         <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+}
+
+template <int K>
+bool match_scales(std::span<const int> scales) {
+  for (std::size_t i = 0; i < scales.size(); ++i)
+    if (scales[i] != glue::last_scales<K>(static_cast<int>(i))) return false;
+  return true;
 }
 
 template <Acc A>
@@ -490,17 +518,15 @@ GlueLaunch pick_glue(RifeNativeSums sums, int flows, int reduce, int ct) {
   return nullptr;
 }
 
-GlueLaunch pick_d2_taps(int flows) {
-  if (flows == 2) return d2_taps_one<2>;
-  if (flows == 3) return d2_taps_one<3>;
+GlueLaunch pick_d2_taps(std::span<const int> scales) {
+  if (scales.size() == 2) return match_scales<3>(scales) ? d2_taps_one<2, true> : d2_taps_one<2, false>;
+  if (scales.size() == 3) return match_scales<4>(scales) ? d2_taps_one<3, true> : d2_taps_one<3, false>;
   return nullptr;
 }
 
 template <int K>
 GlueLaunch staged_scales(std::span<const int> scales) {
-  for (std::size_t i = 0; i < scales.size(); ++i)
-    if (scales[i] != glue::last_scales<K>(static_cast<int>(i))) return staged_one<K>;
-  return staged_one<K, true>;
+  return match_scales<K>(scales) ? staged_one<K, true> : staged_one<K>;
 }
 
 GlueLaunch pick_staged_glue(std::span<const int> scales) {
