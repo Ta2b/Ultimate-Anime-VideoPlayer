@@ -155,7 +155,7 @@ class Net final : public GmflowMlpNet {
         !sent(cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, device), error))
       return false;
     // Seule la forme mesurée sur Ada et dont chaque split peut grouper les tranches par deux.
-    const char* ab = std::getenv("KIRARI_AB_GMFLOW_MLP_PAIRS");
+    const char* ab = std::getenv("KIRARI_AB_GMFLOW_MLP_PAIRS");  // env: banc
     paired_ = major == 8 && minor == 9 && warps_ == 4 && hidden_ % (2 * kMaxSplits * gm::kHiddenTile) == 0 &&
               (ab == nullptr || std::strcmp(ab, "0") != 0);
     const int smem = paired_ ? gm::Block<4>::kWideSmemBytes

@@ -225,14 +225,15 @@ int relaunch_failed(const std::filesystem::path& log_file, const std::string& ca
 // Smooth Motion modifie l'environnement du processus pour le pilote. Garder la valeur reçue au
 // lancement, pour que le lecteur relancé puisse aussi bien décocher la case que la cocher.
 char** relaunch_environment(std::vector<char*>& env, std::string& original) {
-  SDL_Environment* inherited = SDL_GetEnvironment();
-  if (inherited == nullptr) return environ;
+  SDL_Environment* inherited = SDL_GetEnvironment();  // env: pilote NVIDIA
+  if (inherited == nullptr) return environ;           // env: hérité
   constexpr char name[] = "NVPRESENT_ENABLE_SMOOTH_MOTION";
   constexpr std::string_view prefix = "NVPRESENT_ENABLE_SMOOTH_MOTION=";
-  for (char** entry = environ; *entry != nullptr; ++entry) {
+  for (char** entry = environ; *entry != nullptr; ++entry) {  // env: pilote NVIDIA
     if (!std::string_view(*entry).starts_with(prefix)) env.push_back(*entry);
   }
-  if (const char* value = SDL_GetEnvironmentVariable(inherited, name); value != nullptr) {
+  const char* value = SDL_GetEnvironmentVariable(inherited, name);  // env: pilote NVIDIA
+  if (value != nullptr) {
     original = std::string(prefix) + value;
     env.push_back(original.data());
   }
@@ -278,7 +279,7 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv,
   std::string original;
   char** env = relaunch_environment(entries, original);
 #else
-  char** env = environ;
+  char** env = environ;  // env: hérité
 #endif
   if (fresh) {
     pid_t child = 0;

@@ -378,7 +378,7 @@ namespace {
 void request_smooth_motion(spdlog::logger& log) {
 #if defined(__linux__)
   // Le pilote lit l'environnement C. En garder la copie SDL telle que reçue pour la relance.
-  if (SDL_GetEnvironment() == nullptr ||
+  if (SDL_GetEnvironment() == nullptr ||                          // env: pilote NVIDIA
       ::setenv("NVPRESENT_ENABLE_SMOOTH_MOTION", "1", 1) != 0) {  // env: pilote NVIDIA
     log.warn("Smooth Motion : impossible de demander la couche du pilote NVIDIA");
     return;
