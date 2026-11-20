@@ -36,7 +36,10 @@ struct Library {
 
 inline bool has_cuda() {
   int count = 0;
-  return cudaGetDeviceCount(&count) == cudaSuccess && count > 0;
+  if (cudaGetDeviceCount(&count) != cudaSuccess || count == 0) return false;
+  // Un test de noyau direct peut initialiser le contexte avant le premier moteur.
+  REQUIRE(cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync) == cudaSuccess);
+  return true;
 }
 
 struct Loaded {
