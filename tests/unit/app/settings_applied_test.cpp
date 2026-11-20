@@ -42,9 +42,9 @@ TEST_CASE("Les essais se relisent et se rechargent sans rendre les drapeaux de b
   const auto reparsed = parse_settings(format_settings(wanted));
   REQUIRE(reparsed);
   CHECK(reparsed->experimental == wanted.experimental);
-  CHECK_FALSE(options_for(flags, *reparsed).map_highlights());
+  CHECK_FALSE(reparsed->experimental.map_highlights());
   wanted.experimental.effect_glow = true;
-  CHECK(options_for(flags, wanted).map_highlights());
+  CHECK(wanted.experimental.map_highlights());
 }
 
 // A22-01, A22-15 : chaque réglage que le menu change est appliqué en direct, ou annoncé par « Appliquer »

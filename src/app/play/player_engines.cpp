@@ -534,6 +534,7 @@ PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const st
 // Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches…).
 gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
   const ExperimentalSettings& trials = settings.experimental;
+  const bool nvof_roundtrip = p.options.nvof_roundtrip || (settings.layers && trials.nvof_layer_guard);
   return {.render = &p.screen.device(),
           .cache_dir = p.paths.engines,
           .log = backend_log(),
@@ -549,7 +550,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
                     (p.options.gmfss_feature_reuse ? gpu::kTrialGmfssFeatureReuse : 0U) |
                     (trials.gmflow_fast ? gpu::kTrialGmflowFast : 0U) |
                     (p.options.tfix_native ? gpu::kTrialTfixNative : 0U) |
-                    ((p.options.nvof_roundtrip || trials.nvof_layer_guard) ? gpu::kTrialNvofRoundtrip : 0U) |
+                    (nvof_roundtrip ? gpu::kTrialNvofRoundtrip : 0U) |
                     (trials.sharp1_winograd ? 0U : gpu::kDisableSharp1Winograd) |
                     (trials.drba_native_tail ? 0U : gpu::kDisableDrbaNativeTail) |
                     (trials.gmfss_folded_tail ? 0U : gpu::kDisableGmfssFoldedTail) |

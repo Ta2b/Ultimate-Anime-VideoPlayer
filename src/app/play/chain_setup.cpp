@@ -361,7 +361,7 @@ void note_drba_fused(ChainEngines& c, const DrbaFusedUse& fused, bool tried) {
 }
 
 // Les options d'essai que la chaîne porte telles quelles.
-void take_trials(ChainEngines& c, const PlayOptions& o, const ExperimentalSettings& trials) {
+void take_trials(ChainEngines& c, const PlayOptions& o, const PlaySettings& settings) {
   // Une seule voie par défaut : sur une 4070 Ti (SPAN ×2 vers la 4K, RIFE ×8, look en table), Vulkan fait
   // 40,6 images neuves par seconde au lieu de 37, TensorRT 142,8 i/s au lieu de 140,4 ; les trois voies se
   // disputent la carte sans rien recouvrir de plus. --lanes garde les trois voies.
@@ -371,9 +371,9 @@ void take_trials(ChainEngines& c, const PlayOptions& o, const ExperimentalSettin
   c.rife_encode_all = o.rife_encode_all;
   c.rife_at_slot = o.rife_at_slot;
   c.span_b_ahead = o.span_b_ahead;
-  c.fused_layers = trials.fused_layers;
-  c.nvof_layer_guard = trials.nvof_layer_guard;
-  c.nvof_roundtrip = o.nvof_roundtrip || trials.nvof_layer_guard;
+  c.fused_layers = settings.experimental.fused_layers;
+  c.nvof_layer_guard = settings.layers && settings.experimental.nvof_layer_guard;
+  c.nvof_roundtrip = o.nvof_roundtrip || c.nvof_layer_guard;
   c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
   c.span_reuse = o.span_reuse;
@@ -656,7 +656,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;
   ChainEngines c;
-  take_trials(c, p.options, settings.experimental);
+  take_trials(c, p.options, settings);
   c.smooth_drawings =
       settings.rife_factor >= 2 && smooth_drawings_requested(settings) && !p.options.rife_image;
   c.layers = settings.layers;  // play.toml [interpolation] layers
@@ -767,10 +767,10 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
         Refusal{RefusalCode::FieldMissing, "GMFSS seul : aucun moteur GMFSS ni RIFE de repli chargé"},
         ChainStage::Motion);
   const auto& options = p.options;
-  c.scene_map =
-      c.scene_map && (c.plate || (c.layers && c.rife_motion) ||
-                      (c.pair_triage && (c.rife_motion || c.gmfss_use != GmfssUse::Off)) ||
-                      options.map_highlights() || c.nvof_roundtrip || options.was_given("--scene-map"));
+  c.scene_map = c.scene_map && (c.plate || (c.layers && c.rife_motion) ||
+                                (c.pair_triage && (c.rife_motion || c.gmfss_use != GmfssUse::Off)) ||
+                                settings.experimental.map_highlights() || c.nvof_roundtrip ||
+                                options.was_given("--scene-map"));
   settle_shot_plan(c);
   return std::optional<ChainEngines>(std::move(c));
 }

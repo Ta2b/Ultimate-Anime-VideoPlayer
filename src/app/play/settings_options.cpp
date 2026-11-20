@@ -103,8 +103,6 @@ PlayOptions options_for(const PlayOptions& options, const PlaySettings& s) {
   out.rife_factor = s.rife_factor;
   out.rife_factor_den = s.rife_factor_den;
   out.true_hdr_peak = s.true_hdr_peak;
-  out.effect_highlights = s.experimental.effect_glow;
-  out.map_effects = s.experimental.map_effects;
   return out;
 }
 

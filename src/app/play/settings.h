@@ -218,6 +218,7 @@ struct ExperimentalSettings {
   bool effect_glow = true;
   bool map_effects = false;
 
+  bool map_highlights() const { return effect_glow && map_effects; }
   bool operator==(const ExperimentalSettings&) const = default;
 };
 

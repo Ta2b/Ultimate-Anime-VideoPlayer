@@ -50,12 +50,18 @@ std::optional<EffectNote> EffectBook::at(std::uint32_t epoch, std::int64_t pts_u
 
 std::optional<EffectNote> EffectBook::for_source(std::uint32_t epoch, std::int64_t pts_us) const {
   const std::scoped_lock lock(mutex_);
+  const EffectNote* newest = nullptr;
   for (std::size_t k = 1; k <= count_; ++k) {
     const EffectNote& note = notes_[(next_ + kKept - k) % kKept];
     if (note.epoch != epoch) continue;
-    if (pts_us != kNoPts && pts_us - note.to_us > kEffectStaleUs) return std::nullopt;
-    return note;
+    if (pts_us == kNoPts || note.to_us == pts_us) return note;
+    if (note.to_us > pts_us) continue;
+    // Après le contrôle de l'ordre, l'écart non signé couvre aussi des PTS de signes opposés.
+    const auto age_us = static_cast<std::uint64_t>(pts_us) - static_cast<std::uint64_t>(note.to_us);
+    if (age_us > static_cast<std::uint64_t>(kEffectStaleUs)) continue;
+    if (newest == nullptr || newest->to_us < note.to_us) newest = &note;
   }
+  if (newest != nullptr) return *newest;
   return std::nullopt;
 }
 

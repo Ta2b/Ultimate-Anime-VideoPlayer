@@ -159,8 +159,21 @@ TEST_CASE("Éclats des effets : la source gradée prend la note la plus récente
   CHECK(book.for_source(1, 241)->to_us == 200);
   CHECK(book.for_source(1, kNoPts)->to_us == 200);
   CHECK_FALSE(book.for_source(2, 200));  // autre époque : rien
+  // Le traitement anticipé peut déjà avoir une note du plan d'après.
+  book.add(note(200, 300, 1.0F, true));
+  REQUIRE(book.for_source(1, 200));
+  REQUIRE(book.for_source(1, 241));
+  CHECK(book.for_source(1, 200)->to_us == 200);
+  CHECK(book.for_source(1, 241)->to_us == 200);
+  CHECK_FALSE(book.for_source(1, 50));
+  // Une note reçue tard ne remplace pas une note dont le PTS est plus proche.
+  book.add(note(100, 150, 1.0F));
+  REQUIRE(book.for_source(1, 241));
+  CHECK(book.for_source(1, 241)->to_us == 200);
   // La carte s'est tue : rien, le masque revient au neutre.
-  CHECK_FALSE(book.for_source(1, 200 + kEffectStaleUs + 1));
+  REQUIRE(book.for_source(1, 300 + kEffectStaleUs));
+  CHECK(book.for_source(1, 300 + kEffectStaleUs)->to_us == 300);
+  CHECK_FALSE(book.for_source(1, 300 + kEffectStaleUs + 1));
 }
 
 TEST_CASE("Éclats des effets : le grade avant le warp suit une fois par paire, une époque à la fois",

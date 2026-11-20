@@ -231,7 +231,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("sortie SDR (réglage {}, HDR du système absent, coupé ou sous {} nits) : image SDR gradée",
               name(settings.hdr_mode), kMinHdrPeakNits);
   p.screen.set_sdr_output(!settings.hdr_native);
-  p.screen.set_effect_view(options.effect_mask_view, options.effect_highlights);
+  p.screen.set_effect_view(options.effect_mask_view, settings.experimental.effect_glow);
   // La couleur de la source telle que le flux l'étiquette : l'écran en convertit gamut, courbe, HDR10, HLG.
   const std::optional<ColorInfo> source_color = media::track_color(video);
   const ColorInfo source = source_color.value_or(ColorInfo{});
@@ -247,7 +247,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   live->set_reduction(reduction_of(settings.downscale));
   set_live_motion(*live, settings);
   live->set_pair_marks(settings.stats.pairs);
-  live->set_effect_highlights(options.map_highlights());
+  live->set_effect_highlights(settings.experimental.map_highlights());
   const PipelineConfig config = pipeline_config(p, settings, options.file, c);
   PlaceboScreen& out = p.screen;
   LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
