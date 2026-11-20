@@ -238,8 +238,14 @@ class Net final : public RifeNativeNet {
     if (std::ranges::any_of(scales, [reduce](int d) { return d < 2 * reduce; }) ||
         rn::glue_smem(scales, reduce) > 48 * 1024)
       return true;
-    layer.glue = rn::pick_glue(layer.sums, static_cast<int>(scales.size()), reduce, layer.cout);
+    const int flows = static_cast<int>(scales.size());
+    layer.glue = rn::pick_glue(layer.sums, flows, reduce, layer.cout);
     if (layer.glue == nullptr) return true;
+    // À demi-résolution, deux sorties voisines utilisent les mêmes quatre texels de chaque flot.
+    if (ada_ && reduce == 2 && layer.sums == RifeNativeSums::kF16 && layer.cout == 32 &&
+        std::ranges::all_of(scales, [](int scale) { return scale % 4 == 0; })) {
+      if (const auto reuse = rn::pick_d2_taps(flows)) layer.glue = reuse;
+    }
     layer.glue_scales = scales;
     layer.glue_reduce = reduce;
     layer.glue_grid = dim3(static_cast<unsigned>((layer.ow + rn::kTW - 1) / rn::kTW),

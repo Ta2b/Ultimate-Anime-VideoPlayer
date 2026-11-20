@@ -144,9 +144,109 @@ __device__ __forceinline__ void glue_half(__half* s, const FusedGlueParams& g, c
   }
 }
 
+// À l'échelle 4, 8, etc. le changement de texel grossier tombe entre deux paires de
+// points 2x et 2x+1. On charge les quatre mêmes texels une seule fois.
+struct QuadAxes {
+  warp::Axis left, right, above, below;
+};
+
+__device__ __forceinline__ QuadAxes d2_axes(const FusedFlowSource& source, int x, int y) {
+  const float inv = 1.F / static_cast<float>(source.scale);
+  return {.left = warp::coarse_axis(2 * x, inv, 2 * source.width),
+          .right = warp::coarse_axis(2 * x + 1, inv, 2 * source.width),
+          .above = warp::coarse_axis(2 * y, inv, 2 * source.height),
+          .below = warp::coarse_axis(2 * y + 1, inv, 2 * source.height)};
+}
+
+__device__ __forceinline__ float4 d2_sample(const warp::Staged& source, int c, const QuadAxes& q) {
+  const auto& axis_x = q.left;
+  const auto& axis_y = q.above;
+  const float a = glue::z_at(source, c, axis_y.i0, axis_x.i0),
+              b = glue::z_at(source, c, axis_y.i0, axis_x.i1);
+  const float d = glue::z_at(source, c, axis_y.i1, axis_x.i0),
+              e = glue::z_at(source, c, axis_y.i1, axis_x.i1);
+  return {warp::rounded(warp::lerp2(a, b, d, e, q.left, q.above)),
+          warp::rounded(warp::lerp2(a, b, d, e, q.right, q.above)),
+          warp::rounded(warp::lerp2(a, b, d, e, q.left, q.below)),
+          warp::rounded(warp::lerp2(a, b, d, e, q.right, q.below))};
+}
+
+__device__ __forceinline__ float d2_average(float4 v) {
+  return ((v.x + v.y) + (v.z + v.w)) * 0.25F;
+}
+
+template <int K, int Half, bool Packed>
+__device__ __forceinline__ void glue_shared_taps(__half* s, const FusedGlueParams& g,
+                                                 const warp::Staged (&src)[K], int y0, int x0) {
+  static_assert(K > 1);
+  for (int q = static_cast<int>(threadIdx.x); q < G::kIR * G::kIC; q += kThreads) {
+    const int r = q / G::kIC, c = q % G::kIC, x = x0 + c, y = y0 + r;
+    auto* slot = s + (r * G::kIC + smem_col<2, G::kIC>(c)) * kLds;
+    float v[16]{};
+    if (x >= 0 && y >= 0 && x < g.out_width && y < g.out_height) {
+      const auto last = d2_axes(g.source[K - 1], x, y);
+      if constexpr (Half == 0) {
+        float4 f[4];
+#pragma unroll
+        for (int i = 0; i < K; ++i) {
+          const auto axes = i == K - 1 ? last : d2_axes(g.source[i], x, y);
+          const auto scale = static_cast<float>(g.source[i].scale);
+#pragma unroll
+          for (int ch = 0; ch < 4; ++ch) {
+            const float4 a = d2_sample(src[i], ch, axes);
+            if (i == 0)
+              f[ch] = {a.x * scale, a.y * scale, a.z * scale, a.w * scale};
+            else
+              f[ch] = {warp::rounded(f[ch].x + a.x * scale), warp::rounded(f[ch].y + a.y * scale),
+                       warp::rounded(f[ch].z + a.z * scale), warp::rounded(f[ch].w + a.w * scale)};
+          }
+        }
+        const float tl[4]{f[0].x, f[1].x, f[2].x, f[3].x}, tr[4]{f[0].y, f[1].y, f[2].y, f[3].y};
+        const float bl[4]{f[0].z, f[1].z, f[2].z, f[3].z}, br[4]{f[0].w, f[1].w, f[2].w, f[3].w};
+        float top[28], other[28], bottom[28];
+        glue::warp_images<Packed>(g, 2 * x, 2 * y, tl, top);
+        glue::warp_images<Packed>(g, 2 * x + 1, 2 * y, tr, other);
+#pragma unroll
+        for (int ch = 0; ch < 14; ++ch) top[ch] += other[ch];
+        glue::warp_images<Packed>(g, 2 * x, 2 * y + 1, bl, bottom);
+        glue::warp_images<Packed>(g, 2 * x + 1, 2 * y + 1, br, other);
+#pragma unroll
+        for (int ch = 0; ch < 14; ++ch) v[ch] = (top[ch] + (bottom[ch] + other[ch])) * 0.25F;
+        const float t = glue::instant(g);
+        v[14] = ((t + t) + (t + t)) * 0.25F;
+        v[15] = d2_average(d2_sample(src[K - 1], 4, last));
+        float avg[4];
+#pragma unroll
+        for (int ch = 0; ch < 4; ++ch) {
+          const float4 z = f[ch];
+          avg[ch] = d2_average({warp::rounded(z.x * .5F), warp::rounded(z.y * .5F), warp::rounded(z.z * .5F),
+                                warp::rounded(z.w * .5F)});
+        }
+        *reinterpret_cast<uint2*>(slot + 16) =
+            make_uint2(half_bits(avg[0], avg[1]), half_bits(avg[2], avg[3]));
+      } else {
+#pragma unroll
+        for (int ch = 0; ch < 8; ++ch) v[ch] = d2_average(d2_sample(src[K - 1], 5 + ch, last));
+#pragma unroll
+        for (int ch = 0; ch < 4; ++ch) v[8 + ch] = __half2float(slot[16 + ch]);
+      }
+    }
+    auto* to = reinterpret_cast<uint4*>(slot);
+    to[0] = make_uint4(half_bits(v[0], v[1]), half_bits(v[2], v[3]), half_bits(v[4], v[5]),
+                       half_bits(v[6], v[7]));
+    to[1] = make_uint4(half_bits(v[8], v[9]), half_bits(v[10], v[11]), half_bits(v[12], v[13]),
+                       half_bits(v[14], v[15]));
+  }
+}
+
 // La couche : 32 canaux d'entrée (28 de X et 4 nuls) vers CT sorties, en une tuile (blockIdx.z = 0).
-template <int K, int D, int CT, Acc A, bool Reuse, bool Packed>
+template <int K, int D, int CT, Acc A, bool Reuse, bool Packed, int D2Taps = 0>
 __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedGlueParams g) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 890
+  constexpr int kTaps = D2Taps;
+#else
+  constexpr int kTaps = 0;
+#endif
   extern __shared__ __align__(16) unsigned char smem_raw[];
   auto* s = reinterpret_cast<__half*>(smem_raw);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
@@ -172,11 +272,17 @@ __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedG
 #pragma unroll
     for (int nt = 0; nt < CT / 8; ++nt) acc[f][nt].clear();
   // Les deux tranches, comme les deux tours de conv_kernel<16, …> : prises 0 à 8 de chacune.
-  glue_half<K, D, 0, Reuse, Packed>(s, g, src, y0, x0);
+  if constexpr (kTaps > 1)
+    glue_shared_taps<K, 0, Packed>(s, g, src, y0, x0);
+  else
+    glue_half<K, D, 0, Reuse, Packed>(s, g, src, y0, x0);
   __syncthreads();
   accumulate<16, CT, 3, 2, 1, A>(acc, s, p.w, 0, 2, 0, 9, warp, lane);
   __syncthreads();
-  glue_half<K, D, 1, Reuse, Packed>(s, g, src, y0, x0);
+  if constexpr (kTaps > 0)
+    glue_shared_taps<K, 1, Packed>(s, g, src, y0, x0);
+  else
+    glue_half<K, D, 1, Reuse, Packed>(s, g, src, y0, x0);
   __syncthreads();
   accumulate<16, CT, 3, 2, 1, A>(acc, s, p.w, 1, 2, 0, 9, warp, lane);
   __syncthreads();  // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
@@ -348,6 +454,17 @@ GlueLaunch by_tile(int ct) {
 
 // Les découpages de RIFE : 4.25 (16, 8, 4, 2, 1) et 4.22 lite (8, 4, 2, 1). Le dernier bloc après trois ou
 // quatre flots, l'avant-dernier à moitié après deux ou trois.
+template <int K>
+void d2_taps_one(dim3 grid, int smem, cudaStream_t stream, const Params& p, const FusedGlueParams& g) {
+  if (g.encode_hwc4)
+    glue_conv_kernel<K, 2, 32, Acc::kF16, true, true, 2>
+        <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+  else
+    // En plans, garder l'ancienne évaluation du flot évite les débordements de registres.
+    glue_conv_kernel<K, 2, 32, Acc::kF16, true, false, 1>
+        <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+}
+
 template <Acc A>
 GlueLaunch by_flows(int flows, int reduce, int ct) {
   if (reduce == 1 && flows == 3) return by_tile<3, 1, A>(ct);
@@ -368,6 +485,12 @@ GlueLaunch pick_glue(RifeNativeSums sums, int flows, int reduce, int ct) {
     case RifeNativeSums::kF32:
       return by_flows<Acc::kF32>(flows, reduce, ct);
   }
+  return nullptr;
+}
+
+GlueLaunch pick_d2_taps(int flows) {
+  if (flows == 2) return d2_taps_one<2>;
+  if (flows == 3) return d2_taps_one<3>;
   return nullptr;
 }
 

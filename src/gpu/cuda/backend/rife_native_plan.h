@@ -104,6 +104,8 @@ using GlueLaunch = void (*)(dim3 grid, int smem, cudaStream_t stream, const Para
 // lite après 4 ou 3 flots, d = 1 ; l'avant-dernier après 3 ou 2, d = 2), une tuile de ct sorties (16 ou 32,
 // la couche entière) ; nul sinon. Sa grille : (⌈ow / 32⌉, ⌈oh / 4⌉, 1).
 GlueLaunch pick_glue(RifeNativeSums sums, int flows, int reduce, int ct);
+// D2 en FP16 sur Ada : les sources multiples de 4 partagent des texels par carré 2×2.
+GlueLaunch pick_d2_taps(int flows);
 // Ses octets de mémoire partagée, pour des sources d'échelles scales (la dernière porte 52 canaux).
 int glue_smem(std::span<const int> scales, int reduce);
 // D1 en FP16 sur Ada : la tuile étroite sépare le flot et le warp dans le même bloc CUDA.
