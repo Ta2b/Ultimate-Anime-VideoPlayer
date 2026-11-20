@@ -6,9 +6,9 @@
 # que quand l'empreinte change, et la CI de release le construit elle-même s'il manque.
 #
 # Entrées communes : le code que le module lie (src/core, gpu, kernels, prepare), CUTLASS (noyaux SPAN FP8), les
-# définitions CMake (cmake/, le CMakeLists.txt racine sans sa ligne VERSION, qui change à chaque release sans
-# toucher le module, et CMakePresets.json, qui porte les options du préréglage de livraison) et, de versions.env, les
-# seules lignes CUDA_*, TENSORRT_* et KIRARI_RELEASE_REPO (C51-15).
+# en-têtes de l'API NVIDIA Optical Flow et les définitions CMake (cmake/, le CMakeLists.txt racine sans sa ligne
+# VERSION, et CMakePresets.json, qui porte les options du préréglage de livraison). De versions.env, seules les lignes
+# CUDA_*, TENSORRT_* et KIRARI_RELEASE_REPO entrent dans l'empreinte (C51-15).
 # Linux : la recette des dépendances, l'extraction de trtexec et des en-têtes TensorRT (linux-tensorrt.sh), le workflow
 # qui construit le paquet (architectures passées à CMake), l'image du préflight, l'empaquetage et l'index des fichiers
 # NVIDIA (B51-09). Windows :
@@ -23,10 +23,11 @@ platform=linux
 [ "${1:-}" = "--windows" ] && { platform=windows; shift; }
 root="${1:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "$root"
-paths=(src/core src/gpu src/kernels src/prepare third_party/cutlass cmake CMakeLists.txt CMakePresets.json
-  tools/release/versions.env)
+paths=(src/core src/gpu src/kernels src/prepare third_party/cutlass 'third_party/nvidia-optical-flow/*.h' cmake
+  CMakeLists.txt CMakePresets.json tools/release/versions.env)
 if [ "$platform" = linux ]; then
   paths+=(tools/deps/linux-from-source.sh tools/deps/linux-tensorrt.sh tools/release/package-linux.sh
+    tools/release/trt-package.sh
     tools/release/preflight/Dockerfile tools/release/nvidia-vendor/tensorrt-linux-x64.lock
     .github/workflows/trt-package.yml)
 else

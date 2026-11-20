@@ -102,4 +102,24 @@ got=0; "$R/hardware-waiver.sh" v1.2.0 waiver >/dev/null 2>&1 || got=$?
 [ "$got" = 3 ] && echo "ok : aucune dérogation pour une autre étiquette" || { echo "ÉCHEC : sans dérogation, code $got au lieu de 3" >&2; fail=1; }
 (cd waiver && echo b > src/core/a.h && git commit -qam core)
 expect 1 "dérogation refusée, src/core a changé" "les tests matériels sont à refaire" "$R/hardware-waiver.sh" v1.0.0 waiver
+
+git init -q fingerprint && (
+  cd fingerprint
+  mkdir -p third_party/nvidia-optical-flow tools/release
+  printf 'header\n' > third_party/nvidia-optical-flow/nvOpticalFlowCuda.h
+  printf 'documentation\n' > third_party/nvidia-optical-flow/README.md
+  printf 'recette\n' > tools/release/trt-package.sh
+  git add -A
+)
+linux_fp="$("$R/trt-fingerprint.sh" fingerprint)"
+windows_fp="$("$R/trt-fingerprint.sh" --windows fingerprint)"
+printf 'documentation modifiée\n' > fingerprint/third_party/nvidia-optical-flow/README.md
+expect 0 "empreinte TensorRT Linux stable après la documentation NVOF" "" test "$linux_fp" = "$("$R/trt-fingerprint.sh" fingerprint)"
+printf 'recette modifiée\n' > fingerprint/tools/release/trt-package.sh
+expect 0 "empreinte TensorRT Linux sensible à sa recette de paquet" "" test "$linux_fp" != "$("$R/trt-fingerprint.sh" fingerprint)"
+expect 0 "empreinte TensorRT Windows indépendante de la recette Linux" "" test "$windows_fp" = "$("$R/trt-fingerprint.sh" --windows fingerprint)"
+linux_fp="$("$R/trt-fingerprint.sh" fingerprint)"
+printf 'header modifié\n' > fingerprint/third_party/nvidia-optical-flow/nvOpticalFlowCuda.h
+expect 0 "empreinte TensorRT Linux sensible à l'en-tête NVOF" "" test "$linux_fp" != "$("$R/trt-fingerprint.sh" fingerprint)"
+expect 0 "empreinte TensorRT Windows sensible à l'en-tête NVOF" "" test "$windows_fp" != "$("$R/trt-fingerprint.sh" --windows fingerprint)"
 exit "$fail"

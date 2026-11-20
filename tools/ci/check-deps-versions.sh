@@ -31,18 +31,24 @@ deps = {}
 for line in sys.argv[1].splitlines():
     name, _url, ref, _commit = line.split()
     deps[name] = re.sub(r"^(release-|v|n)", "", ref)
-overrides = {o["name"]: o["version"] for o in json.load(open("vcpkg.json")).get("overrides", [])}
+overrides = {o["name"]: o for o in json.load(open("vcpkg.json")).get("overrides", [])}
 # Les dépendances de vcpkg.json que DEPS fixe aussi, avec le nom que vcpkg leur donne.
 wanted = {"ffmpeg": "ffmpeg", "sdl3": "sdl3", "spdlog": "spdlog", "tomlplusplus": "tomlplusplus",
           "imgui": "imgui", "vulkan-headers": "vulkan-headers"}
 bad = False
 for vcpkg_name, deps_name in wanted.items():
     expected = deps[deps_name]
-    got = overrides.get(vcpkg_name)
+    got = overrides.get(vcpkg_name, {}).get("version")
     # vcpkg écrit les en-têtes Vulkan en quatre champs (1.4.363.0) là où l'étiquette en a trois.
     if got is None or (got != expected and got != expected + ".0"):
         print(f"{vcpkg_name} : vcpkg.json overrides = {got}, tools/deps/linux-from-source.sh = {expected}", file=sys.stderr)
         bad = True
+# Un port local prime sur l'override du manifeste. Garder les deux références spdlog alignées.
+spdlog = json.load(open("ports/spdlog/vcpkg.json"))
+pin = overrides.get("spdlog", {})
+if (spdlog["version-semver"], spdlog.get("port-version", 0)) != (pin.get("version"), pin.get("port-version", 0)):
+    print("spdlog : ports/spdlog/vcpkg.json et l'override Windows ne fixent pas la même version", file=sys.stderr)
+    bad = True
 sys.exit(1 if bad else 0)
 PY
 then
