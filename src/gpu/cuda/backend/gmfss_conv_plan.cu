@@ -18,6 +18,7 @@
 #include "gpu/cuda/backend/gmfss_grid_join.cuh"
 #include "gpu/cuda/backend/gmfss_grid_rgb.cuh"
 #include "gpu/cuda/backend/gmfss_grid_ring.cuh"
+#include "gpu/cuda/backend/gmfss_grid_tail.cuh"
 
 namespace kirari::gpu::cuda::gmfss_plan {
 namespace {
@@ -266,6 +267,10 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
   join_tensors_.clear();
   join_on_ = false;
   planar_head_ = -1;
+  tail_on_ = false;
+  const char* tail = std::getenv("KIRARI_AB_GMFSS_GRID_TAIL");  // env: banc
+  try_tail_ = io.rgb >= 0 && width_ <= 960 && height_ >= gmfss_grid_tail::kRingRows &&
+              (tail == nullptr || std::string_view(tail) != "0") && on_ada();
   place(grid, io);
   layers_ = std::vector<Layer>(grid.steps.size());
   for (std::size_t i = 0; i < grid.steps.size(); ++i) {
@@ -399,6 +404,25 @@ bool ConvNet::planar_head_ready() const {
          gmfss_grid_head::pick(c, l.sums) != nullptr;
 }
 
+bool ConvNet::tail_ready() const {
+  if (!try_tail_ || layers_.size() < 2) return false;
+  const std::size_t i = layers_.size() - 2;
+  const Layer& first = layers_[i];
+  const Layer& last = layers_[i + 1];
+  const Placed& scratch = tensor(first.to);
+  const auto bytes =
+      std::int64_t{gmfss_grid_tail::kRingRows} * last.iw * 64 * static_cast<std::int64_t>(sizeof(__half));
+  const auto& c = first.shape().cfg;
+  return first.kind == Kind::kShuffle && first.piece == last.piece && first.cin == 64 && first.in_ld == 64 &&
+         first.cout == 64 && first.out_ld == 64 && first.phases == 4 && first.in_slope == 1.F &&
+         !first.activation && first.skip < 0 && first.sums == RifeNativeSums::kF16 && c.kc == 64 &&
+         c.ksplit == 1 && first.packs[pack_index(64)].as<const void>() != nullptr && last.from == first.to &&
+         last.ih == 2 * first.oh && last.iw == 2 * first.ow && last.cin == 64 && last.in_ld == 64 &&
+         last.skip < 0 && last.in_slope == 1.F && last.sums == RifeNativeSums::kF32 &&
+         supports_rgb(last, last.shape()) && scratch.external < 0 && scratch.first == static_cast<int>(i) &&
+         scratch.last == static_cast<int>(i + 1) && scratch.bytes >= bytes;
+}
+
 bool ConvNet::joins_at(std::size_t i) const {
   constexpr auto f16 = RifeNativeSums::kF16;
   return layers_[i].join_next && layers_[i].sums == f16 && layers_[i + 1].sums == f16 &&
@@ -427,9 +451,11 @@ void ConvNet::use(std::span<const RifeNativePrecision> precisions) {
 }
 
 void ConvNet::trim() {
+  const Layer* shuffle = tail_ready() ? &layers_[layers_.size() - 2] : nullptr;
   for (Layer& layer : layers_)
     for (std::size_t k = 0; k < layer.packs.size(); ++k)
-      if (k != pack_index(layer.shape().cfg.ct)) layer.packs[k].release();
+      if (k != pack_index(layer.shape().cfg.ct) && (&layer != shuffle || k != pack_index(64)))
+        layer.packs[k].release();
 }
 
 bool ConvNet::run(cudaStream_t stream, void* zone, float* partial, std::span<const void* const> bound,
@@ -451,6 +477,25 @@ bool ConvNet::run(cudaStream_t stream, void* zone, float* partial, std::span<con
     if (planar_head && static_cast<int>(i) == planar_head_) {
       const auto launch = gmfss_grid_head::pick(shape.cfg, layer.sums);
       launch(shape.grid, shape.smem, stream, p, {(*planar_head)[0], (*planar_head)[1], (*planar_head)[2]});
+    } else if (tail_on_ && i + 2 == layers_.size() && rgb != nullptr &&
+               (piece < 0 || rgb != address(layers_.back().to, zone, bound))) {
+      const Layer& head = layers_[++i];
+      const rn::Params q = parameters(head, rgb);
+      rn::Params shuffle = p;
+      shuffle.w = layer.packs[pack_index(64)].as<const uint4>();
+      shuffle.tiles = 1;
+      switch (head.shape().cfg.kc) {
+        case 16:
+          gmfss_grid_tail::enqueue<16>(shuffle, q, stream);
+          break;
+        case 32:
+          gmfss_grid_tail::enqueue<32>(shuffle, q, stream);
+          break;
+        case 64:
+          gmfss_grid_tail::enqueue<64>(shuffle, q, stream);
+          break;
+      }
+      written = true;
     } else if (piece == -1 && join_on_ && joins_at(i)) {
       const Layer& b = layers_[i + 1];
       const Layer& up = layers_[i + 2];

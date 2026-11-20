@@ -147,6 +147,8 @@ class ConvNet {
   bool has_head(int piece) const;
   bool planar_head_ready() const;
   bool join_ready() const;
+  bool tail_ready() const;
+  void use_tail(bool enabled) { tail_on_ = enabled; }
   // Au chargement seulement, stream vidé entre les deux placements.
   void use_join(bool enabled);
   // Les sommes de chaque convolution : celles de son morceau (precisions[morceau]), la tête à part.
@@ -179,6 +181,8 @@ class ConvNet {
   std::vector<Placed> tensors_;
   std::vector<Placed> join_tensors_;
   bool join_on_ = false;
+  bool try_tail_ = false;
+  bool tail_on_ = false;
   int planar_head_ = -1;
   std::vector<Layer> layers_;
   std::int64_t zone_bytes_ = 0;

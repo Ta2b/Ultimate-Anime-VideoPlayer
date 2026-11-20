@@ -139,6 +139,8 @@ class Net final : public GmfssNativeNet {
   bool has_head(int piece) const override { return net_.has_head(piece); }
   bool join_ready() const override { return net_.join_ready(); }
   void use_join(bool enabled) override { net_.use_join(enabled); }
+  bool tail_ready() const override { return net_.tail_ready(); }
+  void use_tail(bool enabled) override { net_.use_tail(enabled); }
   bool planar_head_ready() const override { return net_.planar_head_ready(); }
   void use_planar_head(bool enabled) override { planar_head_ = enabled; }
   void use(std::span<const RifeNativePrecision> precisions) override { net_.use(precisions); }
@@ -191,10 +193,10 @@ class Net final : public GmfssNativeNet {
     return cudaGetLastError();
   }
 
-  cudaError_t run_piece(cudaStream_t stream, int piece) const override {
+  cudaError_t run_piece(cudaStream_t stream, int piece, void* out) const override {
     if (piece < 0 || piece >= pieces()) return cudaErrorInvalidValue;
     void* zone = zone_.as<void>();
-    auto* rgb = gmfss_plan::ConvNet::at(zone, net_.tensor(out_));
+    auto* rgb = out == nullptr ? gmfss_plan::ConvNet::at(zone, net_.tensor(out_)) : static_cast<__half*>(out);
     net_.run(stream, zone, partial_.as<float>(), {}, piece, rgb);
     return cudaGetLastError();
   }
