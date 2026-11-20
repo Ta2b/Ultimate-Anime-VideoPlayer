@@ -18,7 +18,8 @@ template <int Channels>
 inline constexpr int kWorkers = Channels == 48 ? 192 : 128;
 
 template <int Channels>
-inline constexpr int kShared = (kHeight + 2) * kRawWidth * kStride<Channels> * sizeof(__half);
+inline constexpr int kShared =
+    (Channels == 48 ? (kHeight / 2) * kPoints : kHeight + 2) * kRawWidth * kStride<Channels> * sizeof(__half);
 
 __device__ __forceinline__ std::uint32_t transform_word(std::uint32_t a, std::uint32_t b, bool add) {
   __half2 ah, bh;
@@ -109,6 +110,39 @@ __device__ __forceinline__ void load_halo(std::uint32_t shared, const Params& p,
   cp_async_wait_all();
 }
 
+__device__ __forceinline__ uint4 transform_segment(uint4 a, uint4 b, bool add) {
+  return make_uint4(transform_word(a.x, b.x, add), transform_word(a.y, b.y, add),
+                    transform_word(a.z, b.z, add), transform_word(a.w, b.w, add));
+}
+
+// Écrit une fois V pour chaque pixel et paire de lignes, avant de partager V entre
+// les trois prises horizontales et tous les warps de canaux de sortie.
+template <int C>
+__device__ __forceinline__ void prepare_input(__half* shared, const Params& p, int x0, int y0, int tid) {
+  constexpr int kChunks = C / 8;
+  for (int i = tid; i < kRawWidth * kChunks; i += kWorkers<C>) {
+    const int xp = i / kChunks, c = (i % kChunks) * 8;
+    const int x = x0 + xp - 1;
+    const auto read = [&](int y) -> uint4 {
+      if (x < 0 || x >= p.fw || y < 0 || y >= p.fh) return {};
+      return __ldg(reinterpret_cast<const uint4*>(p.in[0] + (static_cast<long>(y) * p.fw + x) * C + c));
+    };
+    const uint4 d0 = read(y0 - 1), d1 = read(y0);
+    const uint4 d2 = read(y0 + 1), d3 = read(y0 + 2);
+    const uint4 d4 = read(y0 + 3), d5 = read(y0 + 4);
+    auto* out = shared + xp * kStride<C> + c;
+    constexpr int kPlane = kRawWidth * kStride<C>;
+    *reinterpret_cast<uint4*>(out + 0 * kPlane) = transform_segment(d0, d2, false);
+    *reinterpret_cast<uint4*>(out + 1 * kPlane) = transform_segment(d1, d2, true);
+    *reinterpret_cast<uint4*>(out + 2 * kPlane) = transform_segment(d2, d1, false);
+    *reinterpret_cast<uint4*>(out + 3 * kPlane) = transform_segment(d1, d3, false);
+    *reinterpret_cast<uint4*>(out + 4 * kPlane) = transform_segment(d2, d4, false);
+    *reinterpret_cast<uint4*>(out + 5 * kPlane) = transform_segment(d3, d4, true);
+    *reinterpret_cast<uint4*>(out + 6 * kPlane) = transform_segment(d4, d3, false);
+    *reinterpret_cast<uint4*>(out + 7 * kPlane) = transform_segment(d3, d5, false);
+  }
+}
+
 template <int C>
 __device__ __forceinline__ void store_output(const __half* s, const Params& p, int x0, int y0, int tid) {
   const int end = row_end(p);
@@ -122,11 +156,13 @@ __device__ __forceinline__ void store_output(const __half* s, const Params& p, i
 }
 
 // Une transformée F(2,3) par paire de lignes. L'axe horizontal garde les trois prises directes.
-// Deux warps en C64 et trois en C48 partagent les canaux de sortie d'une paire. V reste dans les registres.
+// Deux warps en C64 et trois en C48 partagent les canaux de sortie d'une paire. V reste dans les registres
+// à 64 canaux. À 48 canaux, le calcul partagé de V évite de le refaire à chaque prise horizontale.
 // Le masque reste celui des tuiles 32 × 8 de SPAN, deux rangées de blocs ici.
 template <int C, bool Gate, bool Flat = false>
 __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
   static_assert(C == 48 || C == 64);
+  constexpr bool Prepared = C == 48;
   static_assert((kWidth * kHeight * kStride<C> + C * C) * sizeof(__half) <= kShared<C>);
   extern __shared__ __align__(16) unsigned char raw[];
   auto* s = reinterpret_cast<__half*>(raw);
@@ -140,7 +176,10 @@ __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
     const unsigned tile = row * gridDim.x + blockIdx.x;
     if (((__ldg(p.mask + (tile >> 5U)) >> (tile & 31U)) & 1U) == 0U) return;
   }
-  load_halo<C>(shared, p, x0, y0, tid);
+  if constexpr (Prepared)
+    prepare_input<C>(s, p, x0, y0, tid);
+  else
+    load_halo<C>(shared, p, x0, y0, tid);
   __syncthreads();
   constexpr int kGroups = C == 48 ? 3 : 2;
   constexpr int kInner = C / 16, kGroup = C / kGroups;
@@ -154,24 +193,35 @@ __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
       for (int n = 0; n < kGroup / 8; ++n) acc[f][a][n].clear();
   const unsigned base =
       shared +
-      static_cast<unsigned>(((local_y * kRawWidth + (lane & 15)) * kStride<C> + (lane >> 4) * 8) * 2);
+      static_cast<unsigned>(
+          (((Prepared ? 2 * local_y : local_y) * kRawWidth + (lane & 15)) * kStride<C> + (lane >> 4) * 8) *
+          2);
   const auto accumulate = [&](int dx, int step) {
     std::uint32_t a[2][4][4];
+    if constexpr (!Prepared) {
 #pragma unroll
-    for (int f = 0; f < 2; ++f)
+      for (int f = 0; f < 2; ++f)
 #pragma unroll
-      for (int r = 0; r < 4; ++r)
-        ldmatrix4(a[f][r], base + static_cast<std::uint32_t>(
-                                      ((r * kRawWidth + dx + 16 * f) * kStride<C> + step * 16) * 2));
+        for (int r = 0; r < 4; ++r)
+          ldmatrix4(a[f][r], base + static_cast<std::uint32_t>(
+                                        ((r * kRawWidth + dx + 16 * f) * kStride<C> + step * 16) * 2));
+    }
 #pragma unroll
     for (int point = 0; point < kPoints; ++point) {
       constexpr int kStart[4]{0, 1, 2, 1}, kEnd[4]{2, 2, 1, 3};
       std::uint32_t v[2][4];
+      if constexpr (Prepared) {
 #pragma unroll
-      for (int f = 0; f < 2; ++f)
+        for (int f = 0; f < 2; ++f)
+          ldmatrix4(v[f], base + static_cast<std::uint32_t>(
+                                     ((point * kRawWidth + dx + 16 * f) * kStride<C> + step * 16) * 2));
+      } else {
 #pragma unroll
-        for (int n = 0; n < 4; ++n)
-          v[f][n] = transform_word(a[f][kStart[point]][n], a[f][kEnd[point]][n], point == 1);
+        for (int f = 0; f < 2; ++f)
+#pragma unroll
+          for (int n = 0; n < 4; ++n)
+            v[f][n] = transform_word(a[f][kStart[point]][n], a[f][kEnd[point]][n], point == 1);
+      }
       const auto* weights =
           p.w + ((((dx * kPoints + point) * kInner + step) * kInner) + channel / 16) * 32 + lane;
 #pragma unroll
