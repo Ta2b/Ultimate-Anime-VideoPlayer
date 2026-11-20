@@ -39,7 +39,7 @@ enum class SpanNativeSums : std::uint8_t { F16, F32 };
 enum class SpanSharedWeights : std::uint8_t { Auto, On, Off };
 // Winograd du FP16 natif : On force F(2×2, 3×3) et Vertical la transformée par paires de lignes.
 // Auto laisse le choix au chargement de SpanFp8Engine.
-enum class SpanWinograd : std::uint8_t { Auto, On, Off, Vertical, VerticalUnrolled };
+enum class SpanWinograd : std::uint8_t { Auto, On, Off, Vertical, VerticalUnrolled, VerticalSecondDirect };
 
 // Le contenu d'un gpu/span_fp8/package.h, sans ses vecteurs. Les pointeurs ne servent que pendant create().
 struct SpanFp8Weights {

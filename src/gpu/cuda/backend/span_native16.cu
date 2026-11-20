@@ -166,10 +166,12 @@ class NativeBody final : public SpanFp8Body {
         !put(pixel_, weights.pixel, sn::kPixel, 9, C))
       return false;
     for (int b = 0; b < used_; ++b) {
-      for (int i = 0; i < 3; ++i)
-        if (!((wino_ || vertical_) ? put_wino(conv_[b][i], weights.conv[b][i])
-                                   : put(conv_[b][i], weights.conv[b][i], C, 9, C)))
+      for (int i = 0; i < 3; ++i) {
+        const bool use_winograd = (wino_ || vertical_) && !(second_direct_ && i == 1);
+        if (!(use_winograd ? put_wino(conv_[b][i], weights.conv[b][i])
+                           : put(conv_[b][i], weights.conv[b][i], C, 9, C)))
           return false;
+      }
       if (!put(attention_[b], weights.attention[b], C, 1, C)) return false;
     }
     status = SpanFp8Status::Ok;
@@ -295,9 +297,11 @@ class NativeBody final : public SpanFp8Body {
                   ? C == 48
                   : weights.shared_weights == SpanSharedWeights::On;
     wino_ = C == sn::kWinoC && A == sn::Acc::kF16 && weights.winograd == SpanWinograd::On;
-    vertical_ =
-        (C == 64 || C == 48) && A == sn::Acc::kF16 && !weights.compact_workspace &&
-        (weights.winograd == SpanWinograd::Vertical || weights.winograd == SpanWinograd::VerticalUnrolled);
+    second_direct_ = C == 48 && A == sn::Acc::kF16 && !weights.compact_workspace &&
+                     weights.winograd == SpanWinograd::VerticalSecondDirect;
+    vertical_ = (C == 64 || C == 48) && A == sn::Acc::kF16 && !weights.compact_workspace &&
+                (weights.winograd == SpanWinograd::Vertical ||
+                 weights.winograd == SpanWinograd::VerticalUnrolled || second_direct_);
     unrolled_ = weights.winograd == SpanWinograd::VerticalUnrolled;
     if constexpr (A == sn::Acc::kF16 && C == 64) {
       // La porte à 64 canaux réemploie l'épilogue sur le chemin mesuré en 1080p sur Ada.
@@ -379,7 +383,11 @@ class NativeBody final : public SpanFp8Body {
       sn::Params c2 = params(conv_[b][1], t_[kT2], 3 * b + 2);
       c2.in[0] = t_[kT1];
       c2.input_row_mask[0] = c2.output_row_mask = rolling;
-      block<M::kPlain, true>(stream, c2, front.next(1, quantum));
+      const Rows second_rows = front.next(1, quantum);
+      if (second_direct_)
+        run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c2, second_rows);
+      else
+        block<M::kPlain, true>(stream, c2, second_rows);
       sn::Params c3 = params(conv_[b][2], out, 3 * b + 3);
       c3.in[0] = t_[kT2];
       c3.skip = in;
@@ -521,6 +529,7 @@ class NativeBody final : public SpanFp8Body {
   bool shared_ = false;   // poids partagés (SpanFp8Weights::shared_weights)
   bool layered_masks_ = false;
   bool unrolled_ = false;
+  bool second_direct_ = false;      // compromis vérifié sur Performance Sharp1
   bool vertical_ = false;           // Winograd le long des paires de lignes
   bool wino_ = false;               // les 3×3 des blocs par Winograd (SpanFp8Weights::winograd)
   bool gate_cache_ = false;         // conserver v float2 entre 1×1 et produit de la porte

@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -83,6 +84,7 @@ std::expected<void, Refusal> smoke_test(SpanFp8Net& net, int height, int width) 
 constexpr double kKernelTrialDb = 50.0;
 // CRC du paquet FP16 dérivé de 2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.
 constexpr std::uint32_t kPerformanceFp16Crc = 0x30469c4eU;
+constexpr std::uint32_t kPerformanceSharp1Fp16Crc = 0x29ac8c66U;
 
 struct PreciseTrial {
   const SpanFp8Weights& weights;
@@ -390,8 +392,10 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   std::unique_ptr<SpanFp8Engine> engine(new SpanFp8Engine());
   engine->net_ = std::move(net);
   engine->fp16_ = parsed->fp16;
-  engine->performance_fp16_ =
-      crc == kPerformanceFp16Crc && weights.fp16 && weights.channels == 48 && weights.blocks == 5;
+  if (weights.fp16 && weights.channels == 48 && weights.blocks == 5) {
+    if (crc == kPerformanceFp16Crc) engine->performance_fp16_ = PerformanceFp16::Standard;
+    if (crc == kPerformanceSharp1Fp16Crc) engine->performance_fp16_ = PerformanceFp16::Sharp1;
+  }
   engine->sums_ = weights.sums;
   engine->native_edges_ = weights.native_edges;
   engine->input_ = Shape{.dims = {1, 3, height, width}};
@@ -437,14 +441,15 @@ std::expected<bool, Refusal> SpanFp8Engine::try_vertical_net(const span_fp8::Pac
   const int height = static_cast<int>(input_.dims[2]), width = static_cast<int>(input_.dims[3]);
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string why;
-  weights.winograd = SpanWinograd::VerticalUnrolled;
+  const bool sharp1 = performance_fp16_ == PerformanceFp16::Sharp1;
+  weights.winograd = sharp1 ? SpanWinograd::VerticalSecondDirect : SpanWinograd::VerticalUnrolled;
   auto candidate = SpanFp8Net::create(weights, height, width, status, why);
   if (!candidate) return reject("poids : " + why);
   if (candidate->workspace_bytes() != net_->workspace_bytes()) return reject("taille de la zone différente");
   candidate->bind(workspace);
   const PreciseTrial precise{weights, workspace};
   auto compared = compare_kernels(*net_, *candidate, height, width, "Winograd vertical",
-                                  performance_fp16_ ? &precise : nullptr);
+                                  performance_fp16_ != PerformanceFp16::None ? &precise : nullptr);
   if (!compared) {
     if (compared.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(compared.error()));
     return reject(compared.error().detail);
@@ -462,6 +467,7 @@ std::expected<bool, Refusal> SpanFp8Engine::try_vertical_net(const span_fp8::Pac
     if (checked.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(checked.error()));
     return reject(checked.error().detail);
   }
+  if (sharp1) result += ", deuxième convolution de chaque bloc directe";
   winograd_notice_ = "SPAN FP16 : Winograd vertical retenu, " + result;
   native_check_db_ = *checked;
   net_ = std::move(candidate);
@@ -514,8 +520,13 @@ std::expected<void, Refusal> SpanFp8Engine::validate_nets(const span_fp8::Packag
                                                           bool native_blocks, bool vertical_winograd) {
   const int height = static_cast<int>(input_.dims[2]), width = static_cast<int>(input_.dims[3]);
   const bool balanced = weights.channels == span_fp8::kChannels && weights.blocks == span_fp8::kBlocks;
+  if (performance_fp16_ == PerformanceFp16::Sharp1) {
+    const char* enable = std::getenv("KIRARI_AB_SPAN_SHARP1_WINOGRAD");  // env: banc
+    if (enable != nullptr && std::string_view(enable) == "0") vertical_winograd = false;
+  }
   if (vertical_winograd && weights.fp16 && weights.sums == SpanNativeSums::F16 &&
-      (balanced || performance_fp16_) && !weights.compact_workspace && height == 1080 && width == 1920) {
+      (balanced || performance_fp16_ != PerformanceFp16::None) && !weights.compact_workspace &&
+      height == 1080 && width == 1920) {
     auto selected = try_vertical_net(package, weights, workspace);
     if (!selected) return std::unexpected(std::move(selected.error()));
     if (*selected) return {};
