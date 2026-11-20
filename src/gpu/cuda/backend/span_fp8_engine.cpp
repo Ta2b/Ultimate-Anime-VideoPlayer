@@ -403,8 +403,8 @@ std::expected<bool, Refusal> SpanFp8Engine::try_vertical_net(const span_fp8::Pac
 }
 
 std::expected<void, Refusal> SpanFp8Engine::try_relu_net(SpanFp8Weights weights, void* workspace) {
-  if (weights.fp16 || weights.channels != 48) {
-    native_blocks_notice_ = "SPAN : l'option des ReLU natives demande un paquet FP8 à 48 canaux";
+  if (weights.fp16) {
+    native_blocks_notice_ = "SPAN : l'option des ReLU natives demande un paquet FP8";
     return {};
   }
   const int height = static_cast<int>(input_.dims[2]), width = static_cast<int>(input_.dims[3]);

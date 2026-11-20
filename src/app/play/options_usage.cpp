@@ -144,7 +144,7 @@ std::string trial_usage() {
          "  --rife-at-slot         measurement: each RIFE pass of a strong pair waits for the ring slot\n"
          "                         of its image instead of being queued when the pair arrives (same output)\n"
          "  --span-b-ahead         trial: enqueue source B SPAN before waiting for its first slot\n"
-         "  --span-fp8-native-blocks  trial: use native FP8 ReLU convolutions on Ada for SPAN C48\n"
+         "  --span-fp8-native-blocks  trial: use native FP8 ReLU convolutions on Ada for SPAN C48 and C64\n"
          "  --no-gmfss-feature-reuse trial: recompute FeatureNet on both sides of every GMFSS pair\n"
          "  --gmfss-budget=PAIR_MS,KEY_MS  trial: pair cost and extra cost per key at the playback size\n"
          "  --fused-layers         trial: compose the RIFE warp and layers in one CUDA pass\n"

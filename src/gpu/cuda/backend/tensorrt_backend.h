@@ -396,7 +396,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // kTrialL2Keep (--l2-keep, essai) : l'encodage gardé de RIFE fusionné tenu en L2.
   bool l2_keep_ = false;
   bool span_native_ = false;             // bords du SPAN FP8 par les noyaux du FP16 natif (kTrialSpanNative)
-  bool span_fp8_native_blocks_ = false;  // convolutions avec ReLU du SPAN FP8 C48 (kTrialSpanFp8NativeBlocks)
+  bool span_fp8_native_blocks_ = false;  // convolutions avec ReLU du SPAN FP8 (kTrialSpanFp8NativeBlocks)
   bool rife_hwc8_ = false;     // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
   bool rife_native_ = false;   // encodeur et blocs du RIFE fusionné par les noyaux natifs (kTrialRifeNative)
   bool gmfss_native_ = false;  // GridNet de la fusion de GMFSS par les noyaux natifs (kTrialGmfssNative)

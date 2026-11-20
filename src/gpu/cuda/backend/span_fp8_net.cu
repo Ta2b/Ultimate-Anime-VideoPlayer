@@ -97,9 +97,11 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
     return nullptr;
   }
   const bool narrow48 = weights.channels == 48 && weights.width48 != SpanFp8Width::Padded;
-  if (weights.native_relu && (weights.fp16 || !narrow48 || weights.width48 != SpanFp8Width::Native)) {
+  const bool native_relu_shape =
+      weights.channels == kStored || (narrow48 && weights.width48 == SpanFp8Width::Native);
+  if (weights.native_relu && (weights.fp16 || !native_relu_shape)) {
     status = SpanFp8Status::Failed;
-    error = "les ReLU natives du FP8 demandent 48 canaux en K à plat";
+    error = "les ReLU natives demandent du FP8 C64 ou C48 en K à plat";
     return nullptr;
   }
   // K par position à 48 canaux et accumulateur f16 : 7 % de NaN sur la RTX 4070 Ti, poids à queue lourde,

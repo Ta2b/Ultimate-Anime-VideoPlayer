@@ -322,14 +322,15 @@ TEST_CASE("SPAN FP8 : une ReLU native C48 peut faire passer sa voie au f32", "[c
   CHECK(std::ranges::all_of(out, [](double x) { return std::isfinite(x); }));
 }
 
-TEST_CASE("SPAN FP8 : les ReLU C48 gardent les bits de CUTLASS sur une mire saturée",
+TEST_CASE("SPAN FP8 : les ReLU natives gardent les bits de CUTLASS sur une mire saturée",
           "[cuda][span_fp8][fp8_staged]") {
   if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
   const bool acc16 = GENERATE(false, true);
-  INFO("acc16 " << acc16);
+  const int channels = GENERATE(kReal, kStored);
+  INFO("canaux " << channels << ", acc16 " << acc16);
   const auto half = [](float x) { return __half_as_ushort(__float2half_rn(x)); };
   span_fp8::Package package = span_fp8::testing::synthetic(0.F, 2);
-  package.real_channels = kReal;
+  package.real_channels = channels;
   package.acc16 = acc16;
   // En unités E4M3, c1 reçoit aux pas K 0, 32 et 64 : ε, +L, −L.
   // f16 : ε=1, L=448×28. f32 : ε=2⁻¹⁰, L=448×448. Dans les deux cas, ε+L arrondit à L.
@@ -386,18 +387,19 @@ TEST_CASE("Les ReLU natives du SPAN FP8 refusent les autres formes", "[span_fp8]
   weights.native_relu = true;
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string error;
-  CHECK(SpanFp8Net::create(weights, kHeight, kWidth, status, error) == nullptr);
-  CHECK(error.find("48 canaux en K à plat") != std::string::npos);
   weights.channels = kReal;
   for (const auto width : {SpanFp8Width::Padded, SpanFp8Width::PerTap}) {
     weights.width48 = width;
     CHECK(SpanFp8Net::create(weights, kHeight, kWidth, status, error) == nullptr);
-    CHECK(error.find("48 canaux en K à plat") != std::string::npos);
+    CHECK(error.find("FP8 C64 ou C48 en K à plat") != std::string::npos);
   }
   weights.width48 = SpanFp8Width::Native;
   weights.fp16 = true;
-  CHECK(SpanFp8Net::create(weights, kHeight, kWidth, status, error) == nullptr);
-  CHECK(error.find("48 canaux en K à plat") != std::string::npos);
+  for (const int channels : {kReal, kStored}) {
+    weights.channels = channels;
+    CHECK(SpanFp8Net::create(weights, kHeight, kWidth, status, error) == nullptr);
+    CHECK(error.find("FP8 C64 ou C48 en K à plat") != std::string::npos);
+  }
 }
 
 TEST_CASE("SPAN FP8 à 48 canaux : la zone de travail rétrécit", "[cuda][span_fp8]") {

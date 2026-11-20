@@ -72,7 +72,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   else
     log(BackendLogLevel::Info,
         std::format("SPAN FP8 ({}) chargé : {}×{}{}",
-                    (*engine)->native_blocks() ? "ReLU natives C48" : "noyaux CUTLASS", shape->dims[3],
+                    (*engine)->native_blocks() ? "ReLU natives" : "noyaux CUTLASS", shape->dims[3],
                     shape->dims[2], (*engine)->native_edges() ? ", bords natifs" : ""));
   if (const auto notice = (*engine)->native_blocks_notice(); !notice.empty())
     log(BackendLogLevel::Info, notice);

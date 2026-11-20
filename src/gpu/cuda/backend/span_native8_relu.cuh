@@ -1,5 +1,5 @@
 #pragma once
-// Les 3×3 C48 avec Relu du SPAN FP8 natif (c1/c2). Le K aplati de la convolution est
+// Les 3×3 C48 et C64 avec ReLU du SPAN FP8 natif (c1/c2). Le K aplati de la convolution est
 // celui du kFewChannels de CUTLASS. L'épilogue partage l'écriture E4M3 et FP16 du lecteur.
 #include <cstdint>
 #include <vector>
@@ -13,11 +13,23 @@ namespace sk = span_fp8_kernels;
 namespace sn = span_native;
 using Byte = std::uint8_t;
 using U32 = std::uint32_t;
-inline constexpr int kC = 48, kTaps = 9, kK = kTaps * kC, kSteps = (kK + 31) / 32, kPairs = kC / 16;
-inline constexpr int kSW = sn::kTW + 2, kInputBytes = (sn::kTH + 2) * kSW * kC;
+inline constexpr int kSW = sn::kTW + 2;
+inline constexpr int kPixels = (sn::kTH + 2) * kSW;
+
+template <int C>
+struct Tile {
+  static_assert(C == 48 || C == 64);
+  static constexpr int kK = 9 * C;
+  static constexpr int kSteps = (kK + 31) / 32;
+  static constexpr int kChunks = C / 16;
+  // Les pixels successifs avancent d'un nombre impair de secteurs de 16 octets en mémoire partagée.
+  static constexpr int kStride = C == 64 ? C + 16 : C;
+};
 
 // Les deux fragments B de chaque paire n8, mots de quatre E4M3 dans l'ordre des canaux.
-inline std::vector<U32> pack(const std::vector<Byte>& weights) {
+template <int C>
+std::vector<U32> pack(const std::vector<Byte>& weights) {
+  constexpr int kSteps = Tile<C>::kSteps, kPairs = Tile<C>::kChunks, kK = Tile<C>::kK;
   std::vector<U32> out;
   out.reserve(kSteps * kPairs * 32 * 4);
   for (int step = 0; step < kSteps; ++step)
@@ -74,22 +86,25 @@ struct Params {
 };
 
 // Les quatre fragments A pour un MMA. La moitié au-delà de K a des poids nuls ; son adresse reste chargée.
+template <int C>
 __device__ __forceinline__ void load_a(U32 (&a)[sn::kMF][4], U32 tile, int row, int lane, int step) {
   const int half = step * 32 + (lane >> 4) * 16;
-  const int k = half < kK ? half : kK - kC;
-  const int tap = k / kC, c = k % kC;
+  const int k = half < Tile<C>::kK ? half : Tile<C>::kK - C;
+  const int tap = k / C, c = k % C;
   const int from = row + (tap / 3) * kSW + tap % 3;
 #pragma unroll
   for (int f = 0; f < sn::kMF; ++f)
-    sn::ldmatrix4(a[f], tile + static_cast<U32>((from + (f >> 1) * kSW + 16 * (f & 1)) * kC + c));
+    sn::ldmatrix4(a[f],
+                  tile + static_cast<U32>((from + (f >> 1) * kSW + 16 * (f & 1)) * Tile<C>::kStride + c));
 }
 
-template <bool Pair, sn::Acc A>
-__device__ __forceinline__ void mma_group(sn::Frag<A> (&sum)[sn::kMF][kC / 8], U32 tile, const uint4* weights,
+template <int C, bool Pair, sn::Acc A>
+__device__ __forceinline__ void mma_group(sn::Frag<A> (&sum)[sn::kMF][C / 8], U32 tile, const uint4* weights,
                                           int row, int lane, int step) {
+  constexpr int kPairs = Tile<C>::kChunks;
   U32 a0[sn::kMF][4], a1[sn::kMF][4];
-  load_a(a0, tile, row, lane, step);
-  if constexpr (Pair) load_a(a1, tile, row, lane, step + 1);
+  load_a<C>(a0, tile, row, lane, step);
+  if constexpr (Pair) load_a<C>(a1, tile, row, lane, step + 1);
 #pragma unroll
   for (int np = 0; np < kPairs; ++np) {
     const auto* w = weights + (step * kPairs + np) * 32 + lane;
@@ -113,38 +128,39 @@ __device__ __forceinline__ void mma_group(sn::Frag<A> (&sum)[sn::kMF][kC / 8], U
   }
 }
 
-template <sn::Acc A>
+template <int C, sn::Acc A>
 __global__ void __launch_bounds__(sn::kThreads) relu_conv(Params p) {
-  __shared__ __align__(16) Byte tile[kInputBytes];
+  constexpr int kChunks = Tile<C>::kChunks, kStride = Tile<C>::kStride;
+  __shared__ __align__(16) Byte tile[kPixels * kStride];
   const int tid = static_cast<int>(threadIdx.x), warp = tid >> 5, lane = tid & 31;
   const int y0 = static_cast<int>(blockIdx.y) * sn::kTH, x0 = static_cast<int>(blockIdx.x) * sn::kTW;
   const U32 base = sn::smem_u32(tile);
-  // Le pas impair de trois vecteurs répartit huit pixels successifs dans les huit secteurs de banques.
-  for (int i = tid; i < kInputBytes / 16; i += sn::kThreads) {
-    const int pixel = i / 3, chunk = i % 3;
+  for (int i = tid; i < kPixels * kChunks; i += sn::kThreads) {
+    const int pixel = i / kChunks, chunk = i % kChunks;
     const int y = y0 - 1 + pixel / kSW, x = x0 - 1 + pixel % kSW;
     const bool valid = y >= 0 && y < p.height && x >= 0 && x < p.width;
-    const auto* from = valid ? p.input + (static_cast<long>(y) * p.width + x) * kC + chunk * 16 : p.input;
-    sn::cp_async16(base + static_cast<U32>(i * 16), from, valid);
+    const auto* from = valid ? p.input + (static_cast<long>(y) * p.width + x) * C + chunk * 16 : p.input;
+    sn::cp_async16(base + static_cast<U32>(pixel * kStride + chunk * 16), from, valid);
   }
   sn::cp_async_wait_all();
   __syncthreads();
 
-  sn::Frag<A> sum[sn::kMF][kC / 8];
+  sn::Frag<A> sum[sn::kMF][C / 8];
 #pragma unroll
   for (int f = 0; f < sn::kMF; ++f)
 #pragma unroll
-    for (int n = 0; n < kC / 8; ++n) sum[f][n].clear();
+    for (int n = 0; n < C / 8; ++n) sum[f][n].clear();
   const int row = warp * sn::kRows * kSW + (lane & 15);
   // CUTLASS TK64 verse le temporaire au premier MMA de chaque tuile K, et au dernier MMA du calcul.
-  // Les groupes sont [0], [1,2], …, [11,12], [13], avec l'addition finale au type de l'accumulateur.
-  mma_group<false>(sum, base, p.packed, row, lane, 0);
+  // Les groupes sont [0], [1,2], …, [dernier pas], avec addition au type de l'accumulateur.
+  mma_group<C, false>(sum, base, p.packed, row, lane, 0);
 #pragma unroll 1
-  for (int step = 1; step + 1 < kSteps; step += 2) mma_group<true>(sum, base, p.packed, row, lane, step);
-  mma_group<false>(sum, base, p.packed, row, lane, kSteps - 1);
+  for (int step = 1; step + 1 < Tile<C>::kSteps; step += 2)
+    mma_group<C, true>(sum, base, p.packed, row, lane, step);
+  mma_group<C, false>(sum, base, p.packed, row, lane, Tile<C>::kSteps - 1);
   bool overflow = false;
 #pragma unroll
-  for (int n = 0; n < kC / 8; ++n) {
+  for (int n = 0; n < C / 8; ++n) {
     const int c = n * 8 + 2 * (lane & 3);
     const float2 b = __ldg(reinterpret_cast<const float2*>(p.epilogue.bias + c));
     const float2 s = __ldg(reinterpret_cast<const float2*>(p.epilogue.alpha_col + c));
@@ -157,7 +173,7 @@ __global__ void __launch_bounds__(sn::kThreads) relu_conv(Params p) {
         const float2 v = sn::sums(sum[f][n], h, overflow);
         const int x = x0f + 8 * h;
         if (y < p.height && x < p.width)
-          sk::store_pair<false>(p.epilogue, kC, static_cast<long>(y) * p.width + x, c,
+          sk::store_pair<false>(p.epilogue, C, static_cast<long>(y) * p.width + x, c,
                                 fmaxf(fmaf(v.x, s.x, b.x), 0.F), fmaxf(fmaf(v.y, s.y, b.y), 0.F));
       }
     }
@@ -167,13 +183,12 @@ __global__ void __launch_bounds__(sn::kThreads) relu_conv(Params p) {
 
 template <int Channels>
 void launch_relu(cudaStream_t stream, const Params& p, bool f16) {
-  static_assert(Channels == kC);
   const dim3 grid(static_cast<unsigned>((p.width + sn::kTW - 1) / sn::kTW),
                   static_cast<unsigned>((p.height + sn::kTH - 1) / sn::kTH));
   if (f16)
-    relu_conv<sn::Acc::kF16><<<grid, sn::kThreads, 0, stream>>>(p);
+    relu_conv<Channels, sn::Acc::kF16><<<grid, sn::kThreads, 0, stream>>>(p);
   else
-    relu_conv<sn::Acc::kF32><<<grid, sn::kThreads, 0, stream>>>(p);
+    relu_conv<Channels, sn::Acc::kF32><<<grid, sn::kThreads, 0, stream>>>(p);
 }
 
 }  // namespace kirari::gpu::cuda::span_native8

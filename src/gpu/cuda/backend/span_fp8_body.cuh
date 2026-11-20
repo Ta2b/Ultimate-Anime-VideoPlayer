@@ -69,7 +69,7 @@ class Body final : public SpanFp8Body {
   static constexpr int kBlocks = SpanFp8Weights::kBlocks;
   static constexpr int kConcat = 4 * Ch;
   static constexpr int kScaleCount = SpanFp8Weights::kScales;
-  static constexpr bool kNativeRelu = Ch == span_native8::kC && BlockAlg == Alg::kFewChannels;
+  static constexpr bool kNativeRelu = Ch == 64 || (Ch == 48 && BlockAlg == Alg::kFewChannels);
 
   // Blocs : entrée FP8, Ch canaux. Hors blocs : entrée FP16, accumulateur f32.
   template <class Acc>
@@ -176,7 +176,7 @@ class Body final : public SpanFp8Body {
   LC1 c1_;
   std::array<L8, kBlocks> la_, lb_;
   std::array<LT, kBlocks> lc_;
-  // Les deux convolutions avec ReLU du chemin C48, aux mêmes adresses que CUTLASS.
+  // Les deux convolutions avec ReLU natives, aux mêmes adresses que CUTLASS.
   std::array<std::array<span_native8::Params, 2>, kNativeRelu ? kBlocks : 0> relu_{};
   bool native_relu_ = false;
   LCAT cat_;
@@ -265,7 +265,7 @@ bool Body<Ch, BlockAlg>::upload_block(std::size_t b, const SpanFp8Weights& weigh
     if (!sent(bw.alpha[i].upload(alpha.data(), sizeof(alpha)), "échelles des poids FP8")) return false;
     if constexpr (kNativeRelu) {
       if (native_relu_ && i < 2) {
-        const auto packed = span_native8::pack(q);
+        const auto packed = span_native8::pack<Ch>(q);
         if (!sent(bw.w[i].upload(packed.data(), packed.size() * sizeof(packed[0])), "poids FP8 natifs"))
           return false;
         continue;

@@ -49,7 +49,7 @@ class SpanFp8Engine final : public Engine {
   // pleine lecture), puis prend sa zone de travail dans shared. Refus : fichier ou paquet illisible, paquet
   // réécrit depuis la construction (GraphInvalid), taille ou appareil que les noyaux ne prennent pas,
   // mémoire. native_edges : les bords du FP8 par les noyaux du FP16 natif. native_blocks : essaie les
-  // deux 3×3 avec ReLU du FP8 C48, puis compare au même réseau CUTLASS avant de les retenir.
+  // deux 3×3 avec ReLU du FP8 C48 ou C64, puis compare au même réseau CUTLASS avant de les retenir.
   // vertical_winograd : essaie sur Ada les paires de lignes du SPAN FP16 C64 à huit blocs en 1080p.
   static std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> load(
       const std::filesystem::path& package, std::uint32_t crc, int height, int width,
