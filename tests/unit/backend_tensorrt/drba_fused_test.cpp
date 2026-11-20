@@ -350,7 +350,12 @@ void compare_engines(const std::string& file, int h, int w) {
   const fs::path onnx = fs::path(KIRARI_DRBA_MODEL_DIR) / file;
   if (!fs::is_regular_file(onnx)) SKIP("modèle absent : " << onnx.string());
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  // Le dessin synthétique décale ses traits d'un pixel par pas de la grille FP16 en 4K. La comparaison
+  // y exige une vraie image d'anime. Vérifier sa présence avant de construire les moteurs.
+  if (w > 1920 && !picture_available(h, w))
+    SKIP("4K : une image d'anime (KIRARI_DRBA_IMAGE) assez grande est nécessaire");
   Loaded loaded;
+  INFO(loaded.refusal.detail);
   REQUIRE(loaded.backend != nullptr);
   REQUIRE(loaded.backend->capabilities().drba_fused);
   const fs::path scratch = fs::temp_directory_path() / "kirari-drba-fused-test";
@@ -392,12 +397,6 @@ void compare_engines(const std::string& file, int h, int w) {
   CHECK((*fused)->input_names()[0] == "pair01");
   CHECK((*fused)->input_names()[1] == "pair12");
 
-  // À 4K les traits d'un pixel du dessin synthétique se déplacent d'un pixel au moindre pas de la grille FP16
-  // (0,9 pixel à 3840 de large) : la comparaison de deux réalisations du même graphe y tombe vers 42 dB, sans
-  // lien avec la chaîne. Une vraie image (KIRARI_DRBA_IMAGE, agrandie pour couvrir la taille) est exigée à
-  // cette taille.
-  if (w > 1920 && !picture_available(h, w))
-    SKIP("4K : une image d'anime (KIRARI_DRBA_IMAGE) assez grande est nécessaire");
   const auto images = picture_triple(h, w);
   const gpu::Shape seven{.dims = {1, 7, h, w}};
   const gpu::Shape rgb{.dims = {1, 3, h, w}};
