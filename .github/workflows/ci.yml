@@ -496,16 +496,15 @@ jobs:
         if: steps.touched.outputs.run == 'true'
         shell: pwsh
         run: pwsh tools/deps/windows-tensorrt.ps1 "$env:RUNNER_TEMP/nvidia"
-      - name: Configuration
+      - name: Configuration du backend livré
         if: steps.touched.outputs.run == 'true'
         id: configure
         shell: pwsh
         run: |
           $env:VCPKG_ROOT = $env:KIRARI_VCPKG
-          # Les noyaux CUTLASS du SPAN aussi (éteints par défaut sous Windows, sans la référence de la dérivation) :
-          # leur construction sous MSVC reste vérifiée avant qu'une release les allume.
+          # Sous Windows, la release lie le backend sans CUTLASS.
           cmake --preset windows-rtx "-DKIRARI_TENSORRT_ROOT=$env:KIRARI_TENSORRT_ROOT" "-DKIRARI_CUDA_ARCHITECTURES=89-real" `
-            -DKIRARI_WITH_SPAN_FP8=ON `
+            -DKIRARI_WITH_SPAN_FP8=OFF `
             "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:KIRARI_VCPKG_BUILDTREES" `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
@@ -516,12 +515,22 @@ jobs:
         with:
           path: C:\vc
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
-      - name: Construction
+      - name: Construction et liaison du backend livré
         if: steps.touched.outputs.run == 'true'
         shell: pwsh
         run: |
+          cmake --build --preset windows-rtx --target kirari_backend_tensorrt -- -k 0
+          if ($LASTEXITCODE -ne 0) { throw "construction du backend TensorRT sans CUTLASS" }
+      - name: Construction du projet avec CUTLASS
+        if: steps.touched.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          # Réutiliser les objets du backend qui ne dépendent pas de CUTLASS et compiler aussi les noyaux du SPAN.
+          $env:VCPKG_ROOT = $env:KIRARI_VCPKG
+          cmake --preset windows-rtx -DKIRARI_WITH_SPAN_FP8=ON
+          if ($LASTEXITCODE -ne 0) { throw "configuration avec CUTLASS" }
           cmake --build --preset windows-rtx -- -k 0  # toutes les erreurs de MSVC et de nvcc en une passe
-          if ($LASTEXITCODE -ne 0) { throw "construction" }
+          if ($LASTEXITCODE -ne 0) { throw "construction avec CUTLASS" }
       - if: steps.touched.outputs.run == 'true'
         run: sccache --stop-server; exit 0
       - name: Sauver sccache (main)
