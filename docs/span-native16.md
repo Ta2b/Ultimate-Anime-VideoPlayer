@@ -271,8 +271,14 @@ autorisées gardent leurs bits sur les deux variantes.
 
 En lecture avec Sharp1 Performance à 720p et composition HDR à 240 Hz, le temps GPU de SPAN passe
 d'environ 2,67 à 2,13 ms. Sur les deux alternances, l'affichage passe de 224,27 à 221,54 puis de
-225,84 à 222,54 nouvelles images par seconde. Le C48 vertical reste accessible au banc. Le lecteur
-conserve le direct sur les modèles Performance.
+225,84 à 222,54 nouvelles images par seconde. Sharp1 Performance garde le calcul direct.
+
+Sur le paquet Performance C48 officiel en 1080p, le chargeur départage les sommes FP16 avec un
+calcul en sommes FP32 si leur parité descend sous 50 dB. Le candidat doit
+égaler ou améliorer l'erreur quadratique et le 99,9ᵉ centile d'erreur dans chaque bande. Les tests
+de vitesse et de parité CPU restent actifs. Le temps au chargement passe de 5,02 à 4,07 ms. Avec
+RIFE 4.25 et le compositeur HDR 4K à 240 Hz, le corps SPAN passe de 8,51 à 5,85 ms et Wayland
+confirme 209,55 → 211,97 images nouvelles/s.
 
 Le pas vertical agrandit `SpanTileGrid`, renvoyé par le backend au lecteur. L'ABI passe à 62 et l'empreinte
 inclut la taille de cette grille. Le lecteur demande donc un backend recompilé.

@@ -94,15 +94,24 @@ le même résultat ; (B) garde le plus simple, et la seule chose à écrire pour
 | `tools/span/derive_span_fp8.py` | calibration, paquet, reçu |
 | `third_party/cutlass/` | CUTLASS 4.8.1, BSD-3-Clause, en-têtes seulement (259 fichiers, avec `LICENSE.txt`) |
 
-### Convolutions ReLU natives C48
+### Convolutions et porte natives FP8
 
-`--debug --span-fp8-native-blocks` essaie `c1` et `c2` des blocs sur Ada. Le noyau lit le même K à plat et
+`--debug --span-fp8-native-blocks` essaie `c1` et `c2` des blocs à 48 ou 64 canaux sur Ada. Le noyau lit le même K à plat et
 maintient le même ordre de groupes MMA que CUTLASS. Sur la mire saturée, l'ordre continu de départ tombait
 à 35,3 dB sur la bande la plus difficile. Le regroupement reproduit bit à bit la sortie du réseau sur la mire
 et sur l'image d'anime vérifiée, en sommes FP32 et FP16. Le test `[fp8_staged]` détecte l'ancien ordre pour
 les deux types de sommes. Le chargement exige au moins 50 dB sur chacune de trois bandes et garde le candidat
-seulement s'il est plus rapide. À 1920×1080, le lecteur a retenu 5,73 ms contre 7,70 ms en sommes FP32.
-Le banc en graphe CUDA donne 4,92 contre 6,19 ms en sommes FP16. Le bloc `c3` utilise le même chemin CUTLASS.
+seulement s'il est plus rapide.
+
+Pour un paquet C48 en sommes FP32, le chemin natif calcule aussi la porte d'attention de `c3`.
+Les paquets C48 en sommes FP16 utilisent CUTLASS pour cette porte en service normal et en repli.
+Les paquets C64 utilisent CUTLASS pour `c3`.
+
+À 1080p sur RTX 4070 Ti, les ReLU natives C64 passent de 8,09 à 7,40 ms au banc, avec 24 883 200
+codes identiques. Avec RIFE 4.25 en HDR 4K sous Gamescope à 240 Hz, la cadence confirmée par Wayland
+passe de 182,07 à 187,91 images nouvelles/s. En C48, la seule porte gagne 5,65 → 5,09 ms au banc,
+avec la même parité. Dans le lecteur composé et avec ReLU natives dans les deux cas,
+la cadence passe de 200,64 à 208,96 images nouvelles/s.
 
 ### Accumulateur f16 (variante acc16)
 
