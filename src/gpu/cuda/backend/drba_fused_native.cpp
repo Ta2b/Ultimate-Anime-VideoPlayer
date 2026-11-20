@@ -43,6 +43,13 @@ TailQuality tail_quality(std::span<const __half> reference, std::span<const __ha
   return {.snr = square == 0.0 ? 200.0 : 10.0 * std::log10(power / square), .flow = flow, .mask = mask};
 }
 
+bool same_tail_fields(std::span<const __half> candidate, std::span<const __half> rebuilt) {
+  for (std::size_t i = 0; i < candidate.size(); ++i)
+    if (i % kOutputPitch < kUsedChannels && __half_as_ushort(candidate[i]) != __half_as_ushort(rebuilt[i]))
+      return false;
+  return true;
+}
+
 // Les mêmes 48 canaux fixes, puis un autre instant pour les entrées mobiles.
 std::vector<__half> tail_mire(int height, int width, int instant) {
   std::vector<__half> data(static_cast<std::size_t>(height) * static_cast<std::size_t>(width) * kInputPitch);
@@ -113,6 +120,16 @@ std::expected<std::string, Refusal> DrbaFusedEngine::try_native_tail(
     if (error == cudaSuccess) error = cudaStreamSynchronize(stream);
     return cuda_check(error, "DistilDRBA : récupération du bloc 2");
   };
+  const auto verify_pass = [&](std::size_t slot, auto&& pass, std::vector<__half>& host) {
+    // Une valeur de sortie oubliée doit rester non finie, même si une passe précédente l'avait écrite.
+    if (auto ok =
+            cuda_check(cudaMemsetAsync(scratch.buffers[slot], 0xFF, sizes[slot] * sizeof(__half), stream),
+                       "DistilDRBA : sortie d'essai du bloc 2 à NaN");
+        !ok)
+      return ok;
+    if (auto ok = pass(); !ok) return ok;
+    return output_at(slot, host);
+  };
   std::vector<__half> reference(sizes[1]), candidate(sizes[2]), rebuilt(sizes[2]);
   TailQuality score{.snr = 200.0};
   for (const int instant : {0, 1}) {
@@ -124,17 +141,14 @@ std::expected<std::string, Refusal> DrbaFusedEngine::try_native_tail(
       return std::unexpected(std::move(ok.error()));
     if (auto ok = cuda_check(cudaStreamSynchronize(stream), "DistilDRBA : copie de la mire"); !ok)
       return std::unexpected(std::move(ok.error()));
-    if (auto ok = trt_pass(); !ok) return std::unexpected(std::move(ok.error()));
-    if (auto ok = native_pass(instant != 0); !ok) return std::unexpected(std::move(ok.error()));
-    if (auto ok = output_at(1, reference); !ok) return std::unexpected(std::move(ok.error()));
-    if (auto ok = output_at(2, candidate); !ok) return std::unexpected(std::move(ok.error()));
+    if (auto ok = verify_pass(1, trt_pass, reference); !ok) return std::unexpected(std::move(ok.error()));
+    if (auto ok = verify_pass(2, [&] { return native_pass(instant != 0); }, candidate); !ok)
+      return std::unexpected(std::move(ok.error()));
     if (instant == 1) {
-      if (auto ok = native_pass(false); !ok) return std::unexpected(std::move(ok.error()));
-      if (auto ok = output_at(2, rebuilt); !ok) return std::unexpected(std::move(ok.error()));
-      const auto used = [&](std::size_t i) { return i % kOutputPitch < kUsedChannels; };
-      for (std::size_t i = 0; i < candidate.size(); ++i)
-        if (used(i) && __half_as_ushort(candidate[i]) != __half_as_ushort(rebuilt[i]))
-          return "DistilDRBA : bloc natif écarté, réemploi différent du recalcul";
+      if (auto ok = verify_pass(2, [&] { return native_pass(false); }, rebuilt); !ok)
+        return std::unexpected(std::move(ok.error()));
+      if (!same_tail_fields(candidate, rebuilt))
+        return "DistilDRBA : bloc natif écarté, réemploi différent du recalcul";
     }
     const auto quality = tail_quality(reference, candidate);
     score.snr = std::min(score.snr, quality.snr);

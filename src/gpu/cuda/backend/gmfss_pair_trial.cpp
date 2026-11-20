@@ -9,6 +9,7 @@
 #include <cuda_fp16.h>
 #include <format>
 #include <limits>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -50,6 +51,31 @@ std::expected<std::vector<__half>, Refusal> read_output(const Tensor& output) {
       !ok)
     return std::unexpected(std::move(ok.error()));
   return host;
+}
+
+std::unexpected<Refusal> drain_failed_flow_trial(cudaStream_t stream, Refusal error) {
+  if (error.code == RefusalCode::DeviceLost) return std::unexpected(std::move(error));
+  // Une soumission partielle doit finir avant de libérer le candidat ou de réutiliser la zone partagée.
+  constexpr std::string_view operation = "GMFlow : fin de l'essai";
+  const cudaError_t drained = cudaStreamSynchronize(stream);
+  if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+    return std::unexpected(lost_refusal(lost, operation));
+  if (drained != cudaSuccess) return std::unexpected(cuda_refusal(drained, operation));
+  return std::unexpected(std::move(error));
+}
+
+std::expected<void, Refusal> prepare_flow_trial(cudaStream_t stream, std::span<const Tensor> outputs,
+                                                void* metric, std::size_t metric_bytes) {
+  // 0xffff est un NaN FP16. Aucune écriture omise ne doit reprendre la valeur de la passe précédente.
+  for (const Tensor& out : outputs) {
+    if (auto ok = cuda_check(
+            cudaMemsetAsync(fused_address(out), 0xff, elements(out.shape) * sizeof(__half), stream),
+            "GMFlow : préparation des sorties de l'essai");
+        !ok)
+      return ok;
+  }
+  return cuda_check(cudaMemsetAsync(metric, 0xff, metric_bytes, stream),
+                    "GMFlow : préparation de l'entrée du MetricNet");
 }
 
 }  // namespace
@@ -145,9 +171,16 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_flow_native(
   const auto run = [&](const GmflowPairFlowNet* gmflow) {
     return enqueue_native(stream, shared, frames, outputs, gmflow);
   };
-  if (auto ok = run(nullptr); !ok) return std::unexpected(std::move(ok.error()));
-  if (auto ok = cuda_check(cudaStreamSynchronize(stream), "GMFlow : référence"); !ok)
-    return std::unexpected(std::move(ok.error()));
+  const auto metric_bytes = static_cast<std::size_t>(prepare::kGmfssMetricPlanes) *
+                            static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_) *
+                            sizeof(__half);
+  const auto verify_pass = [&](const GmflowPairFlowNet* gmflow, std::string_view stage) {
+    if (auto ok = prepare_flow_trial(stream, outputs, metric_in_, metric_bytes); !ok) return ok;
+    if (auto ok = run(gmflow); !ok) return ok;
+    return cuda_check(cudaStreamSynchronize(stream), stage);
+  };
+  if (auto ok = verify_pass(nullptr, "GMFlow : référence"); !ok)
+    return drain_failed_flow_trial(stream, std::move(ok.error()));
   std::vector<std::vector<__half>> reference;
   reference.reserve(kOutputs);
   for (std::size_t i = 0; i < kOutputs; ++i) {
@@ -155,9 +188,8 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_flow_native(
     if (!found) return std::unexpected(std::move(found.error()));
     reference.push_back(std::move(*found));
   }
-  if (auto ok = run(candidate->get()); !ok) return std::unexpected(std::move(ok.error()));
-  if (auto ok = cuda_check(cudaStreamSynchronize(stream), "GMFlow : candidat"); !ok)
-    return std::unexpected(std::move(ok.error()));
+  if (auto ok = verify_pass(candidate->get(), "GMFlow : candidat"); !ok)
+    return drain_failed_flow_trial(stream, std::move(ok.error()));
   double worst = std::numeric_limits<double>::infinity();
   std::size_t worst_at = 0;
   std::array<double, kOutputs> scores{};
@@ -194,7 +226,7 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_flow_native(
   auto ms = gmfss_trial::times(
       stream, 2, [&](std::size_t v) { return run(v == 0 ? nullptr : candidate->get()); },
       gmfss_trial::kPieceRounds);
-  if (!ms) return std::unexpected(std::move(ms.error()));
+  if (!ms) return drain_failed_flow_trial(stream, std::move(ms.error()));
   if (!gmfss_mix::beats((*ms)[0], (*ms)[1]))
     return std::format("GMFlow natif écarté : {:.2f} ms contre {:.2f} ms, flot TensorRT", (*ms)[1], (*ms)[0]);
   gmflow_ = std::move(*candidate);

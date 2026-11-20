@@ -377,6 +377,7 @@ std::expected<RifeFusedEngine::Glue*, Refusal> RifeFusedEngine::glue_for(
 std::expected<void, Refusal> RifeFusedEngine::enqueue(BackendQueue& queue, std::span<const Tensor> inputs,
                                                       std::span<const Tensor> outputs) {
   const Hint hint = std::exchange(hint_, Hint::None);  // pour cet appel seulement, même refusé
+  const bool warm = std::exchange(warm_next_, false);
   if (inputs.size() != 1 || outputs.size() != outputs_.size())
     return refuse(RefusalCode::InputMismatch,
                   std::format("RIFE fusionné : 1 entrée et {} sorties attendues", outputs_.size()));
@@ -410,7 +411,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(BackendQueue& queue, std::
   const auto run_net = [&](VulkanEngine& piece, const BufferView& in, const BufferView& out) -> Done {
     return submit_net(queue, piece, in, out);
   };
-  const int first_block = std::exchange(warm_next_, false) ? warm_blocks_ : 0;
+  const int first_block = warm ? warm_blocks_ : 0;
   warm_ready_ = false;  // repris si la chaîne va au bout
   for (int k = first_block; k < plan_.blocks; ++k) {
     const auto i = static_cast<std::size_t>(k);

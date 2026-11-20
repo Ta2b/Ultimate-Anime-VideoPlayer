@@ -375,9 +375,6 @@ __global__ void __launch_bounds__(256) finish_kernel(DrbaFinishParams p) {
   const std::size_t plane = static_cast<std::size_t>(p.height) * static_cast<std::size_t>(p.width);
   const std::size_t o =
       static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
-  const auto* pair01 = static_cast<const __half*>(p.pair01);
-  const auto* pair12 = static_cast<const __half*>(p.pair12);
-  const bool before = before_side(2.0F * __half2float(pair01[6 * plane]));
   float r[5];
   if constexpr (S != 0)
     enlarge<5>(TileZ<tw, th>{inputs, z.zh, z.zw, left, top}, 0, S, x, y, r);
@@ -395,20 +392,24 @@ __global__ void __launch_bounds__(256) finish_kernel(DrbaFinishParams p) {
     static_cast<__half*>(p.mask)[o] = __float2half_rn(sigmoid);
     return;
   }
-  const float complement = rounded(1.0F - sigmoid);
-  float warped[2][3];
+  const auto* pair01 = static_cast<const __half*>(p.pair01);
+  // Pondérer le premier warp tout de suite évite de garder deux triplets RGB non pondérés.
+  float middle[3];
+  {
+    const Tap t = tap_of(x, y, flow[0], flow[1], p.width, p.height);
 #pragma unroll
-  for (int n = 0; n < 2; ++n) {
-    const Tap t = tap_of(x, y, flow[2 * n], flow[2 * n + 1], p.width, p.height);
-    const __half* src = n == 0 ? pair01 + 3 * plane : (before ? pair01 : pair12 + 3 * plane);
-#pragma unroll
-    for (int k = 0; k < 3; ++k) warped[n][k] = rounded(sample(src + k * plane, t));
+    for (int k = 0; k < 3; ++k) middle[k] = rounded(rounded(sample(pair01 + (3 + k) * plane, t)) * sigmoid);
   }
+  const float complement = rounded(1.0F - sigmoid);
+  const bool before = before_side(2.0F * __half2float(pair01[6 * plane]));
+  const auto* side = before ? pair01 : static_cast<const __half*>(p.pair12) + 3 * plane;
+  const Tap t = tap_of(x, y, flow[2], flow[3], p.width, p.height);
   auto* out = static_cast<__half*>(p.out);
 #pragma unroll
-  for (int k = 0; k < 3; ++k)
-    out[k * plane + o] =
-        __float2half_rn(rounded(warped[0][k] * sigmoid) + rounded(warped[1][k] * complement));
+  for (int k = 0; k < 3; ++k) {
+    const float warped_side = rounded(sample(side + k * plane, t));
+    out[k * plane + o] = __float2half_rn(middle[k] + rounded(warped_side * complement));
+  }
 }
 
 dim3 grid_for(int w, int h, dim3 block) {

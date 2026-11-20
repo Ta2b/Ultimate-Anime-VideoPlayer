@@ -198,6 +198,10 @@ void kept_encoding_is_exact(const std::string& file, bool motion) {
   CHECK(call(1, 1, 0.25F, false, Say::TimesOnly) == want[3]);
   REQUIRE(fused->next_warm());
   CHECK(call(1, 1, 0.25F, false, Say::TimesOnly) == want[3]);
+  // Un refus consomme l'annonce. Le nouvel instant sur le même tampon refait le début du réseau.
+  REQUIRE(fused->next_warm());
+  REQUIRE_FALSE(engine->enqueue(nullptr, {}, {}, {}));
+  CHECK(call(1, 1, 0.5F, false, Say::TimesOnly) == want[2]);
 }
 
 // C03-01 : sur une seule voie, SPAN et RIFE partagent la zone d'activation. Un SPAN passé entre deux appels

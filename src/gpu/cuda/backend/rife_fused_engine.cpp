@@ -390,6 +390,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
                                                       std::span<const Tensor> inputs,
                                                       std::span<const Tensor> outputs) {
   const Hint hint = std::exchange(hint_, Hint::None);
+  const bool warm = std::exchange(warm_next_, false);
   if (!arena) return refuse(RefusalCode::GraphInvalid, "RIFE fusionné : zone d'activation absente");
   if (inputs.size() != 1 || outputs.size() != outputs_.size())
     return refuse(RefusalCode::ShapeInvalid,
@@ -423,9 +424,8 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
   Pass pass{.encode = choose_encode(*arena, hint, input)};
   // L'emplacement de A : remis à zéro pour deux images neuves, basculé quand B devient A, gardé sinon.
   pass.a_slot = pass.encode == Encode::Both ? 0U : pass.encode == Encode::Second ? a_slot_ ^ 1U : a_slot_;
-  // À chaud : les Y gardés servent aux mêmes conditions que l'encodage gardé.
-  pass.first_block =
-      std::exchange(warm_next_, false) && warm_ready_ && kept_intact(*arena) ? warm_blocks_ : 0;
+  // À chaud : le lecteur autorise la reprise des Y sur une paire calme, si ses tampons sont intacts.
+  pass.first_block = warm && warm_ready_ && kept_intact(*arena) ? warm_blocks_ : 0;
   warm_ready_ = false;  // repris si la chaîne est enfilée jusqu'au bout
   kept_.reset();
   ++encodes_[static_cast<std::size_t>(pass.encode)];
