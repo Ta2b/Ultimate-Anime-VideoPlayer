@@ -14,7 +14,6 @@ namespace sn = span_native;
 using Byte = std::uint8_t;
 using U32 = std::uint32_t;
 inline constexpr int kSW = sn::kTW + 2;
-inline constexpr int kPixels = (sn::kTH + 2) * kSW;
 
 template <int C>
 struct Tile {
@@ -86,25 +85,25 @@ struct Params {
 };
 
 // Les quatre fragments A pour un MMA. La moitié au-delà de K a des poids nuls ; son adresse reste chargée.
-template <int C>
-__device__ __forceinline__ void load_a(U32 (&a)[sn::kMF][4], U32 tile, int row, int lane, int step) {
+template <int C, int MF>
+__device__ __forceinline__ void load_a(U32 (&a)[MF][4], U32 tile, int row, int lane, int step) {
   const int half = step * 32 + (lane >> 4) * 16;
   const int k = half < Tile<C>::kK ? half : Tile<C>::kK - C;
   const int tap = k / C, c = k % C;
   const int from = row + (tap / 3) * kSW + tap % 3;
 #pragma unroll
-  for (int f = 0; f < sn::kMF; ++f)
+  for (int f = 0; f < MF; ++f)
     sn::ldmatrix4(a[f],
                   tile + static_cast<U32>((from + (f >> 1) * kSW + 16 * (f & 1)) * Tile<C>::kStride + c));
 }
 
-template <int C, bool Pair, sn::Acc A>
-__device__ __forceinline__ void mma_group(sn::Frag<A> (&sum)[sn::kMF][C / 8], U32 tile, const uint4* weights,
+template <int C, int MF, bool Pair, sn::Acc A>
+__device__ __forceinline__ void mma_group(sn::Frag<A> (&sum)[MF][C / 8], U32 tile, const uint4* weights,
                                           int row, int lane, int step) {
   constexpr int kPairs = Tile<C>::kChunks;
-  U32 a0[sn::kMF][4], a1[sn::kMF][4];
-  load_a<C>(a0, tile, row, lane, step);
-  if constexpr (Pair) load_a<C>(a1, tile, row, lane, step + 1);
+  U32 a0[MF][4], a1[MF][4];
+  load_a<C, MF>(a0, tile, row, lane, step);
+  if constexpr (Pair) load_a<C, MF>(a1, tile, row, lane, step + 1);
 #pragma unroll
   for (int np = 0; np < kPairs; ++np) {
     const auto* w = weights + (step * kPairs + np) * 32 + lane;
@@ -112,7 +111,7 @@ __device__ __forceinline__ void mma_group(sn::Frag<A> (&sum)[sn::kMF][C / 8], U3
     uint4 b1{};
     if constexpr (Pair) b1 = __ldg(w + kPairs * 32);
 #pragma unroll
-    for (int f = 0; f < sn::kMF; ++f) {
+    for (int f = 0; f < MF; ++f) {
       sn::Frag<A> left, right;
       left.clear();
       right.clear();
@@ -129,11 +128,66 @@ __device__ __forceinline__ void mma_group(sn::Frag<A> (&sum)[sn::kMF][C / 8], U3
 }
 
 template <int C, sn::Acc A>
-__global__ void __launch_bounds__(sn::kThreads) relu_conv(Params p) {
+__device__ __forceinline__ void store_gate(const Params& p, const sn::Frag<A> (&sum)[C / 8],
+                                           const __half* w1s, int y, int x, int lane, bool& overflow) {
+  constexpr int kNT = C / 8, kKS = C / 16, kLd = C + 8;
+  const int g = lane >> 2, t = lane & 3;
+  const long r0 = static_cast<long>(y) * p.width + x, r1 = r0 + 8;
+  const bool in0 = y < p.height && x < p.width, in1 = y < p.height && x + 8 < p.width;
+  const auto& tp = p.epilogue;
+  float v[kNT][4];
+#pragma unroll
+  for (int n = 0; n < kNT; ++n) {
+    const int c = n * 8 + 2 * t;
+    const float2 bias = __ldg(reinterpret_cast<const float2*>(tp.bias + c));
+    const float2 scale = __ldg(reinterpret_cast<const float2*>(tp.alpha_col + c));
+    const float2 a = sn::sums(sum[n], 0, overflow);
+    const float2 b = sn::sums(sum[n], 1, overflow);
+    v[n][0] = fmaf(a.x, scale.x, bias.x);
+    v[n][1] = fmaf(a.y, scale.y, bias.y);
+    v[n][2] = fmaf(b.x, scale.x, bias.x);
+    v[n][3] = fmaf(b.y, scale.y, bias.y);
+  }
+  U32 operands[kKS][4];
+#pragma unroll
+  for (int ks = 0; ks < kKS; ++ks) {
+    operands[ks][0] = sk::pack_half2(v[2 * ks][0], v[2 * ks][1]);
+    operands[ks][1] = sk::pack_half2(v[2 * ks][2], v[2 * ks][3]);
+    operands[ks][2] = sk::pack_half2(v[2 * ks + 1][0], v[2 * ks + 1][1]);
+    operands[ks][3] = sk::pack_half2(v[2 * ks + 1][2], v[2 * ks + 1][3]);
+  }
+#pragma unroll
+  for (int n = 0; n < kNT; ++n) {
+    float d[4] = {0.f, 0.f, 0.f, 0.f};
+#pragma unroll
+    for (int ks = 0; ks < kKS; ++ks) {
+      const __half* wp = w1s + (n * 8 + g) * kLd + ks * 16 + 2 * t;
+      sk::mma_f16(d, operands[ks], *reinterpret_cast<const U32*>(wp), *reinterpret_cast<const U32*>(wp + 8));
+    }
+    const int c = n * 8 + 2 * t;
+    const float2 b = __ldg(reinterpret_cast<const float2*>(tp.b1 + c));
+    if (in0) {
+      const float2 s = sk::skip_value<false>(sk::load_skip<false>(tp.skip, r0, C, c), tp.skip_scale);
+      sk::store_pair<false>(tp, C, r0, c, (v[n][0] + s.x) * sk::tanh_approx(d[0] + b.x),
+                            (v[n][1] + s.y) * sk::tanh_approx(d[1] + b.y));
+    }
+    if (in1) {
+      const float2 s = sk::skip_value<false>(sk::load_skip<false>(tp.skip, r1, C, c), tp.skip_scale);
+      sk::store_pair<false>(tp, C, r1, c, (v[n][2] + s.x) * sk::tanh_approx(d[2] + b.x),
+                            (v[n][3] + s.y) * sk::tanh_approx(d[3] + b.y));
+    }
+  }
+}
+
+template <int C, sn::Acc A, bool Gate = false>
+__global__ void __launch_bounds__(sn::kThreads) conv(Params p) {
+  static_assert(!Gate || (C == 48 && A == sn::Acc::kF32));
   constexpr int kChunks = Tile<C>::kChunks, kStride = Tile<C>::kStride;
+  constexpr int kRows = Gate ? 1 : sn::kRows;
+  constexpr int kTileRows = sn::kWarps * kRows, kMF = kRows * 2, kPixels = (kTileRows + 2) * kSW;
   __shared__ __align__(16) Byte tile[kPixels * kStride];
   const int tid = static_cast<int>(threadIdx.x), warp = tid >> 5, lane = tid & 31;
-  const int y0 = static_cast<int>(blockIdx.y) * sn::kTH, x0 = static_cast<int>(blockIdx.x) * sn::kTW;
+  const int y0 = static_cast<int>(blockIdx.y) * kTileRows, x0 = static_cast<int>(blockIdx.x) * sn::kTW;
   const U32 base = sn::smem_u32(tile);
   for (int i = tid; i < kPixels * kChunks; i += sn::kThreads) {
     const int pixel = i / kChunks, chunk = i % kChunks;
@@ -142,39 +196,49 @@ __global__ void __launch_bounds__(sn::kThreads) relu_conv(Params p) {
     const auto* from = valid ? p.input + (static_cast<long>(y) * p.width + x) * C + chunk * 16 : p.input;
     sn::cp_async16(base + static_cast<U32>(pixel * kStride + chunk * 16), from, valid);
   }
+  constexpr int kLd = C + 8;
+  __shared__ __align__(16) __half w1s[Gate ? C * kLd : 1];
+  if constexpr (Gate) sk::load_w1<C, kLd, sn::kThreads>(w1s, p.epilogue.w1);
   sn::cp_async_wait_all();
   __syncthreads();
 
-  sn::Frag<A> sum[sn::kMF][C / 8];
+  sn::Frag<A> sum[kMF][C / 8];
 #pragma unroll
-  for (int f = 0; f < sn::kMF; ++f)
+  for (int f = 0; f < kMF; ++f)
 #pragma unroll
     for (int n = 0; n < C / 8; ++n) sum[f][n].clear();
-  const int row = warp * sn::kRows * kSW + (lane & 15);
+  const int row = warp * kRows * kSW + (lane & 15);
   // CUTLASS TK64 verse le temporaire au premier MMA de chaque tuile K, et au dernier MMA du calcul.
   // Les groupes sont [0], [1,2], …, [dernier pas], avec addition au type de l'accumulateur.
-  mma_group<C, false>(sum, base, p.packed, row, lane, 0);
+  mma_group<C, kMF, false>(sum, base, p.packed, row, lane, 0);
 #pragma unroll 1
   for (int step = 1; step + 1 < Tile<C>::kSteps; step += 2)
-    mma_group<C, true>(sum, base, p.packed, row, lane, step);
-  mma_group<C, false>(sum, base, p.packed, row, lane, Tile<C>::kSteps - 1);
+    mma_group<C, kMF, true>(sum, base, p.packed, row, lane, step);
+  mma_group<C, kMF, false>(sum, base, p.packed, row, lane, Tile<C>::kSteps - 1);
   bool overflow = false;
+  if constexpr (Gate) {
 #pragma unroll
-  for (int n = 0; n < C / 8; ++n) {
-    const int c = n * 8 + 2 * (lane & 3);
-    const float2 b = __ldg(reinterpret_cast<const float2*>(p.epilogue.bias + c));
-    const float2 s = __ldg(reinterpret_cast<const float2*>(p.epilogue.alpha_col + c));
+    for (int f = 0; f < kMF; ++f)
+      store_gate<C>(p, sum[f], w1s, y0 + warp * kRows + (f >> 1), x0 + 16 * (f & 1) + (lane >> 2), lane,
+                    overflow);
+  } else {
 #pragma unroll
-    for (int f = 0; f < sn::kMF; ++f) {
-      const int y = y0 + warp * sn::kRows + (f >> 1);
-      const int x0f = x0 + 16 * (f & 1) + (lane >> 2);
+    for (int n = 0; n < C / 8; ++n) {
+      const int c = n * 8 + 2 * (lane & 3);
+      const float2 b = __ldg(reinterpret_cast<const float2*>(p.epilogue.bias + c));
+      const float2 s = __ldg(reinterpret_cast<const float2*>(p.epilogue.alpha_col + c));
 #pragma unroll
-      for (int h = 0; h < 2; ++h) {
-        const float2 v = sn::sums(sum[f][n], h, overflow);
-        const int x = x0f + 8 * h;
-        if (y < p.height && x < p.width)
-          sk::store_pair<false>(p.epilogue, C, static_cast<long>(y) * p.width + x, c,
-                                fmaxf(fmaf(v.x, s.x, b.x), 0.F), fmaxf(fmaf(v.y, s.y, b.y), 0.F));
+      for (int f = 0; f < kMF; ++f) {
+        const int y = y0 + warp * kRows + (f >> 1);
+        const int x0f = x0 + 16 * (f & 1) + (lane >> 2);
+#pragma unroll
+        for (int h = 0; h < 2; ++h) {
+          const float2 v = sn::sums(sum[f][n], h, overflow);
+          const int x = x0f + 8 * h;
+          if (y < p.height && x < p.width)
+            sk::store_pair<false>(p.epilogue, C, static_cast<long>(y) * p.width + x, c,
+                                  fmaxf(fmaf(v.x, s.x, b.x), 0.F), fmaxf(fmaf(v.y, s.y, b.y), 0.F));
+        }
       }
     }
   }
@@ -186,9 +250,17 @@ void launch_relu(cudaStream_t stream, const Params& p, bool f16) {
   const dim3 grid(static_cast<unsigned>((p.width + sn::kTW - 1) / sn::kTW),
                   static_cast<unsigned>((p.height + sn::kTH - 1) / sn::kTH));
   if (f16)
-    relu_conv<Channels, sn::Acc::kF16><<<grid, sn::kThreads, 0, stream>>>(p);
+    conv<Channels, sn::Acc::kF16><<<grid, sn::kThreads, 0, stream>>>(p);
   else
-    relu_conv<Channels, sn::Acc::kF32><<<grid, sn::kThreads, 0, stream>>>(p);
+    conv<Channels, sn::Acc::kF32><<<grid, sn::kThreads, 0, stream>>>(p);
+}
+
+// Une ligne par warp pour tenir l'attention 1×1 et les sommes f32 sans débordement de registres.
+template <int Channels>
+void launch_gate(cudaStream_t stream, const Params& p) {
+  const dim3 grid(static_cast<unsigned>((p.width + sn::kTW - 1) / sn::kTW),
+                  static_cast<unsigned>((p.height + sn::kWarps - 1) / sn::kWarps));
+  conv<Channels, sn::Acc::kF32, true><<<grid, sn::kThreads, 0, stream>>>(p);
 }
 
 }  // namespace kirari::gpu::cuda::span_native8

@@ -69,7 +69,8 @@ class Body final : public SpanFp8Body {
   static constexpr int kBlocks = SpanFp8Weights::kBlocks;
   static constexpr int kConcat = 4 * Ch;
   static constexpr int kScaleCount = SpanFp8Weights::kScales;
-  static constexpr bool kNativeRelu = Ch == 64 || (Ch == 48 && BlockAlg == Alg::kFewChannels);
+  static constexpr bool kNativeGate = Ch == 48 && BlockAlg == Alg::kFewChannels;
+  static constexpr bool kNativeRelu = Ch == 64 || kNativeGate;
 
   // Blocs : entrée FP8, Ch canaux. Hors blocs : entrée FP16, accumulateur f32.
   template <class Acc>
@@ -176,9 +177,13 @@ class Body final : public SpanFp8Body {
   LC1 c1_;
   std::array<L8, kBlocks> la_, lb_;
   std::array<LT, kBlocks> lc_;
-  // Les deux convolutions avec ReLU natives, aux mêmes adresses que CUTLASS.
-  std::array<std::array<span_native8::Params, 2>, kNativeRelu ? kBlocks : 0> relu_{};
+  // Les deux ReLU et, en C48 f32, l'épilogue d'attention, aux mêmes adresses que CUTLASS.
+  std::array<std::array<span_native8::Params, kNativeGate ? 3 : 2>, kNativeRelu ? kBlocks : 0> native_{};
   bool native_relu_ = false;
+  bool use_native(std::size_t conv) const {
+    // Un paquet f16 doit pouvoir repasser en f32 après débordement sans changer ses poids déjà rangés.
+    return native_relu_ && (conv < 2 || (kNativeGate && !acc16_));
+  }
   LCAT cat_;
   LPIX pix_;
   LCATH cat16_;
@@ -264,7 +269,7 @@ bool Body<Ch, BlockAlg>::upload_block(std::size_t b, const SpanFp8Weights& weigh
     for (std::size_t c = 0; c < alpha.size(); ++c) alpha[c] = act_scale(b, i) * w_scale[c];
     if (!sent(bw.alpha[i].upload(alpha.data(), sizeof(alpha)), "échelles des poids FP8")) return false;
     if constexpr (kNativeRelu) {
-      if (native_relu_ && i < 2) {
+      if (use_native(i)) {
         const auto packed = span_native8::pack<Ch>(q);
         if (!sent(bw.w[i].upload(packed.data(), packed.size() * sizeof(packed[0])), "poids FP8 natifs"))
           return false;
@@ -289,14 +294,14 @@ void Body<Ch, BlockAlg>::bind_block(std::size_t b, std::uint8_t* const (&x)[2], 
   // n'a qu'à changer de lancement.
   const auto init = [&](auto& plain, auto& half, const std::uint8_t* in, std::size_t i, const sk::KP& k) {
     if constexpr (kNativeRelu) {
-      if (native_relu_ && i < 2) {
+      if (use_native(i)) {
         sk::KP guarded = k;
         guarded.overflow = overflow_dev_;
-        relu_[b][i] = {.input = in,
-                       .packed = bw.w[i].template as<uint4>(),
-                       .epilogue = guarded,
-                       .height = h_,
-                       .width = w_};
+        native_[b][i] = {.input = in,
+                         .packed = bw.w[i].template as<uint4>(),
+                         .epilogue = guarded,
+                         .height = h_,
+                         .width = w_};
         return;
       }
     }
@@ -439,8 +444,14 @@ bool Body<Ch, BlockAlg>::launch_body(cudaStream_t stream, const void* input, std
     const bool f16 = f16_now();
     if constexpr (kNativeRelu) {
       if (native_relu_) {
-        span_native8::launch_relu<Ch>(stream, relu_[b][0], f16);
-        span_native8::launch_relu<Ch>(stream, relu_[b][1], f16);
+        span_native8::launch_relu<Ch>(stream, native_[b][0], f16);
+        span_native8::launch_relu<Ch>(stream, native_[b][1], f16);
+        if constexpr (kNativeGate) {
+          if (use_native(2)) {
+            span_native8::launch_gate<Ch>(stream, native_[b][2]);
+            continue;
+          }
+        }
       }
     }
     if (!native_relu_) {
