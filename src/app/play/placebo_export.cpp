@@ -284,6 +284,8 @@ FrameExport::~FrameExport() {
   for (auto& set : planes_) {
     for (pl_tex& tex : set) pl_tex_destroy(gpu, &tex);
   }
+  pl_tex_destroy(gpu, &graded_rgb_);
+  pl_renderer_destroy(&grade_renderer_);
   pl_renderer_destroy(&renderer_);
 }
 
@@ -345,10 +347,52 @@ FrameExport::Converted FrameExport::render(const RingFrame& frame, std::span<con
   if (grade_) add(grade_->hooks());
   params.hooks = hooks.data();
   params.num_hooks = static_cast<int>(count);
-  const bool rendered = pl_render_image(renderer_, &image, &target, &params);
+  pl_frame source = image;
+  if (grade_) {
+    // Deux passes : le grade en RVB, puis la conversion seule vers les plans YCbCr de l'encodeur.
+    auto graded = grade_into_rgb(gpu, image, params);
+    if (!graded) return given_back(std::move(graded.error()));
+    source = *graded;
+    params.hooks = nullptr;
+    params.num_hooks = 0;
+  }
+  const bool rendered = pl_render_image(renderer_, &source, &target, &params);
   Converted out = given_back(std::nullopt);  // la copie lit les textures de sortie, plus le slot
   if (!rendered) out.failure = Refusal{RefusalCode::VendorCallFailed, "export : pl_render_image"};
   return out;
+}
+
+std::expected<pl_frame, Refusal> FrameExport::grade_into_rgb(pl_gpu gpu, const pl_frame& image,
+                                                             const pl_render_params& params) {
+  if (grade_renderer_ == nullptr) grade_renderer_ = pl_renderer_create(screen_.impl_->log, gpu);
+  if (grade_renderer_ == nullptr) return refuse(RefusalCode::VendorCallFailed, "export : pl_renderer_create");
+  if (graded_rgb_ == nullptr) {
+    const pl_fmt format = pl_find_named_fmt(gpu, "rgba16");
+    constexpr auto kNeeded = static_cast<pl_fmt_caps>(PL_FMT_CAP_RENDERABLE | PL_FMT_CAP_SAMPLEABLE);
+    if (format == nullptr || (format->caps & kNeeded) != kNeeded)
+      return refuse(RefusalCode::FeatureUnavailable, "export : rgba16 sans rendu ni lecture sur ce GPU");
+    pl_tex_params tex{};
+    tex.w = setup_.width;
+    tex.h = setup_.height;
+    tex.format = format;
+    tex.renderable = true;
+    tex.sampleable = true;
+    graded_rgb_ = pl_tex_create(gpu, &tex);
+    if (graded_rgb_ == nullptr) return refuse(RefusalCode::VendorCallFailed, "export : pl_tex_create (RVB)");
+  }
+  pl_frame rgb{};
+  rgb.num_planes = 1;
+  rgb.planes[0].texture = graded_rgb_;
+  rgb.planes[0].components = 4;
+  for (int c = 0; c < 4; ++c) rgb.planes[0].component_mapping[c] = c;
+  rgb.repr = pl_color_repr_rgb;
+  rgb.color = graded_color_;
+  rgb.crop = {0, 0, static_cast<float>(setup_.width), static_cast<float>(setup_.height)};
+  pl_render_params graded = params;
+  graded.dither_params = nullptr;  // 16 bits : le tramage revient à la conversion vers la sortie
+  if (!pl_render_image(grade_renderer_, &image, &rgb, &graded))
+    return refuse(RefusalCode::VendorCallFailed, "export : pl_render_image (grade en RVB)");
+  return rgb;
 }
 
 FrameExport::Converted FrameExport::convert(const RingFrame& frame) {

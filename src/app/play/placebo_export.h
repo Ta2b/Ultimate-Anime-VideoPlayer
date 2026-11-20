@@ -169,13 +169,20 @@ class FrameExport {
   // Rend l'image du ring dans ces plans de sortie (un par plan de la disposition ; packed : plans
   // 10 bits dans 16, rx10) et rend le slot.
   Converted render(const RingFrame& frame, std::span<const pl_tex> targets, bool packed);
+  // Le grade en RVB : l'image du ring rendue avec les hooks dans graded_rgb_ (rgba16, taille de l'export,
+  // couleur graded_color_). Les hooks OUTPUT du grade travaillent en RVB ; sur une cible YCbCr à plusieurs
+  // plans, libplacebo les appliquait aux plans encodés (export HDR à dominante orange, luma plate).
+  std::expected<pl_frame, Refusal> grade_into_rgb(pl_gpu gpu, const pl_frame& image,
+                                                  const pl_render_params& params);
   bool ready(Buffer& buffer);
 
   PlaceboScreen& screen_;
   FrameExportSetup setup_;
   pl_renderer renderer_ = nullptr;
-  std::optional<render::Grade> grade_;  // setup.grade posé : ses hooks après ceux d'Anime4K
-  pl_color_space graded_color_{};       // la cible du grade : HDR10 ou BT.709
+  std::optional<render::Grade> grade_;    // setup.grade posé : ses hooks après ceux d'Anime4K
+  pl_color_space graded_color_{};         // la cible du grade : HDR10 ou BT.709
+  pl_renderer grade_renderer_ = nullptr;  // le sien : son état (pic, lissages) ne se mêle pas à la conversion
+  pl_tex graded_rgb_ = nullptr;           // l'image gradée, avant sa conversion en YCbCr (grade_into_rgb)
   // Deux jeux de plans de sortie, l'un après l'autre : le rendu d'une image n'attend pas la relecture
   // de la précédente (file de transfert à part sur la plupart des GPU).
   static constexpr std::size_t kPlaneSets = 2;
