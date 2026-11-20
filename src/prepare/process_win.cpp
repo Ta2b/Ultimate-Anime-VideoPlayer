@@ -66,18 +66,23 @@ std::wstring widen(std::string_view utf8) {
   return wide;
 }
 
-// Lit tout ce qui est disponible ; true quand tous les écrivains ont fermé.
-bool drain(HANDLE pipe, LineSplitter& lines) {
+enum class PipeState { Idle, Drained, Closed };
+
+// Lit les octets déjà en attente. Laisser les écritures suivantes au prochain tour fait repasser par
+// le délai et l'annulation même si un processus écrit plus vite que nous.
+PipeState drain(HANDLE pipe, LineSplitter& lines) {
+  DWORD pending = 0;
+  if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &pending, nullptr)) return PipeState::Closed;
+  if (pending == 0) return PipeState::Idle;
   std::array<char, 4096> buffer{};
-  for (;;) {
-    DWORD available = 0;
-    if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr)) return true;  // ERROR_BROKEN_PIPE
-    if (available == 0) return false;
+  while (pending != 0) {
     DWORD got = 0;
-    const DWORD wanted = std::min<DWORD>(available, static_cast<DWORD>(buffer.size()));
-    if (!ReadFile(pipe, buffer.data(), wanted, &got, nullptr)) return true;
+    const DWORD wanted = std::min<DWORD>(pending, static_cast<DWORD>(buffer.size()));
+    if (!ReadFile(pipe, buffer.data(), wanted, &got, nullptr) || got == 0) return PipeState::Closed;
     lines.feed(std::string_view(buffer.data(), got));
+    pending -= got;
   }
+  return PipeState::Drained;
 }
 
 }  // namespace
@@ -176,21 +181,24 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
 
   LineSplitter lines(on_line);
   std::optional<ExitKind> killed;
-  bool eof = false;
+  PipeState pipe = PipeState::Idle;
   for (;;) {
     const auto now = Clock::now();
     if (!killed && (stop.stop_requested() || now >= start + spec.timeout)) {
       killed = stop.stop_requested() ? ExitKind::Cancelled : ExitKind::TimedOut;
       if (!TerminateJobObject(job.get(), 1)) return failure(spec.program, "TerminateJobObject");
     }
-    if (!eof) eof = drain(read.get(), lines);
+    if (pipe != PipeState::Closed) pipe = drain(read.get(), lines);
     const auto left = std::chrono::duration_cast<milliseconds>(start + spec.timeout - now).count();
-    const DWORD slice = killed ? INFINITE : static_cast<DWORD>(std::clamp<long long>(left, 0, kPollSlice));
+    const DWORD slice = killed ? INFINITE
+                        : pipe == PipeState::Drained
+                            ? 0
+                            : static_cast<DWORD>(std::clamp<long long>(left, 0, kPollSlice));
     const DWORD wait = WaitForSingleObject(process.get(), slice);
     if (wait == WAIT_OBJECT_0) break;
     if (wait == WAIT_FAILED) return failure(spec.program, "WaitForSingleObject");
   }
-  if (!eof) drain(read.get(), lines);
+  if (pipe != PipeState::Closed) drain(read.get(), lines);
   lines.finish();
 
   DWORD code = 0;
