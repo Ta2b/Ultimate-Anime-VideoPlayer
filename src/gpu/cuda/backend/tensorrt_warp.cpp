@@ -296,7 +296,8 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
       return launch_into(target, label, [&](RingSurface surface) {
         WarpBlendParams into = params;
         into.surface = surface;
-        return cuda_check(launch_warp_blend_layers(into, *layers, bounds, nullptr, stream_),
+        const bool compact_poses = properties_.major == 8 && properties_.minor == 9;
+        return cuda_check(launch_warp_blend_layers(into, *layers, bounds, nullptr, stream_, compact_poses),
                           "warp_blend_layers<<<>>>");
       });
     }

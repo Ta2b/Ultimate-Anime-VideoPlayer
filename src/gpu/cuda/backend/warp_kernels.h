@@ -73,7 +73,8 @@ cudaError_t launch_certify_layer_warp(const void* data, std::size_t elements, bo
                                       cudaStream_t stream);
 // shortcut_count, s'il est donné, est remis à zéro puis reçoit le nombre de pixels qui évitent le warp.
 cudaError_t launch_warp_blend_layers(const WarpBlendParams& warp, const LayerArgs& layer,
-                                     LayerWarpBounds bounds, unsigned* shortcut_count, cudaStream_t stream);
+                                     LayerWarpBounds bounds, unsigned* shortcut_count, cudaStream_t stream,
+                                     bool compact_poses = false);
 
 // Mouvement d'ensemble de la paire (a et b de params, kernels/spec/warp_pan.h) dans out[0..2] : dx, dy et
 // 1 si l'estimation est sûre, 0 sinon. Un seul bloc ; pan de params n'est pas lu.

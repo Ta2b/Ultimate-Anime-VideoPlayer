@@ -277,6 +277,32 @@ __device__ __forceinline__ bool unique_rounding(float target, __half& rounded) {
   return __half_as_ushort(rounded) == __half_as_ushort(__float2half_rn(hi));
 }
 
+// Quand le décor couvre le pixel, il peut imposer la même valeur FP16 quelle que soit l'image du warp.
+__device__ __forceinline__ bool certified_layer_mix(const WarpBlendParams& p, LayerWarpBounds bounds,
+                                                    const layer::Pixel& v, float weight, float inverse,
+                                                    __half (&rgb)[3]) {
+  if (!(weight == 1.0F && p.pan == nullptr && no_outliers(bounds.a_outside) &&
+        no_outliers(bounds.b_outside) && (p.from_middle || no_outliers(bounds.mask_outside))))
+    return false;
+  bool exact = true;
+#pragma unroll
+  for (int c = 0; c < 3; ++c) exact &= unique_rounding(__fmul_rn(v.sum[c], inverse), rgb[c]);
+  return exact;
+}
+
+template <bool Cubic>
+__device__ __forceinline__ void shade_layer_pixel(const WarpBlendParams& p, int x, int y, float weight,
+                                                  const float (&sum)[3], float inverse, __half (&rgb)[3]) {
+  float here[3];
+  warp_pixel<Exact, Cubic>(p, x, y, here);
+#pragma unroll
+  for (int c = 0; c < 3; ++c) {
+    // Le tenseur du warp allait en FP16 avant la composition séparée.
+    rgb[c] = __float2half_rn(here[c]);
+    if (!(weight <= 0.0F)) rgb[c] = layer::finish(__half2float(rgb[c]), weight, sum[c], inverse);
+  }
+}
+
 template <bool Cubic, bool Count, bool Ring>
 __global__ void __launch_bounds__(kPixelThreads, 2)
     warp_blend_layers(WarpBlendParams p, LayerArgs layers, LayerWarpBounds bounds, unsigned* shortcut_count) {
@@ -291,22 +317,8 @@ __global__ void __launch_bounds__(kPixelThreads, 2)
     // Au milieu, la sigmoïde du warp emploie un masque borné et un instant fini. Dans le chemin direct,
     // le masque brut doit être certifié. Sans pan pendant cet essai. Les positions, même NaN, sont bornées
     // avant lecture par fminf/fmaxf. Les sources certifiées restent finies et dans [-2,2] en sortie FP16.
-    if (mk == 1.0F && p.pan == nullptr && no_outliers(bounds.a_outside) && no_outliers(bounds.b_outside) &&
-        (p.from_middle || no_outliers(bounds.mask_outside))) {
-      shortcut = true;
-#pragma unroll
-      for (int c = 0; c < 3; ++c) shortcut &= unique_rounding(__fmul_rn(v.sum[c], inv), rgb[c]);
-    }
-    if (!shortcut) {
-      float here[3];
-      warp_pixel<Exact, Cubic>(p, x, y, here);
-#pragma unroll
-      for (int c = 0; c < 3; ++c) {
-        // Le tenseur du warp allait en FP16 avant la composition séparée.
-        rgb[c] = __float2half_rn(here[c]);
-        if (!(mk <= 0.0F)) rgb[c] = layer::finish(__half2float(rgb[c]), mk, v.sum[c], inv);
-      }
-    }
+    shortcut = certified_layer_mix(p, bounds, v, mk, inv, rgb);
+    if (!shortcut) shade_layer_pixel<Cubic>(p, x, y, mk, v.sum, inv, rgb);
     if constexpr (Ring) {
       store_ring(p.surface, x, y, rgb[0], rgb[1], rgb[2]);
     } else {
@@ -321,6 +333,81 @@ __global__ void __launch_bounds__(kPixelThreads, 2)
     const int n = __syncthreads_count(shortcut);
     if (threadIdx.x == 0 && threadIdx.y == 0 && n != 0) atomicAdd(shortcut_count, static_cast<unsigned>(n));
   }
+}
+
+struct DeferredPixel {
+  unsigned xy;
+  float mix, inverse;
+  float sum[3];
+};
+
+__device__ __forceinline__ void shade_deferred(const WarpBlendParams& p, const DeferredPixel& task) {
+  const int x = static_cast<int>(task.xy & 0xffffU), y = static_cast<int>(task.xy >> 16);
+  __half rgb[3];
+  shade_layer_pixel<true>(p, x, y, task.mix, task.sum, task.inverse, rgb);
+  store_ring(p.surface, x, y, rgb[0], rgb[1], rgb[2]);
+}
+
+// Les pixels non certifiés seuls prennent la voie du warp, groupés dans un bloc.
+constexpr unsigned kDeferredLimit = 64;
+__global__ void __launch_bounds__(kPixelThreads, 2)
+    warp_layer_deferred(WarpBlendParams p, LayerArgs layers, LayerWarpBounds bounds) {
+  constexpr int warps = kPixelThreads / 32;
+  __shared__ unsigned pending_counts[warps];
+  __shared__ DeferredPixel pending[kDeferredLimit];
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  const int thread = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
+  const int warp = thread / 32, lane = thread % 32;
+  const bool valid = x < p.width && y < p.height;
+  DeferredPixel task{};
+  bool shortcut = false;
+  if (valid) {
+    const layer::Pixel v = layer::sample<true>(layers, x, y);
+    const float mk = layer::mix_weight(layers, v, v.d, 1.F);
+    const float inv = v.m > 0.F ? 1.F / v.total : 0.F;
+    __half rgb[3];
+    shortcut = certified_layer_mix(p, bounds, v, mk, inv, rgb);
+    if (shortcut) {
+      store_ring(p.surface, x, y, rgb[0], rgb[1], rgb[2]);
+    } else {
+      task = {.xy = static_cast<unsigned>(x) | (static_cast<unsigned>(y) << 16),
+              .mix = mk,
+              .inverse = inv,
+              .sum = {v.sum[0], v.sum[1], v.sum[2]}};
+    }
+  }
+  const bool defer = valid && !shortcut;
+  const unsigned mask = __ballot_sync(0xffffffffU, defer);
+  if (lane == 0) pending_counts[warp] = static_cast<unsigned>(__popc(mask));
+  __syncthreads();
+  unsigned total = 0, offset = 0;
+#pragma unroll
+  for (int i = 0; i < warps; ++i) {
+    const unsigned n = pending_counts[i];
+    total += n;
+    if (i < warp) offset += n;
+  }
+  if (total == 0U) return;
+  if (total > kDeferredLimit) {
+    if (defer) shade_deferred(p, task);
+    return;
+  }
+  if (defer) {
+    const unsigned earlier = (1U << lane) - 1U;
+    pending[offset + static_cast<unsigned>(__popc(mask & earlier))] = task;
+  }
+  __syncthreads();
+  if (static_cast<unsigned>(thread) < total) shade_deferred(p, pending[thread]);
+}
+
+bool full_layer_grid(const LayerGridArgs& grid) {
+  const int cells = grid.cols * grid.rows, words = cells / 32, tail = cells % 32;
+  for (int i = 0; i < words; ++i)
+    if (grid.bits[i] != ~0U) return false;
+  if (tail == 0) return true;
+  const unsigned mask = (1U << tail) - 1U;
+  return (grid.bits[words] & mask) == mask;
 }
 
 template <bool Ring>
@@ -571,7 +658,8 @@ cudaError_t launch_certify_layer_warp(const void* data, std::size_t elements, bo
 }
 
 cudaError_t launch_warp_blend_layers(const WarpBlendParams& p, const LayerArgs& layers,
-                                     LayerWarpBounds bounds, unsigned* shortcut_count, cudaStream_t stream) {
+                                     LayerWarpBounds bounds, unsigned* shortcut_count, cudaStream_t stream,
+                                     bool compact_poses) {
   const auto& g = layers.grid;
   const bool ring = p.surface.object != 0;
   if ((ring ? p.out != nullptr : p.out == nullptr) || p.a == nullptr || p.b == nullptr || p.flow == nullptr ||
@@ -594,10 +682,15 @@ cudaError_t launch_warp_blend_layers(const WarpBlendParams& p, const LayerArgs& 
     const cudaError_t clear = cudaMemsetAsync(shortcut_count, 0, sizeof(*shortcut_count), stream);
     if (clear != cudaSuccess) return clear;
   }
-  if (ring)
+  if (compact_poses && ring && p.cubic && p.keep_poses && p.from_middle && p.pan == nullptr &&
+      shortcut_count == nullptr && bounds.a_outside != nullptr && bounds.b_outside != nullptr &&
+      full_layer_grid(g)) {
+    warp_layer_deferred<<<grid, block, 0, stream>>>(p, layers, bounds);
+  } else if (ring) {
     launch_layers<true>(grid, block, p, layers, bounds, shortcut_count, stream);
-  else
+  } else {
     launch_layers<false>(grid, block, p, layers, bounds, shortcut_count, stream);
+  }
   return cudaGetLastError();
 }
 
