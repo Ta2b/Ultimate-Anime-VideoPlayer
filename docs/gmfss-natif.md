@@ -104,6 +104,19 @@ contre 2,71–2,78 ms pour refaire FeatureNet d'un côté. En Instantané sur Re
 réemployées sans copie (21,06 ms de médiane) et 45 paires avec deux côtés calculés (24,48 ms de médiane).
 Ces durées comprennent les autres travaux de la paire et proviennent de groupes de paires différents.
 
+## Splats de la fusion
+
+Sur Ada, les huit splats de la fusion préparent un index des sources par destination. Si deux
+travaux consécutifs partagent le mouvement, sa grille et l'instant, le second reprend l'index. Chaque fil
+rassemble ses contributions en FP32 et écrit le résultat normalisé directement en FP16. Les caractéristiques
+des niveaux à 128 et 192 canaux peuvent écrire un groupe C8 aligné en une fois. L'ordre des additions FP32
+peut changer, comme entre deux ordres d'exécution du splat atomique.
+
+Les destinations qui reçoivent plus de 128 contributions passent par une accumulation FP32 dédiée à ces
+pixels. Le nombre de contributions borne la taille de ce tampon. Le choix est fait sur le GPU et les autres
+destinations conservent le rassemblement. Le splat par étapes reste disponible pour les autres chemins,
+les dimensions dépassant 552 960 pixels ou si le tampon d'index manque de mémoire.
+
 ## Sommes et vitesse
 
 Les noyaux font leurs sommes en f16, mixtes (chaque prise en f16, les prises entre elles en f32) ou f32, comme
@@ -111,7 +124,8 @@ pour le RIFE natif ([`rife-natif.md`](rife-natif.md)) ; la tuile de 64 canaux de
 Chaque réseau natif est coupé en morceaux qui prennent chacun leurs sommes (« Essai par morceaux et réglage »
 ci-dessous) ; le mélange le plus rapide qui tient le seuil est chronométré contre TensorRT (`gmfss_trial.h` :
 onze tours intercalés, la médiane) et n'est gardé que s'il le bat d'au moins 2 %. Sinon TensorRT garde la
-fusion ou la paire : le natif ne coûte jamais de qualité ni de vitesse.
+fusion ou la paire. Le seuil et le chronométrage portent sur les entrées de cet essai. Les différences
+d'arrondi et de temps sur les scènes réelles se vérifient séparément.
 
 ## Essai par morceaux et réglage
 

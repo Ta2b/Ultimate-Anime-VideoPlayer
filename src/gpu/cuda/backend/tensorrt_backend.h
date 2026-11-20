@@ -120,8 +120,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> soft_splat_fill(std::span<const KernelOps::SplatJob> jobs, const Tensor& time,
                                                float t) override;
   std::expected<void, Refusal> gmfss_fuse_splats(Engine& fusion, std::span<const SplatJob> jobs,
-                                                const Tensor& time, float t, std::span<const Tensor> inputs,
-                                                std::span<Tensor> outputs) override;
+                                                 const Tensor& time, float t, std::span<const Tensor> inputs,
+                                                 std::span<Tensor> outputs) override;
   std::expected<void, Refusal> gmfss_compose(const KernelOps::ComposeJob& job) override;
   // La composition par calques (tensorrt_layers.cpp, kernels/spec/layers.h).
   std::expected<void, Refusal> compose_layers(const LayerJob& job) override;
@@ -276,8 +276,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
     int pitch = 0;
   };
   std::expected<void, Refusal> soft_splat(std::span<const SplatJob> jobs, const Tensor& time, float t,
-                                         std::span<const SplatDestination> direct,
-                                         const GmfssFusedEngine* fusion);
+                                          std::span<const SplatDestination> direct,
+                                          const GmfssFusedEngine* fusion);
   // La paire de GMFSS au FeatureNet et au MetricNet natifs (tensorrt_gmfss_pair.cpp) : un manifeste
   // « .gmfsspair », la paire entière et son flot construits par trtexec, chargés ensemble, le natif essayé si
   // demandé.
@@ -561,9 +561,12 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool nvof_roundtrip_ = false;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
-  // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).
+  // Sommes FP32 ou index du softmax splatting, ordonnés entre les voies par la même clé.
   float* splat_sums_ = nullptr;
+  bool splat_index_oom_ = false;
   std::size_t splat_bytes_ = 0;
+  cudaError_t reserve_splat_sums(std::size_t bytes);
+  std::expected<bool, Refusal> choose_splat_sums(std::size_t sums_bytes, std::size_t indexed_bytes);
   // Les mouvements ramenés à la grille de leur source (SplatJob::grid), avant le splat.
   void* grid_motion_ = nullptr;
   float* pan_estimate_ = nullptr;  // mouvement d'ensemble de la paire du warp en cours (4 flottants)

@@ -3,7 +3,7 @@
 # restent cachés, sauf les trois points d'entrée.
 add_library(kirari_backend_tensorrt_kernels STATIC deband_kernels.cu doubt_kernels.cu drba_fused_kernels.cu export_kernels.cu
   gmflow_attention_net.cu gmflow_backbone_net.cu gmflow_convex_kernels.cu gmflow_convex_net.cu gmflow_global_kernels.cu gmflow_local_kernels.cu
-  gmflow_mlp_net.cu gmflow_scale_kernels.cu gmfss_conv_plan.cu gmfss_conv_tune.cu gmfss_kernels.cu
+  gmflow_mlp_net.cu gmflow_scale_kernels.cu gmfss_conv_plan.cu gmfss_conv_tune.cu gmfss_kernels.cu gmfss_splat_indexed.cu
   gmfss_ifnet_native.cu gmfss_native_net.cu gmfss_pair_flow_glue.cu gmfss_pair_native_net.cu layer_kernels.cu rife_fused_kernels.cu rife_kernels.cu
   rife_native_bench.cu rife_native_finish.cu rife_native_glue.cu rife_native_net.cu rife_native_pick.cu
   rife_native_weights.cu scene_camera_kernels.cu scene_flow_kernels.cu scene_roundtrip_kernels.cu slice_kernels.cu stats_kernels.cu

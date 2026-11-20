@@ -3,10 +3,10 @@
 // petit que le plus grand sortent aussitôt. Les lectures (mouvement sur une autre grille, splat tiré,
 // composition) passent par la bibliothèque de warp (warp_lib.cuh) : une prise bornée par point, partagée par
 // tous les plans qu'il lit.
-#include <cstdlib>
 #include <cstdint>
-#include <string_view>
+#include <cstdlib>
 #include <cuda_fp16.h>
+#include <string_view>
 
 #include "gpu/cuda/backend/gmfss_kernels.h"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
@@ -240,8 +240,8 @@ __device__ void clear_rect(float* cells, WindowRect rect, int count, bool weight
   }
 }
 
-__device__ void flush_rect(const SoftSplatParams& p, const float* cells, WindowRect rect,
-                           int ox, int oy, int first, int count, bool weights, std::size_t plane, int t) {
+__device__ void flush_rect(const SoftSplatParams& p, const float* cells, WindowRect rect, int ox, int oy,
+                           int first, int count, bool weights, std::size_t plane, int t) {
   for (int i = t; i < rect.count; i += kPixelThreads) {
     const int row = rect.row(i);
     const int k = rect.cell(i, row);
@@ -272,7 +272,8 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(So
   const int cy0 = s.active ? static_cast<int>(floorf(s.ty)) : 0;
   const ShiftBounds shift_bounds =
       block_sum3<Crop>(s.active ? make_float3(s.tx - static_cast<float>(x), s.ty - static_cast<float>(y), 1.F)
-                               : make_float3(0.F, 0.F, 0.F), cx0, cy0, s.active);
+                                : make_float3(0.F, 0.F, 0.F),
+                       cx0, cy0, s.active);
   const float3 shift = shift_bounds.shift;
   if (shift.z == 0.0F) return;  // tout le bloc : rien n'arrive dans le plan
   const int ox = x0 - kMargin + __float2int_rn(shift.x / shift.z);
@@ -558,6 +559,43 @@ __global__ void __launch_bounds__(kPixelThreads) still(StillParams p) {
   }
 }
 
+bool valid_splat_output(const SoftSplatParams& p) {
+  if (p.out_pitch == 0) return true;
+  if (p.channels < 4 || p.channels % 4 != 0 || p.coverage != 0) return false;
+  const auto address = reinterpret_cast<std::uintptr_t>(p.out);
+  if (p.out_pitch > 0)
+    return p.out_pitch % 4 == 0 && p.out_pitch >= p.channels && address % alignof(uint2) == 0;
+  return p.width % 2 == 0 && p.out_pitch % 16 == 0 && p.out_first >= 0 && p.out_first % 4 == 0 &&
+         p.out_first <= -(p.out_pitch / 2) - p.channels && address % alignof(uint4) == 0;
+}
+
+bool valid_splat_job(const SoftSplatParams& p) {
+  return p.source != nullptr && p.motion != nullptr && p.out != nullptr && p.sums != nullptr && p.width > 0 &&
+         p.height > 0 && p.channels > 0 && valid_splat_output(p);
+}
+
+void normalize_packed(const SoftSplatParams& p, cudaStream_t stream) {
+  const auto plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+  if (p.out_pitch < 0) {
+    const dim3 grid(static_cast<unsigned>((plane + 2 * kGridPixels - 1) / (2 * kGridPixels)),
+                    static_cast<unsigned>((p.out_first % kGridChannels + p.channels + kGridChannels - 1) /
+                                          kGridChannels));
+    normalize_grid_c8<<<grid, kGridThreads, 0, stream>>>(p);
+  } else {
+    const dim3 grid(static_cast<unsigned>((plane + kGridPixels - 1) / kGridPixels),
+                    static_cast<unsigned>((p.channels + kGridChannels - 1) / kGridChannels));
+    normalize_grid<<<grid, kGridThreads, 0, stream>>>(p);
+  }
+}
+
+bool splat_crop_trial(const SoftSplatBatch& batch, int width, int height) {
+  static const bool enabled = [] {
+    const char* value = std::getenv("KIRARI_AB_GMFSS_SPLAT_CROP");  // env: banc
+    return value != nullptr && std::string_view(value) == "1";
+  }();
+  return enabled && batch.count == 1 && batch.jobs[0].channels >= 8 && width >= 128 && height >= 96;
+}
+
 }  // namespace
 
 std::size_t soft_splat_sums_bytes(int width, int height, int channels) {
@@ -567,21 +605,14 @@ std::size_t soft_splat_sums_bytes(int width, int height, int channels) {
 
 cudaError_t launch_soft_splat_all(SoftSplatBatch& batch, void* sums, std::size_t sums_bytes,
                                   cudaStream_t stream) {
-  if (batch.count < 1 || batch.count > kMaxSplatJobs) return cudaErrorInvalidValue;
+  if (batch.count < 1 || batch.count > kMaxSplatJobs || sums == nullptr || sums_bytes == 0)
+    return cudaErrorInvalidValue;
   int width = 0;
   int height = 0;
   bool normalize_planes = batch.fill != nullptr;
   for (int j = 0; j < batch.count; ++j) {
     SoftSplatParams& p = batch.jobs[j];
-    if (p.out_pitch > 0 && (p.out_pitch % 4 != 0 || p.channels < 4 || p.channels % 4 != 0 ||
-                            p.out_pitch < p.channels || p.coverage != 0 ||
-                            reinterpret_cast<std::uintptr_t>(p.out) % alignof(uint2) != 0))
-      return cudaErrorInvalidValue;
-    if (p.out_pitch < 0 &&
-        (p.width % 2 != 0 || p.out_pitch % 16 != 0 || p.channels < 4 || p.channels % 4 != 0 ||
-         p.out_first < 0 || p.out_first % 4 != 0 || p.out_first > -(p.out_pitch / 2) - p.channels ||
-         p.coverage != 0 || reinterpret_cast<std::uintptr_t>(p.out) % alignof(uint4) != 0))
-      return cudaErrorInvalidValue;
+    if (!valid_splat_job(p)) return cudaErrorInvalidValue;
     normalize_planes = normalize_planes || p.out_pitch == 0;
     width = max(width, p.width);
     height = max(height, p.height);
@@ -593,35 +624,21 @@ cudaError_t launch_soft_splat_all(SoftSplatBatch& batch, void* sums, std::size_t
   const dim3 block(kBlock, kBlock);
   const auto rows = static_cast<unsigned>(tiles_across(height));
   const auto jobs = static_cast<unsigned>(batch.count);
-  static const bool crop_window = [] {
-    const char* value = std::getenv("KIRARI_AB_GMFSS_SPLAT_CROP");  // env: banc
-    return value != nullptr && std::string_view(value) == "1";
-  }();
   const dim3 push_grid(static_cast<unsigned>(tiles_across(width)), rows, jobs);
-  if (crop_window && batch.count == 1 && batch.jobs[0].channels >= 8 && width >= 128 && height >= 96)
+  if (splat_crop_trial(batch, width, height))
     splat_all<true><<<push_grid, block, 0, stream>>>(batch);
   else
     splat_all<false><<<push_grid, block, 0, stream>>>(batch);
   if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
   if (normalize_planes) {
-    normalize_all<<<dim3(static_cast<unsigned>(tiles_across((width + 1) / 2)), rows, jobs), block, 0, stream>>>(
-        batch);
+    normalize_all<<<dim3(static_cast<unsigned>(tiles_across((width + 1) / 2)), rows, jobs), block, 0,
+                    stream>>>(batch);
     if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
   }
   for (int j = 0; j < batch.count; ++j) {
     const SoftSplatParams& p = batch.jobs[j];
     if (p.out_pitch == 0) continue;
-    const auto plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
-    if (p.out_pitch < 0) {
-      const dim3 grid(static_cast<unsigned>((plane + 2 * kGridPixels - 1) / (2 * kGridPixels)),
-                      static_cast<unsigned>((p.out_first % kGridChannels + p.channels + kGridChannels - 1) /
-                                            kGridChannels));
-      normalize_grid_c8<<<grid, kGridThreads, 0, stream>>>(p);
-    } else {
-      const dim3 grid(static_cast<unsigned>((plane + kGridPixels - 1) / kGridPixels),
-                      static_cast<unsigned>((p.channels + kGridChannels - 1) / kGridChannels));
-      normalize_grid<<<grid, kGridThreads, 0, stream>>>(p);
-    }
+    normalize_packed(p, stream);
     if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
   }
   return cudaGetLastError();
