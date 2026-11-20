@@ -10,6 +10,7 @@ distincts afin de confirmer une couronne avec la teinte de l'image précédente.
 import argparse
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -208,19 +209,30 @@ def confirm_directional(current, previous):
     return current.scores * agreed, delta
 
 
-def measure_directional(sources, regions, upscale, radial_profile=False):
+def directional_maps(sources, block, radial_profile, jobs):
+    def extract(path):
+        rgb = read_ppm16(path, strict16=False)
+        return rgb.shape[:2], directional_map(rgb, block, radial_profile)
+
+    if jobs == 1:
+        yield from map(extract, sources)
+        return
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        for start in range(0, len(sources), jobs):
+            # Au plus jobs images en mémoire, remises dans l'ordre des PTS.
+            yield from pool.map(extract, sources[start:start + jobs])
+
+
+def measure_directional(sources, regions, upscale, radial_profile=False, jobs=1):
     block = 32 // upscale
     previous = None
     expected = None
     result = []
-    for path in sources:
-        rgb = read_ppm16(path, strict16=False)
-        shape = rgb.shape[:2]
+    for path, (shape, current) in zip(sources, directional_maps(sources, block, radial_profile, jobs)):
         if expected is not None and shape != expected:
             raise ValueError("les images de la séquence doivent avoir la même taille")
         expected = shape
         h, w = shape
-        current = directional_map(rgb, block, radial_profile)
         confirmed, delta = confirm_directional(current, previous)
         previous = current
         row = {"source": str(path), "delta_pq": delta,
@@ -258,6 +270,7 @@ def main():
     parser.add_argument("--profil-couronne", action="store_true",
                         help="écarte les arcs au bord dont les deux canaux dominants évoluent ensemble")
     parser.add_argument("--region", required=True, type=region, action="append")
+    parser.add_argument("--jobs", type=int, default=1, help="nombre de cartes source calculées en parallèle")
     parser.add_argument("--upscale", choices=(1, 2), type=int, default=2)
     parser.add_argument("--rayon", type=int, action="append")
     args = parser.parse_args()
@@ -266,13 +279,17 @@ def main():
         parser.error("les rayons doivent être positifs")
     if not args.directionnel and len(args.source) != 1:
         parser.error("plusieurs images demandent --directionnel")
+    if args.jobs < 1:
+        parser.error("--jobs doit être positif")
+    if args.jobs != 1 and not args.directionnel:
+        parser.error("--jobs demande --directionnel")
     if args.directionnel and args.rayon:
         parser.error("--rayon ne s'applique pas au mode directionnel")
     if args.profil_couronne and not args.directionnel:
         parser.error("--profil-couronne demande --directionnel")
     try:
         if args.directionnel:
-            stats = measure_directional(args.source, args.region, args.upscale, args.profil_couronne)
+            stats = measure_directional(args.source, args.region, args.upscale, args.profil_couronne, args.jobs)
         else:
             stats = measure(read_ppm16(args.source[0], strict16=False), args.region, args.upscale, radii)
     except (OSError, ValueError) as error:
