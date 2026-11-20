@@ -47,8 +47,9 @@ TEST_CASE("Mode Rapide : une écriture relue hors ordre ne compte pas deux fois"
   CHECK(live.free_info(start + 8000).service_us == 2333);
 }
 
-TEST_CASE("Mode Rapide : la fenêtre avant soumission au ring et une paire entièrement passée ne sont pas mesurées",
-          "[app][free]") {
+TEST_CASE(
+    "Mode Rapide : la fenêtre avant soumission au ring et une paire entièrement passée ne sont pas mesurées",
+    "[app][free]") {
   LiveSettings live;
   live.set_free(true, 1000, 0);
   constexpr std::int64_t start = 20'000'000;

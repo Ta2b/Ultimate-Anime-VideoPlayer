@@ -23,6 +23,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "app/play/auto_bench.h"
+#include "app/play/chain_choices.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
 #include "app/play/default_player.h"
@@ -32,14 +33,13 @@
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
-#include "app/play/chain_choices.h"
 #include "app/play/gmfss_model.h"
-#include "app/play/interp_retired.h"
 #include "app/play/home_idle.h"
 #include "app/play/host_choices.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/interp_retired.h"
 #include "app/play/latest_writer.h"
 #include "app/play/model_choice.h"
 #include "app/play/paths.h"
@@ -147,6 +147,12 @@ bool native_span_here(const HomeScreen& h, bool tensorrt) {
          span_native_presumed(gpu.name);
 }
 
+// Le moteur effectif n'est connu qu'à l'ouverture. Vérifier les fichiers seulement si TensorRT est choisi.
+bool home_gmfss_supported(const HomeState& st, const SpanFp8Facts& facts) {
+  return gmfss_kept() && facts.tensorrt_present && facts.vendor == GpuVendor::Nvidia &&
+         chosen(st.engines, core::EngineId::TensorRt);
+}
+
 // Ce que le menu propose sans vidéo ouverte : les modèles et les moteurs du poste, la source type.
 SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const PlaySettings& running) {
   const auto model = choose_model(h.options, h.paths.home, running, h.paths.models);
@@ -175,10 +181,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .capability = rdna4 || (kSpanFp8Here && gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
                               span_fp8_presumed(gpu_facts(h.screen).name) &&
                               tensorrt_backend_present(h.catalog, h.paths))};
-  // Le moteur effectif n'est connu qu'à l'ouverture. Vérifier les fichiers seulement si TensorRT est choisi.
-  const bool gmfss_supported = gmfss_kept() && fp8_facts.tensorrt_present &&
-                               fp8_facts.vendor == GpuVendor::Nvidia &&
-                               chosen(st.engines, core::EngineId::TensorRt);
+  const bool gmfss_supported = home_gmfss_supported(st, fp8_facts);
   GmfssMenuProbe probe;
   const GmfssAvailability gmfss = gmfss_supported ? probe.read(places) : GmfssAvailability{};
   const std::int64_t period = display_period_us(h.screen.window());

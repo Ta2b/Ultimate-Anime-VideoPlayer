@@ -136,22 +136,22 @@ struct ChainEngines {
   kernels::RifeGeometry image_geometry;  // de work
   int rife_align = kernels::kRifeAlign;
   int rife_planes = kernels::kRifeInputChannels;
-  bool skip_held = false;               // --skip-held (UpscaleSetup::skip_held)
-  bool span_reuse = true;               // --no-span-reuse (UpscaleSetup::span_reuse)
-  bool span_tiles = true;               // --no-span-tiles (UpscaleSetup::span_reuse)
-  bool span_tiles_check = false;        // --span-tiles-check (UpscaleSetup::span_reuse)
-  bool one_lane = false;                // --one-lane (UpscaleSetup::one_lane)
-  bool rife_warm = false;               // --rife-warm (UpscaleSetup::rife_warm)
-  bool rife_encode_all = false;         // --rife-encode-all (UpscaleSetup::rife_encode_all)
-  bool rife_at_slot = false;            // --rife-at-slot (UpscaleSetup::rife_at_slot)
-  bool span_b_ahead = false;            // --span-b-ahead (UpscaleSetup::span_b_ahead)
-  bool scene_map = false;               // --scene-map (UpscaleSetup::scene_map)
+  bool skip_held = false;         // --skip-held (UpscaleSetup::skip_held)
+  bool span_reuse = true;         // --no-span-reuse (UpscaleSetup::span_reuse)
+  bool span_tiles = true;         // --no-span-tiles (UpscaleSetup::span_reuse)
+  bool span_tiles_check = false;  // --span-tiles-check (UpscaleSetup::span_reuse)
+  bool one_lane = false;          // --one-lane (UpscaleSetup::one_lane)
+  bool rife_warm = false;         // --rife-warm (UpscaleSetup::rife_warm)
+  bool rife_encode_all = false;   // --rife-encode-all (UpscaleSetup::rife_encode_all)
+  bool rife_at_slot = false;      // --rife-at-slot (UpscaleSetup::rife_at_slot)
+  bool span_b_ahead = false;      // --span-b-ahead (UpscaleSetup::span_b_ahead)
+  bool scene_map = false;         // --scene-map (UpscaleSetup::scene_map)
   bool nvof_roundtrip = false;
-  bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
-  bool temporal_fix_whole = false;      // --no-tfix-cache (chain_temporal.cpp)
-  bool pair_triage = false;             // --pair-triage (UpscaleSetup::pair_triage)
-  bool layers = false;                  // calques (UpscaleSetup::layers, layer_stage.h)
-  bool fused_layers = false;            // --fused-layers
+  bool smooth_drawings = false;     // --smooth-drawings (UpscaleSetup::smooth_drawings)
+  bool temporal_fix_whole = false;  // --no-tfix-cache (chain_temporal.cpp)
+  bool pair_triage = false;         // --pair-triage (UpscaleSetup::pair_triage)
+  bool layers = false;              // calques (UpscaleSetup::layers, layer_stage.h)
+  bool fused_layers = false;        // --fused-layers
   bool nvof_layer_guard = false;
   bool plate = false;                   // plaque de décor (UpscaleSetup::layers, chain_layers.cpp)
   std::unique_ptr<gpu::Engine> engine;  // SPAN

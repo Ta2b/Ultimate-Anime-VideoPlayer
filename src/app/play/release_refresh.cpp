@@ -32,16 +32,16 @@ ReleaseRefresh start_release_refresh(const PlayOptions& options, const PlayerPat
       !release_index_signed(refresh.before.text, refresh.before.signature, keys))
     refresh.before = {};
   auto done = std::make_shared<std::atomic<bool>>(false);
-  auto started = start_thread(
-      "release-index", ThreadReport([done](const Refusal& refused) {
-        log_channel("app")->warn("moteurs de la release : {}", refused.detail);
-        done->store(true);
-      }),
-      [cache = refresh.cache, done, keys = std::move(keys)](const std::stop_token& stop, const ThreadReport&) {
-        refresh_release_index(cache, release_repo(), installed_version(), keys, UpdateFetch(fetch_https),
-                              stop);
-        done->store(true);
-      });
+  auto started = start_thread("release-index", ThreadReport([done](const Refusal& refused) {
+                                log_channel("app")->warn("moteurs de la release : {}", refused.detail);
+                                done->store(true);
+                              }),
+                              [cache = refresh.cache, done, keys = std::move(keys)](
+                                  const std::stop_token& stop, const ThreadReport&) {
+                                refresh_release_index(cache, release_repo(), installed_version(), keys,
+                                                      UpdateFetch(fetch_https), stop);
+                                done->store(true);
+                              });
   if (!started) {
     log_channel("app")->warn("moteurs de la release : {}", started.error().detail);
     return refresh;

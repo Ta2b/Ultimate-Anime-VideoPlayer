@@ -93,8 +93,8 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
       .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
       .rife_folder = c.model_places.empty() ? std::string() : core::to_utf8(c.model_places.front()),
-      .refresh_motion_models =
-          motion_models_refresh(p.options, p.paths, gpu_facts(p.screen), fp8_engine, gmfss_supported, std::move(probe)),
+      .refresh_motion_models = motion_models_refresh(p.options, p.paths, gpu_facts(p.screen), fp8_engine,
+                                                     gmfss_supported, std::move(probe)),
       .hdr_output = p.screen.hdr_output(),
       .auto_peak = auto_peak,
       .engines = engine_badges(p.paths.engines, c.loaded_engines),

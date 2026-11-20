@@ -78,6 +78,9 @@ struct ReportParts {
 std::string compose_report(const ReportParts& parts, std::size_t max_bytes);
 
 // --- La séance ouverte ---
+enum class RelaunchedFor : std::uint8_t;
+void start_diagnostics(const std::filesystem::path& settings_dir, const std::filesystem::path& log_file,
+                       RelaunchedFor relaunched, bool scripted);
 // Une marque « session.open » posée au lancement et retirée à la sortie propre : trouvée au lancement
 // suivant, la séance d'avant s'est arrêtée brutalement (plantage, coupure, arrêt forcé).
 // Pose la marque dans dir ; vrai si elle y était déjà. Retient aussi dir pour end_session().

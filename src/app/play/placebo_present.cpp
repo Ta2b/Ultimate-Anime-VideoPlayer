@@ -1,7 +1,13 @@
 #include "app/play/placebo_present.h"
 
+#include <cstdint>
 #include <cstring>
+#include <format>
+#include <string>
 #include <string_view>
+#include <vector>
+
+#include <spdlog/spdlog.h>
 
 namespace kirari::app::play {
 namespace {
@@ -97,6 +103,37 @@ VkSwapchainCreateFlagsKHR present_flags(PresentLevel level, const PresentCaps& c
   (void)caps;
 #endif
   return flags;
+}
+
+// Les espaces colorimétriques que la surface offre : dit, au journal, si un écran HDR peut recevoir du HDR10
+// (A2B10G10R10 + HDR10_ST2084) ou si le pilote ne propose que du sRGB.
+void log_surface_color_spaces(spdlog::logger& log, pl_vulkan vk, VkSurfaceKHR surface) {
+  const auto formats_of = reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceFormatsKHR>(
+      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceSurfaceFormatsKHR"));
+  if (formats_of == nullptr || surface == VK_NULL_HANDLE) return;
+  std::uint32_t count = 0;
+  if (formats_of(vk->phys_device, surface, &count, nullptr) != VK_SUCCESS || count == 0) return;
+  std::vector<VkSurfaceFormatKHR> formats(count);
+  if (formats_of(vk->phys_device, surface, &count, formats.data()) != VK_SUCCESS) return;
+  std::string text;
+  bool hdr10 = false;
+  for (const VkSurfaceFormatKHR& format : formats) {
+    hdr10 = hdr10 || format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
+    text += std::format(" [format {} espace {}]", static_cast<int>(format.format),
+                        static_cast<int>(format.colorSpace));
+  }
+  log.info("surface Vulkan : {} configurations, HDR10 (ST2084) {}{}",
+           formats.size(),  // i18n-ok : journal
+           hdr10 ? "offert" : "absent", text);
+}
+
+// Le niveau retenu et ce qui l'a permis, au journal.
+void log_present_level(spdlog::logger& log, PresentLevel level, const PresentCaps& c) {
+  log.info(
+      "présentation : niveau {} (present_id2 {}, present_wait2 {}, present timing {}, date absolue {}, "
+      "horodatages calibrés {}, wp_presentation {})",
+      name(level), c.present_id2, c.present_wait2, c.timing, c.timing_absolute, c.calibrated,
+      c.wayland_presentation);
 }
 
 }  // namespace kirari::app::play

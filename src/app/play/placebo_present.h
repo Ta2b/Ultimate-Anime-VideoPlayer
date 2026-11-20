@@ -10,6 +10,10 @@
 
 #include "app/play/present_level.h"
 
+namespace spdlog {
+class logger;
+}
+
 namespace kirari::app::play {
 
 // Les fonctionnalités de présentation à chaîner devant `next` (VkPhysicalDeviceFeatures2::pNext) ; libplacebo
@@ -44,5 +48,9 @@ PresentCaps read_present_caps(pl_vulkan vk, VkSurfaceKHR surface);
 
 // Les drapeaux de création de la swapchain au niveau retenu (0 à Open et Wayland).
 VkSwapchainCreateFlagsKHR present_flags(PresentLevel level, const PresentCaps& caps);
+
+// Au journal : formats colorimétriques de la surface, et capacités à l'origine du niveau retenu.
+void log_surface_color_spaces(spdlog::logger& log, pl_vulkan vk, VkSurfaceKHR surface);
+void log_present_level(spdlog::logger& log, PresentLevel level, const PresentCaps& caps);
 
 }  // namespace kirari::app::play

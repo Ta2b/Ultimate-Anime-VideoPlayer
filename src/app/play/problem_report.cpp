@@ -14,6 +14,10 @@
 #include <string_view>
 #include <system_error>
 
+#include "app/play/crash_dump.h"
+#include "app/play/options.h"
+#include "app/play/updater.h"
+#include "core/log.h"
 #include "core/log_redact.h"
 #include "core/utf8_path.h"
 
@@ -352,6 +356,30 @@ bool process_alive(std::uint64_t pid) {
 }
 
 }  // namespace
+
+// Le diagnostic d'une séance : un plantage laisse un minidump à côté du journal sous Windows (P2.2), et le
+// rapport de « Signaler un problème » garde en tête la version, le système et le journal à lire. La marque
+// de séance, restée ouverte, dit que la séance d'avant s'est arrêtée brutalement : son journal est alors
+// kirari.log.1 (A39-01).
+// B39-01 : après une relance voulue (perte du GPU, moteur mis à jour), la séance d'avant n'a pas planté mais
+// son journal, kirari.log.1, porte la cause : le rapport le joint aussi.
+void start_diagnostics(const std::filesystem::path& settings_dir, const std::filesystem::path& log_file,
+                       RelaunchedFor relaunched, bool scripted) {
+  if (!log_file.empty()) install_crash_dumps(log_file.parent_path() / "crashes");  // B36-08
+  set_report_log_file(log_file);
+  note_report_fact("kirari", installed_version());
+  note_report_fact("Système", os_description());
+  if (const std::string build = build_id_description(); !build.empty()) note_report_fact("Build", build);
+  // C36-07 : un lancement scripté (--keys, --snapshot, banc) partage le dossier du lecteur sans être lui :
+  // il ne prend ni ne retire la marque du lecteur qui tourne peut-être à côté.
+  if (!scripted && !settings_dir.empty() && begin_session(settings_dir))
+    log_channel("app")->warn("la séance précédente s'est arrêtée brutalement : son journal est kirari.log.1");
+  if (relaunched != RelaunchedFor::None) {
+    note_previous_session_relaunched(relaunched_name(relaunched));
+    log_channel("app")->info("lecteur relancé ({}) : la séance d'avant est dans kirari.log.1",
+                             relaunched_name(relaunched));
+  }
+}
 
 bool begin_session(const fs::path& dir) {
   State& s = state();

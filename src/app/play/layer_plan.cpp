@@ -65,9 +65,9 @@ std::vector<std::uint8_t> rife_zone(const kernels::SceneMotion& s) {
   return zone;
 }
 
-void count_roundtrip_edges(PairLayers& base, const kernels::SceneMotion& scene, const kernels::Affine& to_a,
+void count_roundtrip_edges(PairLayers& base, const kernels::SceneMotion& scene,
+                           const kernels::SceneRoundtripTiles& measured, const kernels::Affine& to_a,
                            bool protect_edges) {
-  const auto& measured = *scene.roundtrip;
   if (measured.tiles.size() != base.decor.size()) return;
   const auto& photo_a = scene.roundtrip_photo_edge_a;
   const bool has_camera_photo = photo_a.size() == base.decor.size();
@@ -160,7 +160,7 @@ std::expected<PairLayers, LayerSkip> plan_layers(const std::optional<kernels::Sc
     layers.decor[i] = 1;
     ++kept;
   }
-  if (s.roundtrip) count_roundtrip_edges(layers, s, *inverse_camera, protect_edges);
+  if (s.roundtrip) count_roundtrip_edges(layers, s, *s.roundtrip, *inverse_camera, protect_edges);
   layers.share = static_cast<double>(kept - layers.roundtrip_protected) / static_cast<double>(s.tiles.size());
   if (layers.share < kLayerMinShare) return std::unexpected(LayerSkip::FewTiles);
   return layers;

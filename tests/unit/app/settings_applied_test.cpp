@@ -62,8 +62,7 @@ TEST_CASE("Réglages du menu : le mouvement estimé en 720p rouvre la lecture",
   CHECK_FALSE(change.reason.empty());
 }
 
-TEST_CASE("Réglages du menu : les panoramiques stables rechargent aussi DistilDRBA",
-          "[app][settings]") {
+TEST_CASE("Réglages du menu : les panoramiques stables rechargent aussi DistilDRBA", "[app][settings]") {
   PlaySettings running;
   running.motion_engine = MotionEngine::DistilDrba;
   running.rife_factor = 3;

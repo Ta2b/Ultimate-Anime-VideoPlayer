@@ -216,8 +216,8 @@ TEST_CASE("Bout en bout : un flux BT.601 se rend en BT.601, pas en BT.709", "[.e
   std::array<int, 2> delta{};
   for (int y = a.height * 3 / 8 - 4; y <= a.height * 3 / 8 + 4; ++y) {
     for (int x = a.width / 2 - 4; x <= a.width / 2 + 4; ++x) {
-      const auto pixel = (static_cast<std::size_t>(y) * static_cast<std::size_t>(a.width) +
-                          static_cast<std::size_t>(x)) * 3;
+      const auto pixel =
+          (static_cast<std::size_t>(y) * static_cast<std::size_t>(a.width) + static_cast<std::size_t>(x)) * 3;
       for (std::size_t c = 0; c < delta.size(); ++c)
         delta[c] += static_cast<int>(b.rgb[pixel + c]) - static_cast<int>(a.rgb[pixel + c]);
     }

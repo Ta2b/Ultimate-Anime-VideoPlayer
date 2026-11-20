@@ -95,8 +95,8 @@ std::expected<void, Refusal> gmfss_budget(std::string_view text, PlayOptions& op
   const auto comma = text.find(',');
   const auto pair = comma == std::string_view::npos ? std::nullopt : number<double>(text.substr(0, comma));
   const auto key = comma == std::string_view::npos ? std::nullopt : number<double>(text.substr(comma + 1));
-  const auto valid = [](const std::optional<double>& ms) { return ms && *ms >= 0.001 && *ms <= 1000.0; };
-  if (!valid(pair) || !valid(key))
+  const auto valid = [](double ms) { return ms >= 0.001 && ms <= 1000.0; };
+  if (!pair || !key || !valid(*pair) || !valid(*key))
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("--gmfss-budget: \"{}\" is not PAIR_MS,KEY_MS (0.001 to 1000 each)", text));
   options.gmfss_budget = PlayOptions::GmfssBudget{.pair_us = std::llround(*pair * 1000.0),

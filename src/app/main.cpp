@@ -45,7 +45,6 @@ extern char** environ;  // NOLINT : env: hérité de la relance
 #include <vector>
 
 #include "app/play/auto_bench_run.h"
-#include "app/play/crash_dump.h"
 #include "app/play/data_dirs.h"
 #include "app/play/default_player.h"
 #include "app/play/i18n.h"
@@ -191,33 +190,6 @@ int write_report(const std::optional<std::filesystem::path>& file, const std::st
   if (out) return 0;
   return fail({kirari::RefusalCode::FileUnwritable,
                std::format("--report : {} ne s'écrit pas", kirari::prepare::utf8_path(*file))});
-}
-
-// Le diagnostic d'une séance : un plantage laisse un minidump à côté du journal sous Windows (P2.2), et le
-// rapport de « Signaler un problème » garde en tête la version, le système et le journal à lire. La marque
-// de séance, restée ouverte, dit que la séance d'avant s'est arrêtée brutalement : son journal est alors
-// kirari.log.1 (A39-01).
-// B39-01 : après une relance voulue (perte du GPU, moteur mis à jour), la séance d'avant n'a pas planté mais
-// son journal, kirari.log.1, porte la cause : le rapport le joint aussi.
-void start_diagnostics(const std::filesystem::path& settings_dir, const std::filesystem::path& log_file,
-                       kirari::app::play::RelaunchedFor relaunched, bool scripted) {
-  namespace play = kirari::app::play;
-  if (!log_file.empty()) play::install_crash_dumps(log_file.parent_path() / "crashes");  // B36-08
-  play::set_report_log_file(log_file);
-  play::note_report_fact("kirari", play::installed_version());
-  play::note_report_fact("Système", play::os_description());
-  if (const std::string build = play::build_id_description(); !build.empty())
-    play::note_report_fact("Build", build);
-  // C36-07 : un lancement scripté (--keys, --snapshot, banc) partage le dossier du lecteur sans être lui :
-  // il ne prend ni ne retire la marque du lecteur qui tourne peut-être à côté.
-  if (!scripted && !settings_dir.empty() && play::begin_session(settings_dir))
-    kirari::log_channel("app")->warn(
-        "la séance précédente s'est arrêtée brutalement : son journal est kirari.log.1");
-  if (relaunched != play::RelaunchedFor::None) {
-    play::note_previous_session_relaunched(play::relaunched_name(relaunched));
-    kirari::log_channel("app")->info("lecteur relancé ({}) : la séance d'avant est dans kirari.log.1",
-                                     play::relaunched_name(relaunched));
-  }
 }
 
 // Les échecs se disent dans une boîte, sauf pendant un essai scripté (--keys, --snapshot, banc, fenêtre

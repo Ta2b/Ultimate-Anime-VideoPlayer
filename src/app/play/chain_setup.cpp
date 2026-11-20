@@ -624,12 +624,15 @@ std::expected<bool, StageFailure> load_drba(Player& p, const gpu::BackendInit& i
 }
 
 // Le moteur retenu : au journal et au rapport de problème (B39-02).
-void announce_backend(spdlog::logger& log, const gpu::Backend& backend, const std::string& name,
+void announce_backend(spdlog::logger& log, const gpu::Backend& backend, const GpuFacts& facts,
                       const std::filesystem::path& library) {
   const auto& caps = backend.capabilities();
-  log.info("backend {} ({}) depuis {}/{}", name, caps.device_name,
+  log.info("backend {} ({}) depuis {}/{}", caps.name, caps.device_name,
            core::to_utf8(library.parent_path().filename()), core::to_utf8(library.filename()));
-  note_report_fact("Backend", std::format("{} sur {} · {}", name, caps.device_name, caps.driver_version));
+  note_report_fact("Backend",
+                   std::format("{} sur {} · {}", caps.name, caps.device_name, caps.driver_version));
+  if (const std::string rebar = rebar_text(facts); caps.name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
+    log.warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -740,10 +743,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     c.backend = std::move(*backend);
   }
   c.backend_name = c.backend->capabilities().name;
-  announce_backend(*log, *c.backend, c.backend_name, p.library->path());
-  if (const std::string rebar = rebar_text(gpu);
-      c.backend_name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
-    log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
+  announce_backend(*log, *c.backend, gpu, p.library->path());
 
   if (c.model) {
     auto upscaled = load_span(p, init, c, settings);

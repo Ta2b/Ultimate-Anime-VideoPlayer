@@ -167,13 +167,13 @@ UpscaleStage::~UpscaleStage() {
         "Smooth : {} tenues fondues en un mouvement (sur 2 sources : {}, 3 : {}, 4 : {}, 5 : {}, 6 : {})",
         h[2] + h[3] + h[4] + h[5] + h[6], h[2], h[3], h[4], h[5], h[6]);
   }
-  const char* motion = gmfss_only() ? "GMFSS union"
+  const char* motion = gmfss_only()                                            ? "GMFSS union"
                        : setup_.distil_drba != nullptr && !setup_.drba_by_shot ? "DistilDRBA"
-                                                                           : "RIFE";
+                                                                               : "RIFE";
   if (setup_.late_fate) {
     log_channel("gpu")->info(
-        "Interpolation : {} instants laissés en retard sans calcul, {} calculés après leur instant", late_dropped_,
-        late_computed_);
+        "Interpolation : {} instants laissés en retard sans calcul, {} calculés après leur instant",
+        late_dropped_, late_computed_);
   }
   if (late_pairs_ > 0) {
     log_channel("gpu")->info("{} : {} paires en retard sur l'horloge, {} instants sautés pour la rattraper",
@@ -186,9 +186,10 @@ UpscaleStage::~UpscaleStage() {
         skipped_);
   }
   if (interpolates()) {
-    const std::string cadence = setup_.live && setup_.live->free_active()
-                                    ? "Auto"
-                                    : factor_text(setup_.live ? setup_.live->factor_now() : setup_.rife_factor);
+    const std::string cadence =
+        setup_.live && setup_.live->free_active()
+            ? "Auto"
+            : factor_text(setup_.live ? setup_.live->factor_now() : setup_.rife_factor);
     log_channel("gpu")->info("{} {} : {} paires, {} interpolées, {} coupes de scène, {} dessins tenus",
                              motion, cadence, pairs_, interpolated_, cuts_, held_);
   }

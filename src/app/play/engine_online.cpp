@@ -184,7 +184,7 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
   std::filesystem::create_directories(parent, error);
   // Deux démarrages ne doivent pas publier, ni retirer sur un 404, la copie l’un après l’autre.
   auto lock = prepare::KeyLock::acquire(beside(cache, ".refresh-lock"), stop, prepare::LockWait::Block,
-                                       std::chrono::seconds(kFetchSeconds));
+                                        std::chrono::seconds(kFetchSeconds));
   if (!lock) {
     if (lock.error().code != RefusalCode::Cancelled)
       log->info("moteurs de la release : {}", lock.error().detail);
@@ -214,9 +214,11 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
     else if (release_index_tag(text) != std::format("v{}", version))
       got = refuse(RefusalCode::FieldOutOfRange, "étiquette de l'index différente de celle du lecteur");
     else if (!stop.stop_requested())
-      got = core::write_text_atomically(cache, std::format("{}{}\n{}", kSignedCopy, signature_payload(sig), text));
+      got = core::write_text_atomically(cache,
+                                        std::format("{}{}\n{}", kSignedCopy, signature_payload(sig), text));
   }
-  static_cast<void>(prepare::cleanup_stage(*stage));
+  if (auto cleaned = prepare::cleanup_stage(*stage); !cleaned)
+    log->warn("moteurs de la release : {}", cleaned.error().detail);
   if (stop.stop_requested()) return;
   if (got) {
     std::filesystem::remove(absent, error);

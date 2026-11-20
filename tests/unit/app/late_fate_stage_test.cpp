@@ -82,8 +82,8 @@ TEST_CASE("Étage gpu : Rapide garde le SPAN de B quand tous ses intermédiaires
           "[app][stage][free]") {
   Rig rig;
   MovingClock clock;
-  clock.value = ClockSnapshot{
-      .media_us = -1'000'000, .host_us = host_now_us(), .rate = 1.0, .epoch = 0, .valid = true};
+  clock.value =
+      ClockSnapshot{.media_us = -1'000'000, .host_us = host_now_us(), .rate = 1.0, .epoch = 0, .valid = true};
   rig.live->set_free(true, 6'060, host_now_us());
   UpscaleSetup s = rig.setup(true, Factor{.num = 2, .den = 1}, 1);
   s.clock = &clock;
@@ -101,8 +101,7 @@ TEST_CASE("Étage gpu : Rapide garde le SPAN de B quand tous ses intermédiaires
   clock.jump(70'000);
   rig.release_all();
   const auto until = std::chrono::steady_clock::now() + 2s;
-  while (!rig.stage->idle() && std::chrono::steady_clock::now() < until)
-    std::this_thread::sleep_for(1ms);
+  while (!rig.stage->idle() && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(1ms);
   REQUIRE(rig.stage->idle());
   CHECK(pts_of(rig.sink.frames()) == std::vector<std::int64_t>{40'000});
   CHECK(rig.backend.count("engine rife_motion") == 0);
@@ -154,8 +153,8 @@ TEST_CASE("Étage gpu : Rapide, le SPAN de B en avance ne force ni passe RIFE ni
   INFO("avance " << ahead << ", retard " << expired << ", source sur la grille " << source_on_grid);
   Rig rig;
   MovingClock clock;
-  clock.value = ClockSnapshot{
-      .media_us = -1'000'000, .host_us = host_now_us(), .rate = 1.0, .epoch = 0, .valid = true};
+  clock.value =
+      ClockSnapshot{.media_us = -1'000'000, .host_us = host_now_us(), .rate = 1.0, .epoch = 0, .valid = true};
   rig.live->set_free(true, source_on_grid ? 20'000 : 6'060, host_now_us());
   UpscaleSetup s = rig.setup(true, Factor{.num = 2, .den = 1}, 1);
   s.clock = &clock;
@@ -166,7 +165,7 @@ TEST_CASE("Étage gpu : Rapide, le SPAN de B en avance ne force ni passe RIFE ni
   s.warp_after_span = true;
   rig.start(std::move(s), &clock);
   rig.feed(1, 2);
-  REQUIRE(rig.collect(1, false));   // A garde le seul slot
+  REQUIRE(rig.collect(1, false));  // A garde le seul slot
   REQUIRE(logged(rig, "rife_input"));
   const bool enqueued = ahead && source_on_grid;
   if (enqueued) REQUIRE(logged(rig, "engine span", 2));
@@ -177,16 +176,14 @@ TEST_CASE("Étage gpu : Rapide, le SPAN de B en avance ne force ni passe RIFE ni
   rig.release_all();
   if (expired) {
     const auto until = std::chrono::steady_clock::now() + 2s;
-    while (!rig.stage->idle() && std::chrono::steady_clock::now() < until)
-      std::this_thread::sleep_for(1ms);
+    while (!rig.stage->idle() && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(1ms);
     REQUIRE(rig.stage->idle());
     CHECK(pts_of(rig.sink.frames()) == std::vector<std::int64_t>{40'000});
     CHECK(rig.backend.count("engine rife_motion") == 0);
   } else {
     REQUIRE(rig.collect(3));
-    const std::vector<std::int64_t> pts =
-        source_on_grid ? std::vector<std::int64_t>{40'000, 60'000, 80'000}
-                       : std::vector<std::int64_t>{40'000, 46'060, 66'060};
+    const std::vector<std::int64_t> pts = source_on_grid ? std::vector<std::int64_t>{40'000, 60'000, 80'000}
+                                                         : std::vector<std::int64_t>{40'000, 46'060, 66'060};
     CHECK(pts_of(rig.sink.frames()) == pts);
     CHECK(rig.backend.rife_ts() == std::vector<float>{0.5F});
     CHECK(rig.backend.count("engine rife_motion") == 1);
@@ -198,8 +195,8 @@ TEST_CASE("Étage gpu : Rapide, le SPAN de B en avance ne force ni passe RIFE ni
 TEST_CASE("Étage gpu : Rapide, la copie d'une pose attend toujours le slot", "[app][stage][free]") {
   Rig rig;
   MovingClock clock;
-  clock.value = ClockSnapshot{
-      .media_us = -1'000'000, .host_us = host_now_us(), .rate = 1.0, .epoch = 0, .valid = true};
+  clock.value =
+      ClockSnapshot{.media_us = -1'000'000, .host_us = host_now_us(), .rate = 1.0, .epoch = 0, .valid = true};
   rig.live->set_free(true, 20'000, host_now_us());
   rig.live->set_keep_poses(true);
   rig.backend.offer_ahead(false);

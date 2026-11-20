@@ -500,6 +500,24 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
   }
 }
 
+// Le plafond réel (A23-09) tient compte de l'écran, de la source et du mode.
+void auto_limit_note(const PlaySettings& d, const SettingsChoices& choices) {
+  const double limit_hz = core::auto_limit_hz(choices.display_hz, d.auto_cap);
+  int gmfss_cap = 0;
+  if (d.motion_engine == MotionEngine::Gmfss && d.gmfss_every_instant) {
+    gmfss_cap = choices.gmfss_only_auto_cap;
+    if (choices.chain() == nullptr && gmfss_available(choices))
+      gmfss_cap =
+          gmfss_frame_limit(choices.source_fps, d.gmfss_half_flow && choices.gmfss_half_flow_available);
+  }
+  if (gmfss_cap > 0) {
+    note(i18n::tr_format("GMFSS frame rate limit: {:.0f} fps.", core::auto_limit_hz(limit_hz, gmfss_cap)));
+  } else {
+    note(i18n::tr_format("Here interpolation goes up to ×{} ({:.0f} fps limit).",
+                         top_factor(d, choices.display_hz, choices.source_fps), limit_hz));
+  }
+}
+
 }  // namespace
 
 void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
@@ -548,22 +566,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     ImGui::EndDisabled();
     panel::end_grid();
   }
-  // Le plafond réel (A23-09) : il dépend de l'écran, de la source et du mode, pas du seul choix ci-dessus.
-  if (on && d.rife_auto && !exporting && choices.display_hz > 0.0 && choices.source_fps > 0.0) {
-    const double limit_hz = core::auto_limit_hz(choices.display_hz, d.auto_cap);
-    int gmfss_cap = 0;
-    if (d.motion_engine == MotionEngine::Gmfss && d.gmfss_every_instant) {
-      gmfss_cap = choices.gmfss_only_auto_cap;
-      if (choices.chain() == nullptr && gmfss_available(choices))
-        gmfss_cap = gmfss_frame_limit(choices.source_fps, d.gmfss_half_flow && choices.gmfss_half_flow_available);
-    }
-    if (gmfss_cap > 0) {
-      note(i18n::tr_format("GMFSS frame rate limit: {:.0f} fps.", core::auto_limit_hz(limit_hz, gmfss_cap)));
-    } else {
-      note(i18n::tr_format("Here interpolation goes up to ×{} ({:.0f} fps limit).",
-                           top_factor(d, choices.display_hz, choices.source_fps), limit_hz));
-    }
-  }
+  if (on && d.rife_auto && !exporting && choices.display_hz > 0.0 && choices.source_fps > 0.0)
+    auto_limit_note(d, choices);
   if (on && !exporting) vrr_notes(choices);
   if (exporting && on) {
     note(i18n::tr("Export skips no frames: each created frame costs a pass."));

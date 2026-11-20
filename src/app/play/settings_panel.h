@@ -66,7 +66,7 @@ struct SettingsChoices {
   bool distil_drba_available = false;      // le graphe de DistilDRBA
   bool gmfss_half_flow_available = false;  // la paire de GMFSS au demi-flot à côté des deux graphes
   bool gmfss_available = false;  // les deux graphes de GMFSS union, sur un moteur qui les fait tourner
-  bool gmfss_loaded = false;    // le moteur chargé sur la chaîne active, indépendamment des fichiers
+  bool gmfss_loaded = false;     // le moteur chargé sur la chaîne active, indépendamment des fichiers
   int gmfss_only_auto_cap = 0;   // en i/s, pour le GMFSS seul chargé ; 0 en mélange ou après un repli
   bool rife_loaded = false;      // moteur RIFE chargé : ×N en direct
   // La chaîne ouverte (chain_shape.h) : un facteur, Auto ou Rapide qui demandent un autre anneau ou un autre
@@ -77,10 +77,10 @@ struct SettingsChoices {
   std::string default_rife_model;        // celui qu'un nom vide désigne
   std::string rife_folder;               // le dossier des modèles RIFE (et de DistilDRBA)
   std::function<void(SettingsChoices&, const PlaySettings&)> refresh_motion_models;
-  bool nvidia = false;                   // GPU NVIDIA : Smooth Motion n'est offert qu'à lui
-  bool tensor_cores = false;             // une NVIDIA RTX (GpuFacts) : les conseils de card_advice.h
-  bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
-  int auto_peak = 0;                     // pic automatique de l'écran, en nits
+  bool nvidia = false;        // GPU NVIDIA : Smooth Motion n'est offert qu'à lui
+  bool tensor_cores = false;  // une NVIDIA RTX (GpuFacts) : les conseils de card_advice.h
+  bool hdr_output = true;     // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
+  int auto_peak = 0;          // pic automatique de l'écran, en nits
   std::vector<EngineBadge> engines;
   std::string chosen_engines;                   // « Vulkan, TensorRT » (settings.toml)
   std::vector<core::EngineId> switchable;       // moteurs de SPAN et RIFE installés (engine_switch.h)

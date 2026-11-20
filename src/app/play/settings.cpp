@@ -644,6 +644,14 @@ void add_gmfss_option_reasons(std::vector<std::string>& reopen, const PlaySettin
   }
 }
 
+void add_warp_order_reason(std::vector<std::string>& reopen, const PlaySettings& base,
+                           const PlaySettings& wanted) {
+  if (wanted.rife_factor >= 2 && base.span_order != wanted.span_order)
+    reopen.emplace_back(wanted.span_order == SpanOrder::Before  ? i18n::tr("warp runs before SPAN")
+                        : wanted.span_order == SpanOrder::After ? i18n::tr("warp runs after SPAN")
+                                                                : i18n::tr("warp order follows the output"));
+}
+
 // Ce que recharge un agrandissement changé : SPAN, ou Anime4K, qui n'a rien à construire.
 std::string upscale_reason(const PlaySettings& wanted) {
   if (wanted.upscale && anime4k_size(wanted.model)) return i18n::tr("the upscaler changes to Anime4K");
@@ -766,10 +774,7 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       base.rife_model != wanted.rife_model)
     reopen.emplace_back(i18n::tr("the RIFE model loads (built the first time for this size)"));
-  if (wanted.rife_factor >= 2 && base.span_order != wanted.span_order)
-    reopen.emplace_back(wanted.span_order == SpanOrder::Before  ? i18n::tr("warp runs before SPAN")
-                        : wanted.span_order == SpanOrder::After ? i18n::tr("warp runs after SPAN")
-                                                                : i18n::tr("warp order follows the output"));
+  add_warp_order_reason(reopen, base, wanted);
   if (wanted.upscale && running.span_precision != wanted.span_precision)
     reopen.emplace_back(i18n::tr_format("SPAN switches to {} (built the first time for this size)",
                                         precision_text(wanted.span_precision)));

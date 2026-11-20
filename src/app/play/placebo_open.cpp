@@ -74,28 +74,6 @@ void fit_display_scale(spdlog::logger& log, SDL_Window* window, int width, int h
   log.info("fenêtre {} × {} : échelle du bureau {:.0f} %", size.width, size.height, scale / density * 100.0F);
 }
 
-// Les espaces colorimétriques que la surface offre : dit, au journal, si un écran HDR peut recevoir du HDR10
-// (A2B10G10R10 + HDR10_ST2084) ou si le pilote ne propose que du sRGB.
-void log_surface_color_spaces(const pl_vulkan vk, VkSurfaceKHR surface) {
-  const auto formats_of = reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceFormatsKHR>(
-      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceSurfaceFormatsKHR"));
-  if (formats_of == nullptr || surface == VK_NULL_HANDLE) return;
-  std::uint32_t count = 0;
-  if (formats_of(vk->phys_device, surface, &count, nullptr) != VK_SUCCESS || count == 0) return;
-  std::vector<VkSurfaceFormatKHR> formats(count);
-  if (formats_of(vk->phys_device, surface, &count, formats.data()) != VK_SUCCESS) return;
-  std::string text;
-  bool hdr10 = false;
-  for (const VkSurfaceFormatKHR& format : formats) {
-    hdr10 = hdr10 || format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
-    text += std::format(" [format {} espace {}]", static_cast<int>(format.format),
-                        static_cast<int>(format.colorSpace));
-  }
-  log_channel("app")->info("surface Vulkan : {} configurations, HDR10 (ST2084) {}{}",
-                           formats.size(),  // i18n-ok : journal
-                           hdr10 ? "offert" : "absent", text);
-}
-
 // A10-01 : un même message redit sans fin (une acquisition qui échoue à chaque tour) s'écrit une fois, puis
 // son compte toutes les kRepeatSummaryUs ou au message suivant ; le journal ne se remplit plus de mille
 // lignes par seconde.
@@ -346,15 +324,6 @@ const char* pick_device(const ScreenOptions& options, ScreenImpl& impl) {
   if (impl.device_choice.empty()) return nullptr;
   impl.channel->info("plusieurs cartes : la carte NVIDIA RTX « {} » est préférée", impl.device_choice);
   return impl.device_choice.c_str();
-}
-
-// Le niveau retenu et ce qui l'a permis, au journal.
-void log_present_level(spdlog::logger& log, PresentLevel level, const PresentCaps& c) {
-  log.info(
-      "présentation : niveau {} (present_id2 {}, present_wait2 {}, present timing {}, date absolue {}, "
-      "horodatages calibrés {}, wp_presentation {})",
-      name(level), c.present_id2, c.present_wait2, c.timing, c.timing_absolute, c.calibrated,
-      c.wayland_presentation);
 }
 
 // present-stall.txt, à côté du cache des shaders : un fichier de ce poste, qui se perd sans dommage (le garde
@@ -648,8 +617,8 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     if (const std::string_view depth(setting); depth == "2" || depth == "3") {
       sw_params.swapchain_depth = depth == "3" ? 3 : 2;
       sw_params.min_images = std::max(sw_params.min_images, 4);
-      impl->channel->info("banc swapchain : profondeur {}, {} images minimum",
-                          sw_params.swapchain_depth, sw_params.min_images);
+      impl->channel->info("banc swapchain : profondeur {}, {} images minimum", sw_params.swapchain_depth,
+                          sw_params.min_images);
     }
   }
   sw_params.present_flags = present_flags(impl->present_level, impl->present_caps);
@@ -660,7 +629,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     impl->feedback = std::make_unique<PresentFeedback>(impl->vk, impl->present_level, impl->present_caps,
                                                        impl->channel, std::move(wayland));
   if (impl->feedback) impl->feedback->record_stamps(options.screen_stamps);  // 0.7 : <stats>.screen.tsv
-  log_surface_color_spaces(impl->vk, impl->surface);
+  log_surface_color_spaces(*impl->channel, impl->vk, impl->surface);
   if (options.hdr) pl_swapchain_colorspace_hint(impl->swapchain, &pl_color_space_hdr10);
   impl->open_shader_cache(options.shader_cache);
   impl->renderer = pl_renderer_create(impl->log, gpu);
