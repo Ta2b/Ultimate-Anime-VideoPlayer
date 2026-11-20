@@ -35,6 +35,17 @@ struct SceneBoxParams {
 };
 cudaError_t launch_scene_box(const SceneBoxParams& params, cudaStream_t stream);
 
+struct SceneBoxPair {
+  const unsigned char* luma = nullptr;
+  std::size_t pitch = 0;  // octets
+  int width = 0;
+  int height = 0;
+  float* coarse = nullptr;
+  float* fine = nullptr;
+};
+// Les deux rayons de l'affinage, calculés à partir du même halo de luma.
+cudaError_t launch_scene_box_pair(const SceneBoxPair& params, cudaStream_t stream);
+
 struct SceneRefineParams {
   const float* a = nullptr;  // lumas floutées, width × height
   const float* b = nullptr;

@@ -103,6 +103,10 @@ Méthode de la porte 2.1 (banc `tools/bench/qualite/nvof_mesures.py` : `camera`,
   lumas floutées, un histogramme des écarts (la médiane du poids de Huber), les sommes pondérées, et un fil qui
   résout. Les lumas de la paire restent dans leurs tampons jusqu'à l'affinage : une paire plus récente qui les
   réécrirait attend (« relâché » reposé après l'affinage), et un affinage demandé trop tard n'est pas lancé.
+  Le backend TensorRT calcule les deux rayons à partir du même halo et garde les plans tant que leur luma
+  reste dans le tampon. Une paire contiguë reprend les deux flous de son image A. Sur 960×540, le nouveau
+  noyau reproduit les 1 036 800 valeurs FP32 des deux flous. Sans place pour les conserver, le lecteur
+  reprend le calcul par rayon.
 - **Affinage à l'heure** (`app/play/scene_map.cpp`) : dans un plan, l'affinage part dès le lancement de la
   paire, enfilé derrière son flux sur la file de NVOF, depuis la dernière caméra du plan (affinée si elle est
   relue, sinon celle de NVOF de la paire d'avant) : il n'attend plus que l'hôte relise les tuiles, et finit

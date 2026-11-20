@@ -108,6 +108,12 @@ class SceneFlow {
     std::uint64_t ticket = 0;
     bool posted = false;  // done enregistré au moins une fois
   };
+  struct RefineBlur {
+    std::array<float*, 2> radius{};
+    std::uint64_t write = 0;
+    int luma = -1;
+    bool ready = false;
+  };
 
   std::optional<Refusal> refused_;
   std::unique_ptr<NvofSession> session_;
@@ -128,7 +134,8 @@ class SceneFlow {
   std::array<std::uint64_t, NvofSession::kLumas> writes_{};  // écritures de chaque tampon de luma
   std::array<Launched, kSceneFlowReadbacks> launched_{};     // par ticket % kSceneFlowReadbacks
   std::array<Refine, kSceneFlowReadbacks> refines_{};
-  std::array<float*, 3> blurred_{};  // a, b, et la somme des lignes
+  std::array<RefineBlur, 2> refine_blur_{};  // une entrée par image, un plan pour chaque flou
+  float* refine_rows_ = nullptr;             // les sommes des lignes du flou courant
   SceneRefineState* refine_state_ = nullptr;
   std::uint8_t* refine_decor_ = nullptr;
   kernels::SceneTileCheck* refine_checks_ = nullptr;

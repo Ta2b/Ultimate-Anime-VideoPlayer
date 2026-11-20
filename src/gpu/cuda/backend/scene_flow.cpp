@@ -146,6 +146,9 @@ std::expected<void, Refusal> SceneFlow::before_lumas(cudaStream_t lane, const Lu
     if (auto ok = cuda_check(cudaStreamWaitEvent(lane, released_[i], 0), "cudaStreamWaitEvent"); !ok)
       return ok;
   }
+  // Invalider les lumas avant leur écriture, même si le lancement du flux échoue ensuite.
+  if (!lumas.keep_a) ++writes_[static_cast<std::size_t>(lumas.a)];
+  ++writes_[static_cast<std::size_t>(lumas.b)];
   return {};
 }
 
@@ -191,9 +194,7 @@ std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lu
   released_posted_[static_cast<std::size_t>(lumas.b)] = true;
   last_ = lumas;
   const std::uint64_t ticket = tickets_ + 1;
-  // Les tampons que la voie vient d'écrire : un affinage de cette paire ne vaut que tant qu'ils restent.
-  if (!lumas.keep_a) ++writes_[static_cast<std::size_t>(lumas.a)];
-  ++writes_[static_cast<std::size_t>(lumas.b)];
+  // Un affinage de cette paire ne vaut que tant que ses lumas restent dans leurs tampons.
   launched_[ticket % launched_.size()] = Launched{
       .ticket = ticket,
       .lumas = lumas,

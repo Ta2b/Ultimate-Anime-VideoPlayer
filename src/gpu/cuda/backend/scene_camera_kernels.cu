@@ -20,6 +20,45 @@ __device__ int clamp_index(int v, int high) {
   return v < 0 ? 0 : (v > high ? high : v);
 }
 
+constexpr int kBoxWidth = 32, kBoxHeight = 8, kBoxHalo = 3;
+static_assert(scene::kRefineCoarseRadius == kBoxHalo && scene::kRefineFineRadius == 1);
+
+// Les sommes de luma 8 bits sont des entiers exacts en FP32. Les accumuler ici en entier conserve le
+// résultat des deux passes de la boîte, y compris l'arrondi de la multiplication finale.
+__global__ void scene_box_pair(SceneBoxPair p) {
+  constexpr int kInputRows = kBoxHeight + 2 * kBoxHalo, kInputWidth = kBoxWidth + 2 * kBoxHalo;
+  constexpr int kPitch = kBoxWidth + 8;
+  __shared__ unsigned char input[kInputRows][kPitch];
+  __shared__ unsigned short large[kInputRows][kBoxWidth], small[kInputRows][kBoxWidth];
+  const int tx = static_cast<int>(threadIdx.x), ty = static_cast<int>(threadIdx.y);
+  const int tid = ty * kBoxWidth + tx;
+  const int x0 = static_cast<int>(blockIdx.x) * kBoxWidth, y0 = static_cast<int>(blockIdx.y) * kBoxHeight;
+  for (int z = tid; z < kInputRows * kInputWidth; z += kBoxWidth * kBoxHeight) {
+    const int r = z / kInputWidth, c = z % kInputWidth;
+    const int x = clamp_index(x0 + c - kBoxHalo, p.width - 1);
+    const int y = clamp_index(y0 + r - kBoxHalo, p.height - 1);
+    input[r][c] = p.luma[static_cast<std::size_t>(y) * p.pitch + x];
+  }
+  __syncthreads();
+  for (int r = ty; r < kInputRows; r += kBoxHeight) {
+    const int sum = input[r][tx + 2] + input[r][tx + 3] + input[r][tx + 4];
+    small[r][tx] = static_cast<unsigned short>(sum);
+    large[r][tx] = static_cast<unsigned short>(sum + input[r][tx] + input[r][tx + 1] + input[r][tx + 5] +
+                                               input[r][tx + 6]);
+  }
+  __syncthreads();
+  const int x = x0 + tx, y = y0 + ty;
+  if (x >= p.width || y >= p.height) return;
+  int sum7 = 0, sum3 = 0;
+#pragma unroll
+  for (int i = 0; i < 7; ++i) sum7 += large[ty + i][tx];
+#pragma unroll
+  for (int i = 2; i < 5; ++i) sum3 += small[ty + i][tx];
+  const std::size_t at = static_cast<std::size_t>(y) * p.width + x;
+  p.coarse[at] = __fmul_rn(static_cast<float>(sum7), 1.F / 49.F);
+  p.fine[at] = __fmul_rn(static_cast<float>(sum3), 1.F / 9.F);
+}
+
 __global__ void scene_box_rows(SceneBoxParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -224,6 +263,17 @@ cudaError_t launch_scene_box(const SceneBoxParams& params, cudaStream_t stream) 
   scene_box_rows<<<cover(params.width, params.height), block, 0, stream>>>(params);
   if (const cudaError_t status = cudaGetLastError(); status != cudaSuccess) return status;
   scene_box_cols<<<cover(params.width, params.height), block, 0, stream>>>(params);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_scene_box_pair(const SceneBoxPair& params, cudaStream_t stream) {
+  if (params.width <= 0 || params.height <= 0 || params.luma == nullptr || params.coarse == nullptr ||
+      params.fine == nullptr || params.coarse == params.fine ||
+      params.pitch < static_cast<std::size_t>(params.width))
+    return cudaErrorInvalidValue;
+  const dim3 grid(static_cast<unsigned>((params.width - 1) / kBoxWidth + 1),
+                  static_cast<unsigned>((params.height - 1) / kBoxHeight + 1));
+  scene_box_pair<<<grid, dim3(kBoxWidth, kBoxHeight), 0, stream>>>(params);
   return cudaGetLastError();
 }
 

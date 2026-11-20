@@ -224,17 +224,43 @@ template <bool kCubic>
 inline constexpr int kWarpBlocksPerSm = kCubic ? kCubicBlocksPerSm : kHeavyBlocksPerSm;
 
 template <bool Mask>
+__device__ __forceinline__ bool outside_layer_value(unsigned bits) {
+  const unsigned magnitude = bits & 0x7fffU;
+  if constexpr (Mask) return magnitude > layer::kUnitHalf || ((bits & 0x8000U) != 0U && magnitude != 0U);
+  return magnitude > layer::kSourceBoundHalf;
+}
+
+template <bool Mask>
+__device__ __forceinline__ unsigned outside_layer_pair(unsigned bits) {
+  constexpr unsigned kSign = 0x80008000U, kMagnitude = 0x7fff7fffU;
+  constexpr unsigned limit = Mask ? layer::kUnitHalf : layer::kSourceBoundHalf;
+  constexpr unsigned room = (0x7fffU - limit) * 0x10001U;
+  const unsigned magnitude = bits & kMagnitude;
+  // Chaque demi-mot atteint le bit de signe au-delà de sa borne, sans retenue entre les deux valeurs.
+  unsigned outside = magnitude + room;
+  if constexpr (Mask) outside |= bits & (magnitude + kMagnitude);  // les négatifs sauf −0
+  return outside & kSign;
+}
+
+template <bool Mask, bool Vector>
 __global__ void certify_layer_warp(const unsigned short* data, std::size_t count, unsigned* outside) {
   const std::size_t thread = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   const std::size_t step = static_cast<std::size_t>(gridDim.x) * blockDim.x;
   bool bad = false;
-  for (std::size_t i = thread; i < count; i += step) {
-    const unsigned bits = data[i];
-    const unsigned magnitude = bits & 0x7fffU;
-    if constexpr (Mask)
-      bad |= magnitude > layer::kUnitHalf || ((bits & 0x8000U) != 0U && magnitude != 0U);
-    else
-      bad |= magnitude > layer::kSourceBoundHalf;
+  if constexpr (Vector) {
+    const std::size_t groups = count / 8;
+    const auto* words = reinterpret_cast<const uint4*>(data);
+    unsigned marked = 0;
+    for (std::size_t i = thread; i < groups; i += step) {
+      const uint4 v = words[i];
+      marked |= outside_layer_pair<Mask>(v.x) | outside_layer_pair<Mask>(v.y) |
+                outside_layer_pair<Mask>(v.z) | outside_layer_pair<Mask>(v.w);
+    }
+    bad = marked != 0;
+    const std::size_t tail = groups * 8 + thread;
+    if (tail < count) bad |= outside_layer_value<Mask>(data[tail]);
+  } else {
+    for (std::size_t i = thread; i < count; i += step) bad |= outside_layer_value<Mask>(data[i]);
   }
   if (__syncthreads_or(bad) && threadIdx.x == 0) atomicOr(outside, 1U);
 }
@@ -526,13 +552,21 @@ cudaError_t launch_certify_layer_warp(const void* data, std::size_t elements, bo
   const cudaError_t clear = cudaMemsetAsync(outside, 0, sizeof(*outside), stream);
   if (clear != cudaSuccess) return clear;
   constexpr unsigned kThreads = 256, kMaxBlocks = 2048;
-  const auto blocks =
-      static_cast<unsigned>(std::min((elements - 1) / kThreads + 1, static_cast<std::size_t>(kMaxBlocks)));
+  const bool aligned = reinterpret_cast<std::uintptr_t>(data) % alignof(uint4) == 0;
+  const unsigned group = aligned ? 8U : 1U;
+  const auto blocks = static_cast<unsigned>(
+      std::min((elements - 1) / (kThreads * group) + 1, static_cast<std::size_t>(kMaxBlocks)));
   const auto* bits = static_cast<const unsigned short*>(data);
-  if (mask)
-    certify_layer_warp<true><<<blocks, kThreads, 0, stream>>>(bits, elements, outside);
-  else
-    certify_layer_warp<false><<<blocks, kThreads, 0, stream>>>(bits, elements, outside);
+  if (aligned) {
+    if (mask)
+      certify_layer_warp<true, true><<<blocks, kThreads, 0, stream>>>(bits, elements, outside);
+    else
+      certify_layer_warp<false, true><<<blocks, kThreads, 0, stream>>>(bits, elements, outside);
+  } else if (mask) {
+    certify_layer_warp<true, false><<<blocks, kThreads, 0, stream>>>(bits, elements, outside);
+  } else {
+    certify_layer_warp<false, false><<<blocks, kThreads, 0, stream>>>(bits, elements, outside);
+  }
   return cudaGetLastError();
 }
 

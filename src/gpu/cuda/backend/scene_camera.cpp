@@ -17,6 +17,7 @@ namespace kirari::gpu::cuda {
 namespace {
 
 static_assert(offsetof(SceneRefineState, model) == 0);
+constexpr std::array kRefineRadii{kernels::scene::kRefineCoarseRadius, kernels::scene::kRefineFineRadius};
 
 std::size_t tile_count(int cols, int rows) {
   return static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows);
@@ -38,8 +39,8 @@ std::expected<void, Refusal> SceneFlow::allocate_refine() {
   const std::size_t tiles = tile_count(cols_, rows_);
   const std::size_t pixels =
       static_cast<std::size_t>(session_->width()) * static_cast<std::size_t>(session_->height());
-  for (float*& plane : blurred_) {
-    if (auto ok = device(plane, pixels); !ok) return ok;
+  for (RefineBlur& blur : refine_blur_) {
+    if (auto ok = device(blur.radius[0], pixels); !ok) return ok;
   }
   if (auto ok = device(refine_state_, 1); !ok) return ok;
   if (auto ok = device(refine_decor_, tiles); !ok) return ok;
@@ -56,14 +57,29 @@ std::expected<void, Refusal> SceneFlow::allocate_refine() {
         return ok;
     }
   }
+  for (RefineBlur& blur : refine_blur_) {
+    if (auto ok = device(blur.radius[1], pixels); !ok) {
+      if (ok.error().code == RefusalCode::DeviceLost) return ok;
+      // Sans place pour les deux rayons, recalculer les flous dans les premiers plans.
+      static_cast<void>(cudaGetLastError());
+      for (RefineBlur& cache : refine_blur_) {
+        if (cache.radius[1] != nullptr) static_cast<void>(cudaFree(cache.radius[1]));
+        cache.radius[1] = nullptr;
+      }
+      return device(refine_rows_, pixels);
+    }
+  }
   return {};
 }
 
 void SceneFlow::release_refine() {
-  for (float*& plane : blurred_) {
-    if (plane != nullptr) static_cast<void>(cudaFree(plane));
-    plane = nullptr;
+  for (RefineBlur& blur : refine_blur_) {
+    for (float* plane : blur.radius)
+      if (plane != nullptr) static_cast<void>(cudaFree(plane));
+    blur = {};
   }
+  if (refine_rows_ != nullptr) static_cast<void>(cudaFree(refine_rows_));
+  refine_rows_ = nullptr;
   for (void* block : {static_cast<void*>(refine_state_), static_cast<void*>(refine_decor_),
                       static_cast<void*>(refine_checks_)}) {
     if (block != nullptr) static_cast<void>(cudaFree(block));
@@ -88,31 +104,61 @@ void SceneFlow::release_refine() {
 std::expected<void, Refusal> SceneFlow::enqueue_refine(cudaStream_t own, const Lumas& lumas) {
   const int width = session_->width();
   const int height = session_->height();
-  const std::array<NvofSession::Pitched, 2> source{session_->luma(lumas.a), session_->luma(lumas.b)};
-  const SceneRefineParams step{.a = blurred_[0],
-                               .b = blurred_[1],
+  const std::array slots{lumas.a, lumas.b};
+  const bool reuse = refine_blur_[0].radius[1] != nullptr;
+  const auto write_of = [&](int slot) { return writes_[static_cast<std::size_t>(slot)]; };
+  const auto matches = [&](const RefineBlur& blur, int slot) {
+    return blur.luma == slot && blur.write == write_of(slot);
+  };
+  if (reuse && (matches(refine_blur_[1], lumas.a) || matches(refine_blur_[0], lumas.b)))
+    std::swap(refine_blur_[0], refine_blur_[1]);
+  if (reuse) {
+    for (std::size_t k = 0; k < slots.size(); ++k) {
+      RefineBlur& blur = refine_blur_[k];
+      if (blur.ready && matches(blur, slots[k])) continue;
+      blur.ready = false;
+      const auto luma = session_->luma(slots[k]);
+      const SceneBoxPair boxes{.luma = static_cast<const unsigned char*>(luma.data),
+                               .pitch = luma.pitch,
                                .width = width,
                                .height = height,
-                               .cols = cols_,
-                               .decor = refine_decor_,
-                               .state = refine_state_};
-  for (const int radius : {kernels::scene::kRefineCoarseRadius, kernels::scene::kRefineFineRadius}) {
-    for (std::size_t k = 0; k < 2; ++k) {
-      const SceneBoxParams box{.luma = static_cast<const unsigned char*>(source[k].data),
-                               .pitch = source[k].pitch,
-                               .rows = blurred_[2],
-                               .out = blurred_[k],
-                               .width = width,
-                               .height = height,
-                               .radius = radius};
-      if (auto ok = cuda_check(launch_scene_box(box, own), "scene_box<<<>>>"); !ok) return ok;
+                               .coarse = blur.radius[0],
+                               .fine = blur.radius[1]};
+      if (auto ok = cuda_check(launch_scene_box_pair(boxes, own), "scene_box_pair<<<>>>"); !ok) return ok;
+      blur.luma = slots[k];
+      blur.write = write_of(slots[k]);
+      blur.ready = true;
     }
+  }
+  for (std::size_t r = 0; r < kRefineRadii.size(); ++r) {
+    const std::size_t plane = reuse ? r : 0;
+    if (!reuse) {
+      for (std::size_t k = 0; k < slots.size(); ++k) {
+        const auto luma = session_->luma(slots[k]);
+        const SceneBoxParams box{.luma = static_cast<const unsigned char*>(luma.data),
+                                 .pitch = luma.pitch,
+                                 .rows = refine_rows_,
+                                 .out = refine_blur_[k].radius[0],
+                                 .width = width,
+                                 .height = height,
+                                 .radius = kRefineRadii[r]};
+        if (auto ok = cuda_check(launch_scene_box(box, own), "scene_box<<<>>>"); !ok) return ok;
+      }
+    }
+    const SceneRefineParams step{.a = refine_blur_[0].radius[plane],
+                                 .b = refine_blur_[1].radius[plane],
+                                 .width = width,
+                                 .height = height,
+                                 .cols = cols_,
+                                 .decor = refine_decor_,
+                                 .state = refine_state_};
     for (int i = 0; i < kernels::scene::kRefineSteps; ++i) {
       if (auto ok = cuda_check(launch_scene_refine_step(step, own), "scene_refine<<<>>>"); !ok) return ok;
     }
   }
-  const SceneCheckParams check{.a = blurred_[0],
-                               .b = blurred_[1],
+  const std::size_t fine = reuse ? kRefineRadii.size() - 1 : 0;
+  const SceneCheckParams check{.a = refine_blur_[0].radius[fine],
+                               .b = refine_blur_[1].radius[fine],
                                .width = width,
                                .height = height,
                                .cols = cols_,
