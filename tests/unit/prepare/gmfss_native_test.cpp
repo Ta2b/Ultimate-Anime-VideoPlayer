@@ -189,70 +189,67 @@ TEST_CASE("GMFSS natif : l'IFNet se trouve et s'extrait dans les fusions des deu
   CHECK(base.error().code == RefusalCode::FieldMissing);
 }
 
-TEST_CASE("GMFSS natif : la fusion exportée se lit et son IFNet s'extrait", "[prepare][gmfss]") {
-  const std::filesystem::path model =
-      std::filesystem::path(KIRARI_RIFE_MODEL_DIR) / "gmfss_fortuna_union_fusion.onnx";
-  if (!std::filesystem::exists(model)) SKIP("gmfss_fortuna_union_fusion.onnx absent");
-  auto bytes = read_onnx_bytes(model);
-  REQUIRE(bytes);
-  const auto grid = gmfss_grid(*bytes);
-  INFO((grid ? std::string() : grid.error().detail));
-  REQUIRE(grid);
-  CHECK(grid->steps.size() == 2 * 21 + 3);
-  CHECK(grid->tensors.back().level == kGmfssFullLevel);
-  CHECK(grid->steps[2].conv.in_slope == 0.25F);  // residual_model_head0.0 (après les deux de head1)
-  // Les morceaux : 14 convolutions à la ligne 0, 16 à la ligne 1, 12 à la ligne 2, puis la queue (celle qui
-  // nourrit le PixelShuffle, la sienne et conv_last).
-  const std::vector<int> pieces = gmfss_grid_pieces(*grid);
-  REQUIRE(pieces.size() == grid->steps.size());
-  std::vector<int> count(kGmfssGridPieces, 0);
-  for (const int p : pieces) ++count[static_cast<std::size_t>(p)];
-  CHECK(count == std::vector<int>{14, 16, 12, 3});
-  CHECK(std::all_of(pieces.end() - 3, pieces.end(), [](int p) { return p == kGmfssQueuePiece; }));
-  CHECK(grid->steps[grid->steps.size() - 2].shuffle);
-  const auto ifnet = gmfss_ifnet(*bytes, 384, 640);
-  REQUIRE(ifnet);
-  CHECK(ifnet->size() < bytes->size());
-}
-
-TEST_CASE("GMFSS natif : les quatre blocs de l'IFNet d'origine se lisent dans le vrai modèle",
+TEST_CASE("GMFSS natif : le GridNet et les quatre blocs de l'IFNet se lisent dans la fusion exportée",
           "[prepare][gmfss]") {
   const std::filesystem::path dir(KIRARI_RIFE_MODEL_DIR);
   auto model = dir / "gmfss_fortuna_union_fusion.onnx";
+  // La fusion est commune aux deux échelles. Les anciens exports au demi-flot la renommaient.
   if (!std::filesystem::exists(model)) model = dir / "gmfss_fortuna_union_s05_fusion.onnx";
   if (!std::filesystem::exists(model)) SKIP("fusion GMFSS Fortuna Union absente");
   const auto fusion = read_onnx_bytes(model);
   REQUIRE(fusion);
-  const auto derived = gmfss_ifnet(*fusion, 384, 640);
-  REQUIRE(derived);
-  const auto blocks = gmfss_ifnet_blocks(*derived, 384, 640);
-  INFO((blocks ? std::string() : blocks.error().detail));
-  REQUIRE(blocks);
-  constexpr std::array<int, 4> sources{7, 12, 12, 12};
-  constexpr std::array<int, 4> first{96, 64, 48, 32};
-  for (std::size_t b = 0; b < blocks->size(); ++b) {
-    INFO("bloc " << b);
-    const auto& layers = (*blocks)[b];
-    REQUIRE(layers.size() == 11);
-    CHECK(layers[0].cin == sources[b]);
-    CHECK(layers[0].cout == first[b]);
-    CHECK(layers[0].stride == 2);
-    CHECK(layers[1].cout == 2 * first[b]);
-    CHECK(layers[1].stride == 2);
-    const auto channels = static_cast<std::size_t>(2 * first[b]);
-    for (std::size_t r = 2; r < 10; ++r) {
-      CHECK(layers[r].stride == 1);
-      CHECK(layers[r].scale.size() == channels);
-      CHECK(layers[r].slope == std::vector<float>(channels, 0.2F));
-    }
-    const auto& tail = layers.back();
-    CHECK(tail.transposed);
-    CHECK(tail.cout == 24);
-    CHECK(tail.kernel == 4);
-    CHECK(tail.stride == 2);
-    CHECK(tail.weights.size() == 16 * 24 * channels);
+
+  SECTION("Le GridNet et son découpage") {
+    const auto grid = gmfss_grid(*fusion);
+    INFO((grid ? std::string() : grid.error().detail));
+    REQUIRE(grid);
+    CHECK(grid->steps.size() == 2 * 21 + 3);
+    CHECK(grid->tensors.back().level == kGmfssFullLevel);
+    CHECK(grid->steps[2].conv.in_slope == 0.25F);  // residual_model_head0.0 (après les deux de head1)
+    // 14 convolutions à la ligne 0, 16 à la ligne 1, 12 à la ligne 2. La queue contient le PixelShuffle et
+    // les convolutions qui l'encadrent.
+    const std::vector<int> pieces = gmfss_grid_pieces(*grid);
+    REQUIRE(pieces.size() == grid->steps.size());
+    std::vector<int> count(kGmfssGridPieces, 0);
+    for (const int p : pieces) ++count[static_cast<std::size_t>(p)];
+    CHECK(count == std::vector<int>{14, 16, 12, 3});
+    CHECK(std::all_of(pieces.end() - 3, pieces.end(), [](int p) { return p == kGmfssQueuePiece; }));
+    CHECK(grid->steps[grid->steps.size() - 2].shuffle);
   }
-  CHECK_FALSE(gmfss_ifnet_blocks(*derived, 384, 672));
+
+  SECTION("L'IFNet extrait et ses quatre blocs") {
+    const auto derived = gmfss_ifnet(*fusion, 384, 640);
+    REQUIRE(derived);
+    CHECK(derived->size() < fusion->size());
+    const auto blocks = gmfss_ifnet_blocks(*derived, 384, 640);
+    INFO((blocks ? std::string() : blocks.error().detail));
+    REQUIRE(blocks);
+    constexpr std::array<int, 4> sources{7, 12, 12, 12};
+    constexpr std::array<int, 4> first{96, 64, 48, 32};
+    for (std::size_t b = 0; b < blocks->size(); ++b) {
+      INFO("bloc " << b);
+      const auto& layers = (*blocks)[b];
+      REQUIRE(layers.size() == 11);
+      CHECK(layers[0].cin == sources[b]);
+      CHECK(layers[0].cout == first[b]);
+      CHECK(layers[0].stride == 2);
+      CHECK(layers[1].cout == 2 * first[b]);
+      CHECK(layers[1].stride == 2);
+      const auto channels = static_cast<std::size_t>(2 * first[b]);
+      for (std::size_t r = 2; r < 10; ++r) {
+        CHECK(layers[r].stride == 1);
+        CHECK(layers[r].scale.size() == channels);
+        CHECK(layers[r].slope == std::vector<float>(channels, 0.2F));
+      }
+      const auto& tail = layers.back();
+      CHECK(tail.transposed);
+      CHECK(tail.cout == 24);
+      CHECK(tail.kernel == 4);
+      CHECK(tail.stride == 2);
+      CHECK(tail.weights.size() == 16 * 24 * channels);
+    }
+    CHECK_FALSE(gmfss_ifnet_blocks(*derived, 384, 672));
+  }
 }
 
 }  // namespace kirari::prepare
