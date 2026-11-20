@@ -362,7 +362,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // l'attente de wait_value avant et le signal après, comme write_ring.
   template <typename Launch>
   std::expected<void, Refusal> launch_into(const Target& target, std::string_view name, Launch&& launch) {
-    ImportedSlot* imported = nullptr;
+    const ImportedSlot* imported = nullptr;
     if (target.ring != nullptr) {
       auto begun = begin_slot(*target.ring->slot, target.ring->sync);
       if (!begun) return std::unexpected(std::move(begun.error()));
