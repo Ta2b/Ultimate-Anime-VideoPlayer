@@ -181,7 +181,7 @@ struct SplatPlan {
   }
 };
 
-constexpr std::size_t kMinSplatL2 = 32U * 1024 * 1024;
+constexpr std::size_t kMinSplatL2 = std::size_t{32} * 1024 * 1024;
 
 // Le tampon partage le L2 avec les entrées, les sorties et les autres voies de calcul.
 std::size_t splat_l2_budget() {
@@ -243,11 +243,12 @@ std::size_t index_splats(std::span<const KernelOps::SplatJob> jobs) {
 }
 
 cudaError_t launch_splat_batch(SoftSplatBatch& batch, float* sums, std::size_t bytes, cudaStream_t stream) {
-  std::size_t offset = 0;
+  std::size_t elements = 0;
   for (int j = 0; j < batch.count; ++j) {
     SoftSplatParams& p = batch.jobs[j];
-    p.sums = sums + offset / sizeof(float);
-    offset += gmfss_splat::aligned_bytes(soft_splat_sums_bytes(p.width, p.height, p.channels));
+    p.sums = sums + elements;
+    const auto aligned = gmfss_splat::aligned_bytes(soft_splat_sums_bytes(p.width, p.height, p.channels));
+    elements += aligned / sizeof(*sums);
   }
   return launch_soft_splat_all(batch, sums, bytes, stream);
 }
@@ -278,7 +279,7 @@ cudaError_t launch_staged_splats(const SoftSplatBatch& batch, const SplatStaging
       first += count;
       p.coverage = first == job.channels ? job.coverage : 0;
       stage.jobs[0] = p;
-      const auto planes_to_clear = static_cast<std::size_t>(count + (p.reuse_weights ? 0 : 1));
+      const auto planes_to_clear = static_cast<std::size_t>(count) + (p.reuse_weights ? 0U : 1U);
       const auto bytes = planes_to_clear * plane * sizeof(float);
       if (const cudaError_t result = launch_soft_splat_all(stage, sums, bytes, stream); result != cudaSuccess)
         return result;

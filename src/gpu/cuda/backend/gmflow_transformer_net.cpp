@@ -12,7 +12,7 @@ namespace kirari::gpu::cuda {
 namespace {
 
 constexpr auto kBlocks = static_cast<std::size_t>(prepare::kGmflowBlocks);
-constexpr std::size_t kBytesPerToken = prepare::kGmflowModel * 2;
+constexpr std::size_t kBytesPerToken = prepare::kGmflowModel * sizeof(std::uint16_t);
 
 bool aligned(const void* p) {
   return p != nullptr && reinterpret_cast<std::uintptr_t>(p) % 16 == 0;

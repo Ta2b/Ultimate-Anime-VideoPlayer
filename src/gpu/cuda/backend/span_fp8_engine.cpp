@@ -97,13 +97,14 @@ struct KernelTrial {
 // Trois motifs dans la même image : contours tramés, couleurs saturées et détails des ombres.
 std::vector<std::uint16_t> trial_image(int height, int width) {
   constexpr int kTile = 64;
+  constexpr auto kTileSize = static_cast<std::size_t>(kTile);
   const auto plane = static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
   std::vector<std::uint16_t> image(3 * plane);
   for (int c = 0; c < 3; ++c) {
-    std::array<std::array<std::uint16_t, kTile * kTile>, 3> motifs{};
+    std::array<std::array<std::uint16_t, kTileSize * kTileSize>, 3> motifs{};
     for (int y = 0; y < kTile; ++y)
       for (int x = 0; x < kTile; ++x) {
-        const std::size_t i = static_cast<std::size_t>(y * kTile + x);
+        const auto i = static_cast<std::size_t>(y) * kTileSize + static_cast<std::size_t>(x);
         const float m = native_check_pattern(c, y, x);
         motifs[0][i] = kernels::ref::float_to_half(m);
         motifs[1][i] = ((x / 9 + y / 7) % 3 == c) ? 0x3c00U : 0U;
@@ -112,7 +113,8 @@ std::vector<std::uint16_t> trial_image(int height, int width) {
     for (int y = 0; y < height; ++y) {
       auto* dst = image.data() + static_cast<std::size_t>(c) * plane +
                   static_cast<std::size_t>(y) * static_cast<std::size_t>(width);
-      const auto* row = motifs[static_cast<std::size_t>(3 * y / height)].data() + (y % kTile) * kTile;
+      const auto band = 3 * static_cast<std::size_t>(y) / static_cast<std::size_t>(height);
+      const auto* row = motifs[band].data() + static_cast<std::size_t>(y % kTile) * kTileSize;
       for (int x = 0; x < width; x += kTile) std::copy_n(row, std::min(kTile, width - x), dst + x);
     }
   }
@@ -426,7 +428,7 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
 
 std::expected<bool, Refusal> SpanFp8Engine::try_vertical_net(const span_fp8::Package& package,
                                                              SpanFp8Weights weights, void* workspace) {
-  const auto reject = [&](std::string detail) -> std::expected<bool, Refusal> {
+  const auto reject = [&](const std::string& detail) -> std::expected<bool, Refusal> {
     if (const auto lost = clear_error(); lost != cudaSuccess)
       return std::unexpected(lost_refusal(lost, "SPAN FP16 : essai Winograd vertical"));
     winograd_notice_ = "SPAN FP16 : Winograd vertical écarté, " + detail;

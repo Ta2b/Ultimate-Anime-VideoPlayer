@@ -130,8 +130,8 @@ void log_surface_color_spaces(spdlog::logger& log, pl_vulkan vk, VkSurfaceKHR su
 // Le niveau retenu et ce qui l'a permis, au journal.
 void log_present_level(spdlog::logger& log, PresentLevel level, const PresentCaps& c) {
   log.info(
-      "présentation : niveau {} (present_id2 {}, present_wait2 {}, present timing {}, date absolue {}, "
-      "horodatages calibrés {}, wp_presentation {})",
+      "présentation : niveau {} (present_id2 {}, present_wait2 {}, present timing {}, "  // i18n-ok : journal
+      "date absolue {}, horodatages calibrés {}, wp_presentation {})",
       name(level), c.present_id2, c.present_wait2, c.timing, c.timing_absolute, c.calibrated,
       c.wayland_presentation);
 }
