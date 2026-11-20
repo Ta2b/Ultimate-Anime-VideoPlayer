@@ -33,7 +33,21 @@ __device__ __forceinline__ float fixed(float x) {
   return isfinite(x) ? x : isnan(x) ? 0.F : fmaxf(-65504.F, fminf(65504.F, x));
 }
 
-template <int C>
+template <bool Packed>
+__device__ __forceinline__ float2 fixed_pair(const Frag<Acc::kF16>& fragment, int h) {
+  if constexpr (Packed) {
+    const auto& v = reinterpret_cast<const __half2&>(fragment.r[h]);
+    // Les NaN donnent +0, les infinis sont bornés et les zéros signés sont conservés.
+    const unsigned ordered = __heq2_mask(v, v);
+    const auto clipped = __hmin2(__hmax2(v, __float2half2_rn(-65504.F)), __float2half2_rn(65504.F));
+    return unpack_half2(reinterpret_cast<const unsigned&>(clipped) & ordered);
+  } else {
+    const auto v = fragment.pair(h);
+    return make_float2(fixed(v.x), fixed(v.y));
+  }
+}
+
+template <int C, bool Packed>
 __device__ __forceinline__ void vertical_gate(__half* s, Params p, int x0, int y0, int warp, int lane) {
   constexpr int kKC = C / 16, kChunks = C / 8;
   constexpr auto em = Acc::kF16;
@@ -88,10 +102,10 @@ __device__ __forceinline__ void vertical_gate(__half* s, Params p, int x0, int y
                                ? __half22float2(*reinterpret_cast<const __half2*>(
                                      p.skip + (static_cast<long>(old_y) * p.fw + old_x) * C + channel))
                                : make_float2(0.F, 0.F);
-          const auto sums = d[j].pair(h), v = cached[2 * np + j][h];
+          const auto sums = fixed_pair<Packed>(d[j], h), v = cached[2 * np + j][h];
           *reinterpret_cast<__half2*>(s + (q0 + 8 * h) * kStride<C> + channel) =
-              to_half2((v.x + x.x) * tanh_approx(fixed(sums.x) + b1.x),
-                       (v.y + x.y) * tanh_approx(fixed(sums.y) + b1.y));
+              to_half2((v.x + x.x) * tanh_approx(sums.x + b1.x),
+                       (v.y + x.y) * tanh_approx(sums.y + b1.y));
         }
       }
     }
@@ -262,8 +276,9 @@ __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
 #pragma unroll
       for (int h = 0; h < 2; ++h) {
         const int x = g + 8 * h + 16 * f, at = (local_y * kWidth + x) * kStride<C> + c;
-        const float2 a = acc[f][0][n].pair(h), b = acc[f][1][n].pair(h);
-        const float2 d = acc[f][2][n].pair(h), e = acc[f][3][n].pair(h);
+        constexpr bool packed = C == 64 && Flat;
+        const auto a = fixed_pair<packed>(acc[f][0][n], h), b = fixed_pair<packed>(acc[f][1][n], h);
+        const auto d = fixed_pair<packed>(acc[f][2][n], h), e = fixed_pair<packed>(acc[f][3][n], h);
         const auto put = [&](int index, float lo, float hi) {
           const auto narrowed = to_half2(lo, hi);
           if constexpr (Gate)
@@ -274,14 +289,14 @@ __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
                 to_half2(fmaxf(0.F, v.x + bias.x), fmaxf(0.F, v.y + bias.y));
           }
         };
-        put(at, fixed(a.x) + fixed(b.x) + fixed(d.x), fixed(a.y) + fixed(b.y) + fixed(d.y));
-        put(at + kWidth * kStride<C>, fixed(b.x) - fixed(d.x) - fixed(e.x),
-            fixed(b.y) - fixed(d.y) - fixed(e.y));
+        put(at, a.x + b.x + d.x, a.y + b.y + d.y);
+        put(at + kWidth * kStride<C>, b.x - d.x - e.x,
+            b.y - d.y - e.y);
       }
   }
   __syncthreads();
   if constexpr (Gate) {
-    vertical_gate<C>(s, p, x0, y0, warp, lane);
+    vertical_gate<C, C == 64 && Flat>(s, p, x0, y0, warp, lane);
     __syncthreads();
   }
   store_output<C>(s, p, x0, y0, tid);
