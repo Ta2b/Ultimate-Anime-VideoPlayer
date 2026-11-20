@@ -43,13 +43,14 @@ __device__ __forceinline__ void mma(sn::Frag<sn::Acc::kF16>& frag, const U32 (&a
 }
 
 __device__ __forceinline__ void mma(sn::Frag<sn::Acc::kF32>& frag, const U32 (&a)[4], U32 b0, U32 b1) {
-  asm("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};"
+  asm("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
+      "{%0,%1,%2,%3};"
       : "+f"(frag.r[0]), "+f"(frag.r[1]), "+f"(frag.r[2]), "+f"(frag.r[3])
       : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
 }
 
 __device__ __forceinline__ void add_stage(sn::Frag<sn::Acc::kF16>& sum,
-                                           const sn::Frag<sn::Acc::kF16>& stage) {
+                                          const sn::Frag<sn::Acc::kF16>& stage) {
 #pragma unroll
   for (int i = 0; i < 2; ++i) {
     const __half2 a = *reinterpret_cast<const __half2*>(&sum.r[i]);
@@ -60,7 +61,7 @@ __device__ __forceinline__ void add_stage(sn::Frag<sn::Acc::kF16>& sum,
 }
 
 __device__ __forceinline__ void add_stage(sn::Frag<sn::Acc::kF32>& sum,
-                                           const sn::Frag<sn::Acc::kF32>& stage) {
+                                          const sn::Frag<sn::Acc::kF32>& stage) {
 #pragma unroll
   for (int i = 0; i < 4; ++i) sum.r[i] = __fadd_rn(sum.r[i], stage.r[i]);
 }
@@ -84,8 +85,8 @@ __device__ __forceinline__ void load_a(U32 (&a)[sn::kMF][4], U32 tile, int row, 
 }
 
 template <bool Pair, sn::Acc A>
-__device__ __forceinline__ void mma_group(sn::Frag<A> (&sum)[sn::kMF][kC / 8], U32 tile,
-                                          const uint4* weights, int row, int lane, int step) {
+__device__ __forceinline__ void mma_group(sn::Frag<A> (&sum)[sn::kMF][kC / 8], U32 tile, const uint4* weights,
+                                          int row, int lane, int step) {
   U32 a0[sn::kMF][4], a1[sn::kMF][4];
   load_a(a0, tile, row, lane, step);
   if constexpr (Pair) load_a(a1, tile, row, lane, step + 1);
@@ -139,8 +140,7 @@ __global__ void __launch_bounds__(sn::kThreads) relu_conv(Params p) {
   // Les groupes sont [0], [1,2], …, [11,12], [13], avec l'addition finale au type de l'accumulateur.
   mma_group<false>(sum, base, p.packed, row, lane, 0);
 #pragma unroll 1
-  for (int step = 1; step + 1 < kSteps; step += 2)
-    mma_group<true>(sum, base, p.packed, row, lane, step);
+  for (int step = 1; step + 1 < kSteps; step += 2) mma_group<true>(sum, base, p.packed, row, lane, step);
   mma_group<false>(sum, base, p.packed, row, lane, kSteps - 1);
   bool overflow = false;
 #pragma unroll

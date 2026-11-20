@@ -199,8 +199,7 @@ __device__ __forceinline__ void wino_store(const YHalf& yh, __half* o, int half,
 
 // Sans porte, applique le biais et le ReLU dans la disposition du Winograd.
 template <bool Relu>
-__device__ __forceinline__ void wino_plain(const YAcc& ya, __half* o, const float* bias, int warp,
-                                           int lane) {
+__device__ __forceinline__ void wino_plain(const YAcc& ya, __half* o, const float* bias, int warp, int lane) {
   constexpr int kLdo = kWinoC + 8;
   const int g = lane >> 2, t = lane & 3;
 #pragma unroll
@@ -214,8 +213,7 @@ __device__ __forceinline__ void wino_plain(const YAcc& ya, __half* o, const floa
 #pragma unroll
         for (int h = 0; h < 2; ++h) {
           const int pixel = (2 * m + (ij >> 1)) * kTW + 2 * (g + 8 * h) + (ij & 1);
-          const float2 y =
-              __half22float2(to_half2(ya[m][ij][nt][2 * h], ya[m][ij][nt][2 * h + 1]));
+          const float2 y = __half22float2(to_half2(ya[m][ij][nt][2 * h], ya[m][ij][nt][2 * h + 1]));
           float a = y.x + b.x, z = y.y + b.y;
           if constexpr (Relu) {
             a = fmaxf(a, 0.F);
@@ -271,8 +269,8 @@ __global__ void __launch_bounds__(kThreads) wino_kernel(Params p) {
   YHalf first, second;  // les deux moitiés en f16
 #pragma unroll 1
   for (int half = 0; half < 2; ++half) {  // une boucle : le corps n'est pas copié deux fois
-    load_nhwc<C, 1, true, kWinoRows>(s, p.in[0], p.in_ld != 0 ? p.in_ld : C,
-                                    p.fh, p.fw, ty0 + half * kWinoRows, tx0);
+    load_nhwc<C, 1, true, kWinoRows>(s, p.in[0], p.in_ld != 0 ? p.in_ld : C, p.fh, p.fw,
+                                     ty0 + half * kWinoRows, tx0);
     cp_async_wait_all();
     wino_half(ya, tile, v, abase, wl);
     if constexpr (M == Mode::kPlain) {

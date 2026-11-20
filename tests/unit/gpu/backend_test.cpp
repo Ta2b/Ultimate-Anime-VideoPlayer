@@ -25,7 +25,7 @@ using kirari::Refusal;
 using kirari::RefusalCode;
 using namespace kirari::gpu;
 
-static_assert(kBackendAbi == 61);
+static_assert(kBackendAbi == 62);
 // Aucune exception ne traverse les points d'entrée : sous MSVC, une exception sortie d'une
 // fonction extern "C" est un comportement indéfini chez l'appelant.
 static_assert(std::is_nothrow_invocable_r_v<int, BackendAbiFn>);
@@ -199,10 +199,11 @@ TEST_CASE("Backend : la file rend ses erreurs en refus nommés", "[backend]") {
 TEST_CASE("Backend : le chargeur refuse une autre version ou une autre empreinte", "[backend]") {
   CHECK(check_backend_abi(kBackendAbi, kBackendLayout));
 
-  auto older = check_backend_abi(2, kBackendLayout);
+  const int previous = kBackendAbi - 1;
+  auto older = check_backend_abi(previous, kBackendLayout);
   REQUIRE_FALSE(older);
   CHECK(older.error().code == RefusalCode::AbiMismatch);
-  CHECK(older.error().detail.find("interface 2") != std::string::npos);
+  CHECK(older.error().detail.find("interface " + std::to_string(previous)) != std::string::npos);
 
   // Même version, autre forme : en-têtes modifiés sans changer kBackendAbi, ou autre
   // bibliothèque standard (libc++ contre libstdc++, CRT de débogage).

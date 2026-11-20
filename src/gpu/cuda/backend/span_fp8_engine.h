@@ -50,9 +50,11 @@ class SpanFp8Engine final : public Engine {
   // réécrit depuis la construction (GraphInvalid), taille ou appareil que les noyaux ne prennent pas,
   // mémoire. native_edges : les bords du FP8 par les noyaux du FP16 natif. native_blocks : essaie les
   // deux 3×3 avec ReLU du FP8 C48, puis compare au même réseau CUTLASS avant de les retenir.
+  // vertical_winograd : essaie sur Ada les paires de lignes du SPAN FP16 C64 à huit blocs en 1080p.
   static std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> load(
       const std::filesystem::path& package, std::uint32_t crc, int height, int width,
-      const std::shared_ptr<SharedActivations>& shared, bool native_edges = false, bool native_blocks = false);
+      const std::shared_ptr<SharedActivations>& shared, bool native_edges = false, bool native_blocks = false,
+      bool vertical_winograd = false);
   ~SpanFp8Engine() override;
   SpanFp8Engine(const SpanFp8Engine&) = delete;
   SpanFp8Engine& operator=(const SpanFp8Engine&) = delete;
@@ -104,9 +106,19 @@ class SpanFp8Engine final : public Engine {
   bool native_edges() const { return native_edges_; }
   bool native_blocks() const { return native_blocks_; }
   std::string_view native_blocks_notice() const { return native_blocks_notice_; }
+  std::string_view winograd_notice() const { return winograd_notice_; }
 
  private:
   SpanFp8Engine() = default;
+  std::expected<bool, Refusal> try_vertical_net(const span_fp8::Package& package, SpanFp8Weights weights,
+                                                void* workspace);
+  std::expected<void, Refusal> try_relu_net(SpanFp8Weights weights, void* workspace);
+  std::expected<void, Refusal> validate_nets(const span_fp8::Package& package, const SpanFp8Weights& weights,
+                                             void* workspace, bool native_blocks, bool vertical_winograd);
+  std::expected<void, Refusal> place_for_load(const span_fp8::Package& package, const SpanFp8Weights& weights,
+                                              const std::shared_ptr<SharedActivations>& shared,
+                                              bool native_blocks, bool vertical_winograd,
+                                              bool& allocation_refused);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
   // Le corps sur stream : rejoué, capturé ou lancé en direct selon le registre.
   std::expected<void, Refusal> body(cudaStream_t stream, const void* source, bool tiled);
@@ -147,6 +159,7 @@ class SpanFp8Engine final : public Engine {
   bool native_edges_ = false;
   bool native_blocks_ = false;
   std::string native_blocks_notice_;
+  std::string winograd_notice_;
   std::string runtime_notice_;
 
   std::unique_ptr<SpanFp8Net> net_;

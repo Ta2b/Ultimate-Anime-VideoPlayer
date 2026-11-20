@@ -4,7 +4,8 @@
 //
 //   kirari_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
 //                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--band N] [--native-blocks]
-//                    [--shared-weights | --no-shared-weights] [--winograd | --no-winograd] [--compare]
+//                    [--shared-weights | --no-shared-weights] [--winograd | --winograd-vertical |
+//                    --no-winograd] [--compare]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
@@ -18,8 +19,8 @@
 // --band N : le FP16 natif en bandes de N lignes de demi-résolution (0 : chaque couche sur l'image entière ;
 // sans l'option, SpanFp8Weights::band, celle du lecteur). --shared-weights, --no-shared-weights : le FP16
 // natif prend ou non les poids de chaque pas en mémoire partagée ; sans l'option, le choix du lecteur
-// (SpanFp8Weights::shared_weights). --winograd, --no-winograd : les 3×3 des blocs par Winograd F(2×2, 3×3)
-// (64 canaux, sommes f16) ou non ; sans l'option, le choix du lecteur (SpanFp8Weights::winograd).
+// (SpanFp8Weights::shared_weights). --winograd : F(2×2, 3×3). --winograd-vertical : F(2,3) par paire
+// de lignes. --no-winograd ou sans option : convolutions directes. Le lecteur les compare au chargement.
 // --native-blocks : les c1 et c2 en FP8 natif pour C48, la porte et les bords en CUTLASS.
 // --compare : la sortie est aussi calculée par la référence FP16 (sommes f32) et l'écart dit sur la sortie
 // standard (PSNR, plus grand écart, valeurs non finies) : un seul lancement juge la vitesse et la justesse.
@@ -107,6 +108,8 @@ std::string read_options(int argc, char* const* argv, Options& options) {
       options.shared_weights = kirari::gpu::cuda::SpanSharedWeights::Off;
     } else if (option == "--winograd") {
       options.winograd = kirari::gpu::cuda::SpanWinograd::On;
+    } else if (option == "--winograd-vertical") {
+      options.winograd = kirari::gpu::cuda::SpanWinograd::Vertical;
     } else if (option == "--no-winograd") {
       options.winograd = kirari::gpu::cuda::SpanWinograd::Off;
     } else if (option == "--compare") {
@@ -228,8 +231,9 @@ int bench_graph(SpanFp8Net& net, const kirari::gpu::cuda::SpanFp8Weights& weight
     CU(cudaEventElapsedTime(&ms[i], events[2 * i], events[2 * i + 1]));
   std::ranges::sort(ms);
   const bool f32 = weights.sums == kirari::gpu::cuda::SpanNativeSums::F32;
-  const char* mode = weights.fp16 ? (f32 ? "FP16 natif (sommes f32)" : "FP16 natif")
-                                  : weights.native_relu ? "FP8 (ReLU natives)" : "FP8";
+  const char* mode = weights.fp16          ? (f32 ? "FP16 natif (sommes f32)" : "FP16 natif")
+                     : weights.native_relu ? "FP8 (ReLU natives)"
+                                           : "FP8";
   std::printf("SPAN %s %dx%d : médiane %.3f ms, min %.3f ms sur %d lancements (graphe CUDA)\n", mode, width,
               height, static_cast<double>(ms[ms.size() / 2]), static_cast<double>(ms.front()), bench);
   return 0;

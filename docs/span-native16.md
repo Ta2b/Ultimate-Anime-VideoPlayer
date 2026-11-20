@@ -225,6 +225,58 @@ dirait (`span-bilan.md`). Le défaut (`SpanSharedWeights::Auto`) les prend à 48
 `kirari_span_fp8_run --shared-weights` ou `--no-shared-weights` force le choix, et le banc mesure les deux
 dans les mêmes tours que le défaut.
 
+## Winograd par paires de lignes, 48 et 64 canaux
+
+Le noyau transforme les 3×3 à 48 ou 64 canaux dans le sens vertical, sur deux lignes de demi-résolution à la fois.
+Il garde les trois prises horizontales directes. Pour chaque prise, quatre fragments A restent dans les
+registres et se multiplient aux quatre lignes de poids transformées, contre six produits sur la même paire
+en direct. Les poids sont préparés en double puis arrondis en FP16. Les sommes des MMA restent en FP16 et
+la combinaison des quatre résultats se fait en FP32. La troisième convolution de chaque bloc applique
+dans la même tuile la 1×1 de la porte, le résidu et tanh.
+
+Sur la RTX 4070 Ti, Balanced 1920×1080 → 3840×2160 passe de 10,244 à 8,980 ms en graphe CUDA, en bandes
+de 128 lignes sur une image Re:Zero. C'est 12,3 % de temps réseau en moins. Le banc mesure le réseau seul.
+Sur trois autres recadrages Re:Zero de 642×358, les deux modèles Balanced et Balanced Sharp1 gagnent de
+0,086 à 3,018 dB contre ONNX Runtime FP32. Le 99,9ᵉ percentile de l'erreur est meilleur dans chacun des six
+cas. Le plus grand écart augmente de 0,003326 à 0,003513 dans un cas Sharp1 et baisse ou reste égal ailleurs.
+Toutes les valeurs sont finies. Les sorties des bandes de 35 lignes et sans bandes sont identiques au bit.
+Le masque partiel a été vérifié sur une zone de travail initialisée à NaN, coins et centre compris.
+
+Sur la mire saturée à 1080p, les deux résultats GPU ne se ressemblent qu'à 53,4 dB dans la pire bande.
+La comparaison indépendante à ONNX Runtime FP32 tranche : pour Sharp1, cette bande passe de 54,074 à
+55,679 dB et son erreur maximale de 0,011253 à 0,010622. Les deux autres bandes gagnent respectivement
+0,207 et 3,399 dB. Un seuil de 60 dB contre le direct rejetait cette amélioration.
+
+La grille par tuiles conserve ses 32 × 8 pixels de demi-résolution. Le halo vertical compte deux lignes par
+3×3 transformée, car l'arrondi empêche d'annuler exactement le dernier terme de la paire. En bandes, le
+corps avance de paire en paire. Un panoramique de deux pixels d'entrée en horizontal et quatre en vertical
+conserve la phase du modèle et peut réemployer sa sortie. Un décalage vertical de deux pixels est refusé
+pour la reprise.
+
+Le chargeur essaie le noyau sur Ada pour Balanced C64 à huit blocs en 1080p avec des sommes FP16.
+Il le retient si les trois bandes de l'image d'essai restent à au moins 50 dB du direct, si le temps médian
+gagne au moins 3 % et si le contrôle contre le processeur passe. L'outil `kirari_span_fp8_run` permet
+de mesurer les deux voies avec `--winograd-vertical` et `--no-winograd`. Le noyau CUDA est compilé en
+SM89 et SM120. Au vrai chargement Ada, Sharp1 passe de 10,18 à 9,00 ms et Balanced de 9,92 à 8,82 ms. Le
+contrôle indépendant du coin avec le processeur donne 66,920 dB pour Sharp1 (contre 67,189 en direct)
+et 66,617 dB pour Balanced (contre 66,568 en direct).
+
+Avec Performance C48, trois warps de 16 canaux traitent chaque paire sans padding. Le chronométrage réseau
+ABBA donne 5,096 → 4,057 ms en 1080p, 2,326 → 1,764 ms en 720p et 1,326 → 1,100 ms en 540p. Sharp1 gagne
+également aux trois tailles. Sur les six recadrages des deux modèles, le PSNR gagne de 0,062 à 2,817 dB
+contre ONNX Runtime FP32. Il y a une hausse du p99,9 de 0,002853 à 0,002860 avec Performance et une hausse
+du maximum de 0,006148 à 0,006640 avec Sharp1, sur des recadrages différents. Les autres valeurs de ces
+deux métriques baissent ou restent égales. Toutes les sorties sont finies. Bandes, masques et phases
+autorisées gardent leurs bits sur les deux variantes.
+
+En lecture avec Sharp1 Performance à 720p et composition HDR à 240 Hz, le temps GPU de SPAN passe
+d'environ 2,67 à 2,13 ms. Sur les deux alternances, l'affichage passe de 224,27 à 221,54 puis de
+225,84 à 222,54 nouvelles images par seconde. Le C48 vertical reste accessible au banc. Le lecteur
+conserve le direct sur les modèles Performance.
+
+Le pas vertical agrandit `SpanTileGrid`, renvoyé par le backend au lecteur. L'ABI passe à 62 et l'empreinte
+inclut la taille de cette grille. Le lecteur demande donc un backend recompilé.
+
 ## Winograd F(2×2, 3×3), 64 canaux
 
 Les 3×3 carrées des blocs (trois par bloc, 85 % du calcul du b8f64) passent par Winograd F(2×2, 3×3) :
@@ -257,8 +309,8 @@ test « Winograd suit le chemin direct » demande 50 dB contre le direct et la m
 
 Au banc (#980, RTX 4070 Ti, 1080p → 4K, Re:Zero, 3 tours ABAB) : **13,72 ms au b8f64 contre 10,64 en
 direct (+29 %)**, à 62,96 dB contre 62,83 (export jugé sur processeur contre ONNX Runtime FP32 : juste sur
-GPU aussi). Au b5f48 (48 canaux), sans effet comme prévu : 5,03 ms. Winograd reste donc éteint (Auto). La
-version groupée donne 13,92–14,34 ms contre 14,57–14,60 ms pour l'ancienne dans le même aller-retour
+GPU aussi). Au b5f48 (48 canaux), sans effet comme prévu : 5,03 ms. La voie F(2×2, 3×3) reste donc
+éteinte par défaut. La version groupée donne 13,92–14,34 ms contre 14,57–14,60 ms pour l'ancienne dans le même aller-retour
 (RTX 4070 Ti, graphe CUDA, 100 lancements par passage, entrée Re:Zero, bande de 128 lignes). Le direct
 est à 10,61–11,50 ms. Le résultat Winograd reste identique à l'octet sur cette image 4K.
 Sur une convolution d'une bande profilée avec Nsight Compute, l'indicateur d'attente de barrière

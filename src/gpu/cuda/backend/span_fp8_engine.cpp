@@ -80,14 +80,14 @@ std::expected<void, Refusal> smoke_test(SpanFp8Net& net, int height, int width) 
   return {};
 }
 
-constexpr double kReluCheckDb = 50.0;
-struct ReluTrial {
+constexpr double kKernelTrialDb = 50.0;
+struct KernelTrial {
   double db = 0.0;
   float reference_ms = 0.F, native_ms = 0.F;
 };
 
 // Trois motifs dans la même image : contours tramés, couleurs saturées et détails des ombres.
-std::vector<std::uint16_t> relu_trial_image(int height, int width) {
+std::vector<std::uint16_t> trial_image(int height, int width) {
   constexpr int kTile = 64;
   const auto plane = static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
   std::vector<std::uint16_t> image(3 * plane);
@@ -112,7 +112,8 @@ std::vector<std::uint16_t> relu_trial_image(int height, int width) {
 }
 
 // Trois petites bandes couvrent la largeur complète, les trois canaux et les deux bords verticaux.
-std::expected<std::vector<std::uint16_t>, Refusal> relu_trial_bands(const void* output, int h, int w) {
+std::expected<std::vector<std::uint16_t>, Refusal> trial_bands(const void* output, int h, int w,
+                                                               std::string_view label) {
   const int rows = std::min(16, h);
   const std::size_t row = static_cast<std::size_t>(w), stride = row * static_cast<std::size_t>(h);
   const std::size_t band = row * static_cast<std::size_t>(rows);
@@ -120,16 +121,18 @@ std::expected<std::vector<std::uint16_t>, Refusal> relu_trial_bands(const void* 
   auto* dst = result.data();
   for (int y : {0, (h - rows) / 2, h - rows})
     for (std::size_t c = 0; c < 3; ++c) {
-      const auto* src = static_cast<const std::uint16_t*>(output) + c * stride + row * static_cast<std::size_t>(y);
+      const auto* src =
+          static_cast<const std::uint16_t*>(output) + c * stride + row * static_cast<std::size_t>(y);
       if (auto ok = cuda_check(cudaMemcpy(dst, src, band * sizeof(*dst), cudaMemcpyDeviceToHost),
-                               "SPAN FP8 : lecture de l'essai ReLU"); !ok)
+                               std::format("SPAN : lecture de l'essai {}", label));
+          !ok)
         return std::unexpected(std::move(ok.error()));
       dst += band;
     }
   return result;
 }
 
-double relu_trial_db(const std::vector<std::uint16_t>& reference, const std::vector<std::uint16_t>& candidate) {
+double trial_db(const std::vector<std::uint16_t>& reference, const std::vector<std::uint16_t>& candidate) {
   const std::size_t per = reference.size() / 3;
   double worst = 200.;
   for (std::size_t b = 0; b < 3; ++b) {
@@ -145,76 +148,85 @@ double relu_trial_db(const std::vector<std::uint16_t>& reference, const std::vec
   return worst;
 }
 
-std::expected<ReluTrial, Refusal> compare_relu(SpanFp8Net& reference, SpanFp8Net& candidate, int height,
-                                               int width) {
+std::expected<void, Refusal> trial_step(cudaError_t error, const char* step, std::string_view label) {
+  return cuda_check(error, std::format("SPAN : essai {} ({})", label, step));
+}
+
+std::expected<void, Refusal> launch_trial(Scratch& scratch, SpanFp8Net& net, std::string_view label) {
+  std::string why;
+  if (net.launch_body(scratch.stream, scratch.input, why) &&
+      net.launch_tail(scratch.stream, scratch.output, {}, why))
+    return {};
+  if (auto ok = trial_step(cudaStreamSynchronize(scratch.stream), "lancement", label); !ok) return ok;
+  return refuse(RefusalCode::VendorCallFailed, std::format("essai {} : {}", label, why));
+}
+
+std::expected<float, Refusal> measure_trial(Scratch& scratch, SpanFp8Net& net, std::string_view label) {
+  if (auto ok = trial_step(cudaEventRecord(scratch.start, scratch.stream), "début", label); !ok)
+    return std::unexpected(std::move(ok.error()));
+  if (auto ok = launch_trial(scratch, net, label); !ok) return std::unexpected(std::move(ok.error()));
+  if (auto ok = trial_step(cudaEventRecord(scratch.stop, scratch.stream), "fin", label); !ok)
+    return std::unexpected(std::move(ok.error()));
+  if (auto ok = trial_step(cudaEventSynchronize(scratch.stop), "chronométrage", label); !ok)
+    return std::unexpected(std::move(ok.error()));
+  float ms = 0.F;
+  if (auto ok = trial_step(cudaEventElapsedTime(&ms, scratch.start, scratch.stop), "temps", label); !ok)
+    return std::unexpected(std::move(ok.error()));
+  if (!(ms > 0.F) || !std::isfinite(ms))
+    return refuse(RefusalCode::VendorCallFailed, std::format("essai {} : temps CUDA invalide", label));
+  return ms;
+}
+
+std::expected<KernelTrial, Refusal> compare_kernels(SpanFp8Net& reference, SpanFp8Net& candidate, int height,
+                                                    int width, std::string_view label) {
   Scratch scratch;
-  const auto image = relu_trial_image(height, width);
+  const auto image = trial_image(height, width);
   const std::size_t in_bytes = image.size() * sizeof(image[0]), out_bytes = 4 * in_bytes;
-  const auto step = [](cudaError_t e, const char* what) {
-    return cuda_check(e, std::format("SPAN FP8 : essai ReLU ({})", what));
-  };
+  const auto step = [label](cudaError_t e, const char* what) { return trial_step(e, what, label); };
   if (auto ok = step(cudaMalloc(&scratch.input, in_bytes), "entrée"); !ok)
     return std::unexpected(std::move(ok.error()));
   if (auto ok = step(cudaMalloc(&scratch.output, out_bytes), "sortie"); !ok)
     return std::unexpected(std::move(ok.error()));
   if (auto ok = step(cudaStreamCreateWithFlags(&scratch.stream, cudaStreamNonBlocking), "flux"); !ok)
     return std::unexpected(std::move(ok.error()));
-  if (auto ok = step(cudaMemcpyAsync(scratch.input, image.data(), in_bytes, cudaMemcpyHostToDevice,
-                                    scratch.stream), "motif"); !ok)
+  if (auto ok =
+          step(cudaMemcpyAsync(scratch.input, image.data(), in_bytes, cudaMemcpyHostToDevice, scratch.stream),
+               "motif");
+      !ok)
     return std::unexpected(std::move(ok.error()));
-  const auto launch = [&](SpanFp8Net& net) -> std::expected<void, Refusal> {
-    std::string why;
-    if (net.launch_body(scratch.stream, scratch.input, why) &&
-        net.launch_tail(scratch.stream, scratch.output, {}, why))
-      return {};
-    if (auto ok = step(cudaStreamSynchronize(scratch.stream), "lancement"); !ok) return ok;
-    return refuse(RefusalCode::VendorCallFailed, "essai ReLU : " + why);
-  };
   const auto fetch = [&](SpanFp8Net& net) -> std::expected<std::vector<std::uint16_t>, Refusal> {
-    if (auto ok = step(cudaMemsetAsync(scratch.output, 0xff, out_bytes, scratch.stream), "initialisation"); !ok)
+    if (auto ok = step(cudaMemsetAsync(scratch.output, 0xff, out_bytes, scratch.stream), "initialisation");
+        !ok)
       return std::unexpected(std::move(ok.error()));
-    if (auto ok = launch(net); !ok) return std::unexpected(std::move(ok.error()));
+    if (auto ok = launch_trial(scratch, net, label); !ok) return std::unexpected(std::move(ok.error()));
     if (auto ok = step(cudaStreamSynchronize(scratch.stream), "chauffe"); !ok)
       return std::unexpected(std::move(ok.error()));
-    return relu_trial_bands(scratch.output, 2 * height, 2 * width);
+    return trial_bands(scratch.output, 2 * height, 2 * width, label);
   };
   const auto want = fetch(reference);
   if (!want) return std::unexpected(want.error());
   const auto got = fetch(candidate);
   if (!got) return std::unexpected(got.error());
-  const double db = relu_trial_db(*want, *got);
-  if (!(db >= kReluCheckDb))
-    return refuse(RefusalCode::VendorCallFailed,
-                  std::format("essai ReLU à {:.1f} dB contre CUTLASS, seuil {:.0f}", db, kReluCheckDb));
+  const double db = trial_db(*want, *got);
+  if (!(db >= kKernelTrialDb))
+    return refuse(
+        RefusalCode::VendorCallFailed,
+        std::format("essai {} à {:.1f} dB contre la voie actuelle, seuil {:.0f}", label, db, kKernelTrialDb));
 
   for (auto* event : {&scratch.start, &scratch.stop})
-    if (auto ok = step(cudaEventCreate(event), "événement"); !ok) return std::unexpected(std::move(ok.error()));
-  const auto measure = [&](SpanFp8Net& net) -> std::expected<float, Refusal> {
-    if (auto ok = step(cudaEventRecord(scratch.start, scratch.stream), "début"); !ok)
+    if (auto ok = step(cudaEventCreate(event), "événement"); !ok)
       return std::unexpected(std::move(ok.error()));
-    if (auto ok = launch(net); !ok) return std::unexpected(std::move(ok.error()));
-    if (auto ok = step(cudaEventRecord(scratch.stop, scratch.stream), "fin"); !ok)
-      return std::unexpected(std::move(ok.error()));
-    if (auto ok = step(cudaEventSynchronize(scratch.stop), "chronométrage"); !ok)
-      return std::unexpected(std::move(ok.error()));
-    float ms = 0.F;
-    if (auto ok = step(cudaEventElapsedTime(&ms, scratch.start, scratch.stop), "temps"); !ok)
-      return std::unexpected(std::move(ok.error()));
-    if (!(ms > 0.F) || !std::isfinite(ms))
-      return refuse(RefusalCode::VendorCallFailed, "essai ReLU : temps CUDA invalide");
-    return ms;
-  };
   std::array<std::array<float, 3>, 2> times{};
   SpanFp8Net* const nets[]{&reference, &candidate};
   for (std::size_t round = 0; round < times[0].size(); ++round)
     for (std::size_t i = 0; i < times.size(); ++i) {
       const std::size_t choice = round % 2 == 0 ? i : 1 - i;
-      auto ms = measure(*nets[choice]);
+      auto ms = measure_trial(scratch, *nets[choice], label);
       if (!ms) return std::unexpected(std::move(ms.error()));
       times[choice][round] = *ms;
     }
   for (auto& samples : times) std::ranges::sort(samples);
-  return ReluTrial{.db = db, .reference_ms = times[0][1], .native_ms = times[1][1]};
+  return KernelTrial{.db = db, .reference_ms = times[0][1], .native_ms = times[1][1]};
 }
 
 // L'essai de zéros, puis, pour le SPAN FP16 natif, le jugement contre le calcul du processeur
@@ -293,7 +305,8 @@ void SpanFp8Engine::drop_graphs() {
 
 std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
     const std::filesystem::path& package, std::uint32_t crc, int height, int width,
-    const std::shared_ptr<SharedActivations>& shared, bool native_edges, bool native_blocks) {
+    const std::shared_ptr<SharedActivations>& shared, bool native_edges, bool native_blocks,
+    bool vertical_winograd) {
   auto bytes = read_span_fp8_package(package);
   if (!bytes) return std::unexpected(std::move(bytes.error()));
   // Une préparation de fond a pu réécrire le paquet depuis la construction : des poids qu'aucun reçu ne
@@ -322,84 +335,9 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   engine->input_ = Shape{.dims = {1, 3, height, width}};
   engine->output_ = Shape{.dims = {1, 3, 2 * std::int64_t{height}, 2 * std::int64_t{width}}};
   if (!shared) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : zone d'activation absente");
-  const auto validate = [&](void* workspace, std::int64_t need) -> std::expected<void, Refusal> {
-    auto tried = try_kernels(*engine->net_, *parsed, height, width);
-    if (!tried) return std::unexpected(std::move(tried.error()));
-    engine->native_check_db_ = *tried;
-    if (!native_blocks) return {};
-    if (parsed->fp16 || parsed->real_channels != 48) {
-      engine->native_blocks_notice_ = "SPAN : l'option des ReLU natives demande un paquet FP8 à 48 canaux";
-      return {};
-    }
-    weights.native_relu = true;
-    auto candidate = SpanFp8Net::create(weights, height, width, status, why);
-    if (!candidate) {
-      if (const auto lost = clear_error(); lost != cudaSuccess)
-        return std::unexpected(lost_refusal(lost, "SPAN FP8 : poids des ReLU natives"));
-      engine->native_blocks_notice_ = "SPAN FP8 : ReLU natives écartées, poids : " + why;
-      return {};
-    }
-    if (candidate->workspace_bytes() != need) {
-      engine->native_blocks_notice_ = "SPAN FP8 : ReLU natives écartées, taille de la zone différente";
-      return {};
-    }
-    candidate->bind(workspace);
-    auto compared = compare_relu(*engine->net_, *candidate, height, width);
-    if (!compared) {
-      if (compared.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(compared.error()));
-      if (const auto lost = clear_error(); lost != cudaSuccess)
-        return std::unexpected(lost_refusal(lost, "SPAN FP8 : essai ReLU"));
-      engine->native_blocks_notice_ = "SPAN FP8 : ReLU natives écartées, " + compared.error().detail;
-      return {};
-    }
-    const bool keep = compared->db >= kReluCheckDb && compared->native_ms < compared->reference_ms;
-    engine->native_blocks_notice_ =
-        std::format("SPAN FP8 : ReLU natives {} (parité {:.1f} dB, seuil {:.0f} ; {:.2f} ms contre {:.2f} ms CUTLASS)",
-                    keep ? "retenues" : "écartées", compared->db, kReluCheckDb, compared->native_ms,
-                    compared->reference_ms);
-    if (keep) {
-      engine->net_ = std::move(candidate);
-      engine->native_blocks_ = true;
-    }
-    return {};
-  };
   bool allocation_refused = false;
-  const auto place = [&]() -> std::expected<void, Refusal> {
-    const std::int64_t need = engine->net_->workspace_bytes();
-    const auto bind_shared = [&]() -> std::expected<void, Refusal> {
-      auto ok = engine->use_zone(shared);
-      allocation_refused = !ok && ok.error().code == RefusalCode::GpuMemoryExhausted;
-      return ok;
-    };
-    if (shared->bytes() < need) {
-      // Essayer sur une zone privée avant d'agrandir la zone de toute la voie (B02-05).
-      void* own = nullptr;
-      if (cudaError_t e = cudaMalloc(&own, static_cast<std::size_t>(need)); e != cudaSuccess) {
-        static_cast<void>(cudaGetLastError());
-        allocation_refused = e == cudaErrorMemoryAllocation;
-        return refuse(
-            allocation_refused ? RefusalCode::GpuMemoryExhausted : RefusalCode::VendorCallFailed,
-            std::format("SPAN FP8 : zone d'essai de {} Mo : {}", need >> 20, cudaGetErrorString(e)));
-      }
-      engine->net_->bind(own);
-      auto tried = validate(own, need);
-      cuda_warn(cudaFree(own), "cudaFree");  // attend la fin de l'essai
-      if (!tried) return tried;
-      return bind_shared();
-    }
-    if (auto ok = bind_shared(); !ok) return ok;
-    // Les voies finissent avant l'essai sur son flux privé. Signaler l'usage de la zone aux moteurs qui
-    // y gardent des données entre deux images, dont DistilDRBA (A02-03).
-    if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) {
-      static_cast<void>(cudaGetLastError());
-      return refuse(
-          RefusalCode::VendorCallFailed,
-          std::format("SPAN FP8 : essai au chargement (cudaDeviceSynchronize) : {}", cudaGetErrorString(e)));
-    }
-    shared->used(engine.get(), need);
-    return validate(shared->data(), need);
-  };
-  auto placed = place();
+  auto placed =
+      engine->place_for_load(*parsed, weights, shared, native_blocks, vertical_winograd, allocation_refused);
   if (placed) return engine;
   // La bande de 32 et son halo tiennent dans 64 lignes pour 2 à 8 blocs.
   if (!allocation_refused || !parsed->fp16 || parsed->real_channels != 64 ||
@@ -416,11 +354,152 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
                                                        : RefusalCode::VendorCallFailed,
                   "SPAN FP16 : préparation de la zone compacte : " + why);
   if (engine->net_->workspace_bytes() >= full_bytes) return std::unexpected(std::move(placed.error()));
-  if (auto compact = place(); !compact) return std::unexpected(std::move(compact.error()));
-  engine->runtime_notice_ = std::format(
-      "SPAN FP16 : zone compacte après refus de mémoire ({} Mio contre {} Mio)",
-      engine->net_->workspace_bytes() >> 20, full_bytes >> 20);
+  if (auto compact = engine->place_for_load(*parsed, weights, shared, native_blocks, vertical_winograd,
+                                            allocation_refused);
+      !compact)
+    return std::unexpected(std::move(compact.error()));
+  engine->runtime_notice_ =
+      std::format("SPAN FP16 : zone compacte après refus de mémoire ({} Mio contre {} Mio)",
+                  engine->net_->workspace_bytes() >> 20, full_bytes >> 20);
   return engine;
+}
+
+std::expected<bool, Refusal> SpanFp8Engine::try_vertical_net(const span_fp8::Package& package,
+                                                             SpanFp8Weights weights, void* workspace) {
+  const auto reject = [&](std::string detail) -> std::expected<bool, Refusal> {
+    if (const auto lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(lost_refusal(lost, "SPAN FP16 : essai Winograd vertical"));
+    winograd_notice_ = "SPAN FP16 : Winograd vertical écarté, " + detail;
+    return false;
+  };
+  const int height = static_cast<int>(input_.dims[2]), width = static_cast<int>(input_.dims[3]);
+  SpanFp8Status status = SpanFp8Status::Ok;
+  std::string why;
+  weights.winograd = SpanWinograd::Vertical;
+  auto candidate = SpanFp8Net::create(weights, height, width, status, why);
+  if (!candidate) return reject("poids : " + why);
+  if (candidate->workspace_bytes() != net_->workspace_bytes()) return reject("taille de la zone différente");
+  candidate->bind(workspace);
+  auto compared = compare_kernels(*net_, *candidate, height, width, "Winograd vertical");
+  if (!compared) {
+    if (compared.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(compared.error()));
+    return reject(compared.error().detail);
+  }
+  // La petite marge évite de choisir sur le bruit de trois chronométrages au chargement.
+  const bool faster = compared->native_ms < 0.97F * compared->reference_ms;
+  const auto result = std::format("{:.2f} ms contre {:.2f} ms, parité {:.1f} dB", compared->native_ms,
+                                  compared->reference_ms, compared->db);
+  if (!faster) return reject(result);
+
+  auto checked = try_kernels(*candidate, package, height, width);
+  if (!checked) {
+    if (checked.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(checked.error()));
+    return reject(checked.error().detail);
+  }
+  winograd_notice_ = "SPAN FP16 : Winograd vertical retenu, " + result;
+  native_check_db_ = *checked;
+  net_ = std::move(candidate);
+  return true;
+}
+
+std::expected<void, Refusal> SpanFp8Engine::try_relu_net(SpanFp8Weights weights, void* workspace) {
+  if (weights.fp16 || weights.channels != 48) {
+    native_blocks_notice_ = "SPAN : l'option des ReLU natives demande un paquet FP8 à 48 canaux";
+    return {};
+  }
+  const int height = static_cast<int>(input_.dims[2]), width = static_cast<int>(input_.dims[3]);
+  SpanFp8Status status = SpanFp8Status::Ok;
+  std::string why;
+  weights.native_relu = true;
+  auto candidate = SpanFp8Net::create(weights, height, width, status, why);
+  if (!candidate) {
+    if (const auto lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(lost_refusal(lost, "SPAN FP8 : poids des ReLU natives"));
+    native_blocks_notice_ = "SPAN FP8 : ReLU natives écartées, poids : " + why;
+    return {};
+  }
+  if (candidate->workspace_bytes() != net_->workspace_bytes()) {
+    native_blocks_notice_ = "SPAN FP8 : ReLU natives écartées, taille de la zone différente";
+    return {};
+  }
+  candidate->bind(workspace);
+  auto compared = compare_kernels(*net_, *candidate, height, width, "ReLU");
+  if (!compared) {
+    if (compared.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(compared.error()));
+    if (const auto lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(lost_refusal(lost, "SPAN FP8 : essai ReLU"));
+    native_blocks_notice_ = "SPAN FP8 : ReLU natives écartées, " + compared.error().detail;
+    return {};
+  }
+  const bool keep = compared->db >= kKernelTrialDb && compared->native_ms < compared->reference_ms;
+  native_blocks_notice_ = std::format(
+      "SPAN FP8 : ReLU natives {} (parité {:.1f} dB, seuil {:.0f} ; {:.2f} ms contre {:.2f} ms CUTLASS)",
+      keep ? "retenues" : "écartées", compared->db, kKernelTrialDb, compared->native_ms,
+      compared->reference_ms);
+  if (keep) {
+    net_ = std::move(candidate);
+    native_blocks_ = true;
+  }
+  return {};
+}
+
+std::expected<void, Refusal> SpanFp8Engine::validate_nets(const span_fp8::Package& package,
+                                                          const SpanFp8Weights& weights, void* workspace,
+                                                          bool native_blocks, bool vertical_winograd) {
+  const int height = static_cast<int>(input_.dims[2]), width = static_cast<int>(input_.dims[3]);
+  if (vertical_winograd && weights.fp16 && weights.sums == SpanNativeSums::F16 &&
+      weights.channels == span_fp8::kChannels && weights.blocks == span_fp8::kBlocks &&
+      !weights.compact_workspace && height == 1080 && width == 1920) {
+    auto selected = try_vertical_net(package, weights, workspace);
+    if (!selected) return std::unexpected(std::move(selected.error()));
+    if (*selected) return {};
+  }
+  auto tried = try_kernels(*net_, package, height, width);
+  if (!tried) return std::unexpected(std::move(tried.error()));
+  native_check_db_ = *tried;
+  if (native_blocks) return try_relu_net(weights, workspace);
+  return {};
+}
+
+std::expected<void, Refusal> SpanFp8Engine::place_for_load(const span_fp8::Package& package,
+                                                           const SpanFp8Weights& weights,
+                                                           const std::shared_ptr<SharedActivations>& shared,
+                                                           bool native_blocks, bool vertical_winograd,
+                                                           bool& allocation_refused) {
+  const std::int64_t need = net_->workspace_bytes();
+  const auto bind_shared = [&]() -> std::expected<void, Refusal> {
+    auto ok = use_zone(shared);
+    allocation_refused = !ok && ok.error().code == RefusalCode::GpuMemoryExhausted;
+    return ok;
+  };
+  if (shared->bytes() < need) {
+    // Essayer sur une zone privée avant d'agrandir la zone de toute la voie (B02-05).
+    void* own = nullptr;
+    if (cudaError_t e = cudaMalloc(&own, static_cast<std::size_t>(need)); e != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      allocation_refused = e == cudaErrorMemoryAllocation;
+      return refuse(allocation_refused ? RefusalCode::GpuMemoryExhausted : RefusalCode::VendorCallFailed,
+                    std::format("SPAN FP8 : zone d'essai de {} Mo : {}", need >> 20, cudaGetErrorString(e)));
+    }
+    net_->bind(own);
+    std::unique_ptr<void, void (*)(void*)> temporary(own,
+                                                     [](void* ptr) { cuda_warn(cudaFree(ptr), "cudaFree"); });
+    auto tried = validate_nets(package, weights, own, native_blocks, vertical_winograd);
+    temporary.reset();  // libérer la zone d'essai avant d'agrandir l'arène partagée
+    if (!tried) return tried;
+    return bind_shared();
+  }
+  if (auto ok = bind_shared(); !ok) return ok;
+  // Les voies finissent avant l'essai sur son flux privé. Signaler l'usage de la zone aux moteurs qui
+  // y gardent des données entre deux images, dont DistilDRBA (A02-03).
+  if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    return refuse(
+        RefusalCode::VendorCallFailed,
+        std::format("SPAN FP8 : essai au chargement (cudaDeviceSynchronize) : {}", cudaGetErrorString(e)));
+  }
+  shared->used(this, need);
+  return validate_nets(package, weights, shared->data(), native_blocks, vertical_winograd);
 }
 
 std::expected<void, Refusal> SpanFp8Engine::use_zone(const std::shared_ptr<SharedActivations>& zone) {

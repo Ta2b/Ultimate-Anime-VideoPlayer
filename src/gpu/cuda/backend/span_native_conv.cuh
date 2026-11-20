@@ -104,8 +104,7 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
   auto* s = reinterpret_cast<__half*>(smem_raw);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
   const int first = Rolling && p.mask != nullptr ? p.y0 & ~(kTH - 1) : p.y0;
-  const int ty0 = first + static_cast<int>(blockIdx.y) * kTH,
-            tx0 = static_cast<int>(blockIdx.x) * kTW;
+  const int ty0 = first + static_cast<int>(blockIdx.y) * kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
   if (p.mask != nullptr) {  // tout le bloc sort ensemble, avant la première barrière
     const unsigned tile_row = Rolling ? static_cast<unsigned>(ty0 / kTH) : blockIdx.y;
     const unsigned tile = tile_row * gridDim.x + blockIdx.x;
@@ -128,10 +127,12 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
       const __half* from = src == 0 ? p.in[0] : src == 1 ? p.in[1] : src == 2 ? p.in[2] : p.in[3];
       int row_mask = -1;
       if constexpr (Rolling)
-        row_mask = src == 0 ? p.input_row_mask[0] : src == 1 ? p.input_row_mask[1]
-                            : src == 2 ? p.input_row_mask[2] : p.input_row_mask[3];
-      load_nhwc<Cin, kHalo, Shared, kTH, Rolling>(s, from, p.in_ld != 0 ? p.in_ld : Cin,
-                                               p.fh, p.fw, ty0, tx0, row_mask);
+        row_mask = src == 0   ? p.input_row_mask[0]
+                   : src == 1 ? p.input_row_mask[1]
+                   : src == 2 ? p.input_row_mask[2]
+                              : p.input_row_mask[3];
+      load_nhwc<Cin, kHalo, Shared, kTH, Rolling>(s, from, p.in_ld != 0 ? p.in_ld : Cin, p.fh, p.fw, ty0, tx0,
+                                                  row_mask);
       cp_async_wait_all();
     }
     __syncthreads();

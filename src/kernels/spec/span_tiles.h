@@ -18,11 +18,11 @@
 // c'est le cas de tout C. La sortie de C est écrite ; le reste de la sortie n'est pas touché. Les bords de
 // l'image gardent leur bourrage de zéros (les noyaux le font hors de l'image, pas hors de R).
 //
-// Décalage. Sur un panoramique d'un nombre entier de pas (shift_step, le pas du dégroupage de l'entrée : 2
-// pixels de travail), sans zoom ni rotation, la sortie d'avant se décale de (dx, dy) · scale pixels de sortie
-// telle quelle, avant le calcul : seule la bande qui entre dans l'image (et les dessins qui bougent sur le
-// décor) est à recalculer. Le décalage ne lit que l'image d'avant : un pixel dont la source sort de l'image
-// n'est pas écrit (sa tuile est dans C).
+// Décalage. Sur un panoramique de pas entier (2 pixels de travail pour le dégroupage, 4 en hauteur avec
+// Winograd par paires de lignes), sans zoom ni rotation, la sortie d'avant se décale de (dx, dy) · scale
+// pixels de sortie, avant le calcul : seule la bande qui entre dans l'image (et les dessins qui bougent sur
+// le décor) est à recalculer. Le décalage ne lit que l'image d'avant : un pixel dont la source sort de
+// l'image n'est pas écrit (sa tuile est dans C).
 #pragma once
 
 #include <algorithm>
@@ -44,14 +44,19 @@ struct SpanTileGrid {
   int rows = 0;
   int reach_cols = 0;  // halo, en tuiles
   int reach_rows = 0;
-  int shift_step = 0;  // pas d'un décalage entier, pixels d'entrée
-  int scale = 0;       // pixels de sortie par pixel d'entrée
+  int shift_step = 0;    // pas d'un décalage entier, pixels d'entrée
+  int scale = 0;         // pixels de sortie par pixel d'entrée
+  int shift_step_y = 0;  // pas vertical distinct si non nul, sinon shift_step
 
   constexpr bool usable() const {
     return tile_w > 0 && tile_h > 0 && cols > 0 && rows > 0 && cols * rows <= kSpanTileMaxCount &&
-           shift_step > 0 && scale > 0;
+           shift_step > 0 && scale > 0 && shift_step_y >= 0;
   }
   constexpr int count() const { return cols * rows; }
+  constexpr bool accepts_shift(int x, int y) const {
+    const int step_y = shift_step_y != 0 ? shift_step_y : shift_step;
+    return usable() && x % shift_step == 0 && y % step_y == 0;
+  }
 };
 
 constexpr int span_tiles_along(int side, int tile) {

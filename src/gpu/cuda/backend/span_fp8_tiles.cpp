@@ -21,8 +21,8 @@ bool SpanFp8Engine::next_span_tiles(std::span<const std::uint8_t> core, int shif
                                     const Tensor* previous) {
   tile_job_.reset();
   const kernels::SpanTileGrid grid = span_tile_grid();
-  if (!grid.usable() || core.size() != static_cast<std::size_t>(grid.count())) return false;
-  if (shift_x % grid.shift_step != 0 || shift_y % grid.shift_step != 0) return false;
+  if (!grid.accepts_shift(shift_x, shift_y) || core.size() != static_cast<std::size_t>(grid.count()))
+    return false;
   if ((shift_x != 0 || shift_y != 0) && previous == nullptr) return false;
   if (previous != nullptr && (previous->type != TensorType::F16 || !(previous->shape == output_)))
     return false;

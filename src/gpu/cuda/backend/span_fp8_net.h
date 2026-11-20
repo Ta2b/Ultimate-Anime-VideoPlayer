@@ -37,9 +37,9 @@ enum class SpanFp8Width : std::uint8_t { Native, PerTap, Padded };
 enum class SpanNativeSums : std::uint8_t { F16, F32 };
 // Poids partagés du FP16 natif (SpanFp8Weights::shared_weights) : Auto les prend à 48 canaux seulement.
 enum class SpanSharedWeights : std::uint8_t { Auto, On, Off };
-// Winograd F(2×2, 3×3) du FP16 natif (SpanFp8Weights::winograd) : Auto le laisse éteint (+29 % au banc du
-// b8f64).
-enum class SpanWinograd : std::uint8_t { Auto, On, Off };
+// Winograd du FP16 natif : On force F(2×2, 3×3) et Vertical la transformée par paires de lignes.
+// Auto laisse le choix au chargement de SpanFp8Engine.
+enum class SpanWinograd : std::uint8_t { Auto, On, Off, Vertical };
 
 // Le contenu d'un gpu/span_fp8/package.h, sans ses vecteurs. Les pointeurs ne servent que pendant create().
 struct SpanFp8Weights {
@@ -75,9 +75,8 @@ struct SpanFp8Weights {
   // Auto : à 48 canaux (b5f48, −3,7 % au banc), pas à 64 (b8f64, +4,1 %) ; kirari_span_fp8_run
   // --shared-weights ou --no-shared-weights pour forcer.
   SpanSharedWeights shared_weights = SpanSharedWeights::Auto;
-  // FP16 natif seulement, 64 canaux et sommes f16 : les 3×3 des blocs par Winograd F(2×2, 3×3)
-  // (span_native_wino.cuh, docs/span-native16.md, « Winograd ») ; ailleurs, sans effet. Auto : éteint ;
-  // kirari_span_fp8_run --winograd ou --no-winograd pour forcer.
+  // FP16 natif, sommes f16 : les 3×3 par Winograd, F(2×2) en C64 ou vertical en C48 et C64.
+  // Sans essai du moteur, Auto lance les convolutions directes.
   SpanWinograd winograd = SpanWinograd::Auto;
   // FP8 seulement : conv_1 (dégroupage fondu), conv_cat et to_pixel par les noyaux du FP16 natif
   // (span_native16_edges.cuh) au lieu de CUTLASS ; les blocs restent en CUTLASS FP8. --span-native-edges.

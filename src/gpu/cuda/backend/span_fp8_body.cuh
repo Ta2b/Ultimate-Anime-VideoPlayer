@@ -292,8 +292,11 @@ void Body<Ch, BlockAlg>::bind_block(std::size_t b, std::uint8_t* const (&x)[2], 
       if (native_relu_ && i < 2) {
         sk::KP guarded = k;
         guarded.overflow = overflow_dev_;
-        relu_[b][i] = {.input = in, .packed = bw.w[i].template as<uint4>(), .epilogue = guarded,
-                       .height = h_, .width = w_};
+        relu_[b][i] = {.input = in,
+                       .packed = bw.w[i].template as<uint4>(),
+                       .epilogue = guarded,
+                       .height = h_,
+                       .width = w_};
         return;
       }
     }

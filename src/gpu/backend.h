@@ -126,7 +126,8 @@ namespace kirari::gpu {
 // sur toutes les tuiles.
 // 60 : KernelOps::scene_roundtrip_take, la grille de désaccord de la paire, sans attente.
 // 61 : warp et calques fusionnés, reprise du côté gauche de GMFSS et splats pour le GridNet.
-inline constexpr int kBackendAbi = 61;
+// 62 : SpanTileGrid porte le pas vertical du Winograd par paires de lignes.
+inline constexpr int kBackendAbi = 62;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -395,9 +396,9 @@ class Engine {
   // L'appel suivant (enqueue seulement, jamais enqueue_ring) ne calcule que les tuiles non nulles de core
   // (span_tile_grid().count() octets) et n'écrit outputs[0] que là. Avant, si previous n'est pas nul et
   // n'est pas outputs[0], outputs[0] reçoit previous décalé de (shift_x, shift_y) pixels d'entrée (multiples
-  // de shift_step) ; previous nul : outputs[0] tient déjà la sortie d'avant, sans décalage. Faux : le moteur
-  // ne le fera pas, l'appel suivant calcule l'image entière. Une seule fois : l'appel d'après est entier. Un
-  // core vide annule une demande qu'aucun appel n'a prise (appel refusé avant le moteur).
+  // des pas de la grille) ; previous nul : outputs[0] tient déjà la sortie d'avant, sans décalage. Faux : le
+  // moteur ne le fera pas, l'appel suivant calcule l'image entière. Une seule fois : l'appel d'après est
+  // entier. Un core vide annule une demande qu'aucun appel n'a prise (appel refusé avant le moteur).
   virtual bool next_span_tiles(std::span<const std::uint8_t> /*core*/, int /*shift_x*/, int /*shift_y*/,
                                const Tensor* /*previous*/) {
     return false;
@@ -527,7 +528,7 @@ inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
                       std::expected<VulkanImageAccess, Refusal>>(),
     shape_fingerprint<IngestSpec, Motion, RingWrite, PairScores, RingSlotDesc, ExportedHandle, RingTarget,
                       YuvTarget>(),
-    shape_fingerprint<SpanStill, SpanFp8Request, SpanFp8ImageScore, SpanFp8Derivation,
+    shape_fingerprint<SpanStill, kernels::SpanTileGrid, SpanFp8Request, SpanFp8ImageScore, SpanFp8Derivation,
                       std::expected<SpanFp8Derivation, Refusal>>(),
     // Ce que KernelOps rend au lecteur (A21-01) : les statistiques du grade et la mémoire de l'appareil.
     shape_fingerprint<kernels::FrameStats, std::optional<kernels::FrameStats>,
