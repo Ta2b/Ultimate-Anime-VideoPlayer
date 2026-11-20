@@ -210,6 +210,56 @@ TEST_CASE("Backend TensorRT : le SPAN FP8 rejoué par graphe rend la même image
   CHECK(std::memcmp(outputs[0].data(), outputs[2].data(), outputs[0].size() * sizeof(float)) == 0);
 }
 
+TEST_CASE("Backend TensorRT : le SPAN reprend un même masque avec un nouveau fond",
+          "[backend_tensorrt][cuda][span_fp8]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  if (!loaded.backend->capabilities().span_fp16_cutlass) SKIP("appareil sans SPAN FP16 natif");
+  const Scratch scratch;
+  const fs::path model = scratch.root / "tuiles.span8";
+  auto package = gpu::span_fp8::testing::synthetic(0.F, 2);
+  package.fp16 = true;
+  std::ranges::fill(package.pixel.bias, 0.125F);
+  write_bytes(model, gpu::span_fp8::serialize(package));
+  constexpr int h = 32, w = 128;
+  constexpr std::size_t count = 3U * 2 * h * 2 * w;
+  gpu::Progress progress;
+  auto artifact = loaded.backend->build(spec_of(model), fixed(h, w), progress);
+  REQUIRE(artifact);
+  auto span = loaded.backend->load(*artifact);
+  REQUIRE(span);
+  const auto grid = (*span)->span_tile_grid();
+  REQUIRE(grid.count() > 1);
+  auto input = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto output = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 2 * h, 2 * w}});
+  auto previous = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 2 * h, 2 * w}});
+  REQUIRE(input);
+  REQUIRE(output);
+  REQUIRE(previous);
+  upload((*input)->tensor(), drawing(h, w));
+  const std::array inputs{(*input)->tensor()};
+  std::array outputs{(*output)->tensor()};
+  for (int pass = 0; pass < 4; ++pass) {
+    const int selected = pass == 2 ? grid.count() - 1 : 0;
+    const float background = 0.25F + 0.125F * static_cast<float>(pass);
+    std::vector<std::uint8_t> core(static_cast<std::size_t>(grid.count()));
+    core[static_cast<std::size_t>(selected)] = 1;
+    upload((*previous)->tensor(), std::vector<float>(count, background));
+    REQUIRE((*span)->next_span_tiles(core, 0, 0, &(*previous)->tensor()));
+    REQUIRE(loaded.backend->enqueue(**span, inputs, outputs));
+    const auto got = download((*output)->tensor());
+    REQUIRE(got.size() == count);
+    std::size_t wrong = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+      const int col = static_cast<int>(i % (2 * w)) / (grid.tile_w * grid.scale);
+      const int row = static_cast<int>((i / (2 * w)) % (2 * h)) / (grid.tile_h * grid.scale);
+      wrong += got[i] != (row * grid.cols + col == selected ? 0.125F : background);
+    }
+    CHECK(wrong == 0);
+  }
+}
+
 TEST_CASE("Backend TensorRT : le SPAN FP8 CUTLASS contre le SPAN FP16 de TensorRT",
           "[.span_fp8][backend_tensorrt][cuda][span]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");

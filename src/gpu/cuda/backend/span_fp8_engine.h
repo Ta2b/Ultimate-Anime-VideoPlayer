@@ -141,7 +141,8 @@ class SpanFp8Engine final : public Engine {
   };
   static constexpr int kTileStages = 4;  // envois des masques en vol au plus
   std::optional<TileJob> tile_job_;
-  std::uint32_t* tile_masks_ = nullptr;  // appareil : un masque par couche du corps, puis le cœur
+  std::uint32_t* tile_masks_ = nullptr;      // appareil : un masque par couche du corps, puis le cœur
+  std::vector<std::uint8_t> uploaded_core_;  // cœur dont les masques sont déjà enfilés sur l'appareil
   std::array<std::uint32_t*, kTileStages> tile_staging_{};  // hôte, épinglée
   std::array<cudaEvent_t, kTileStages> tile_sent_{};
   int tile_stage_ = 0;

@@ -271,7 +271,14 @@ autorisées gardent leurs bits sur les deux variantes.
 
 En lecture avec Sharp1 Performance à 720p et composition HDR à 240 Hz, le temps GPU de SPAN passe
 d'environ 2,67 à 2,13 ms. Sur les deux alternances, l'affichage passe de 224,27 à 221,54 puis de
-225,84 à 222,54 nouvelles images par seconde. Sharp1 Performance garde le calcul direct.
+225,84 à 222,54 nouvelles images par seconde. Sharp1 Performance garde le calcul direct à cette taille.
+
+En 1080p sur Ada, le chargeur essaie une variante du paquet officiel Sharp1 Performance FP16 qui garde
+la deuxième convolution de chaque bloc directe. Les mêmes contrôles de parité, de vitesse et de référence
+CPU décident du repli. Le réglage expérimental Sharp1 Performance Winograd permet de revenir au direct.
+Chaque masque de couche majore le halo des convolutions restantes. Une convolution directe de Sharp1
+ajoute une ligne verticale, une convolution Winograd en ajoute deux. À cinq blocs, ce calcul retire une
+rangée de halo en haut et en bas sur six masques internes, là où l'image laisse cette marge.
 
 Sur le paquet Performance C48 officiel en 1080p, le chargeur départage les sommes FP16 avec un
 calcul en sommes FP32 si leur parité descend sous 50 dB. Le candidat doit

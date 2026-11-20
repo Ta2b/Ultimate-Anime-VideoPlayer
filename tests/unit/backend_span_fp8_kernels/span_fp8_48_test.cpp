@@ -4,6 +4,7 @@
 // seul l'ordre des sommes change. Une tranche de la concaténation, une entrée de conv_cat ou de to_pixel lue
 // au pas de 64 au lieu de 48 éloignerait la sortie de l'ordre de sa propre variation. Sans GPU sm 8.9 : SKIP.
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -498,7 +499,8 @@ TEST_CASE("SPAN FP16 natif : les poids partagés rendent la même sortie au bit 
 
 namespace {
 
-void check_layered_tiles(SpanFp8Net& net, const DeviceBytes& in, const DeviceBytes& workspace) {
+void check_layered_tiles(SpanFp8Net& net, const DeviceBytes& in, const DeviceBytes& workspace,
+                         bool second_direct) {
   const auto expected = launch_half(net, in);
   const auto grid = net.tile_grid();
   REQUIRE(grid.count() >= 3);
@@ -506,6 +508,13 @@ void check_layered_tiles(SpanFp8Net& net, const DeviceBytes& in, const DeviceByt
   core.front() = core.back() = 1;
   std::vector<std::uint32_t> masks(kSpanBodyMaskWords + kernels::kSpanTileMaskWords);
   net.pack_tile_layers(core, masks.data());
+  if (second_direct) {
+    // Sur cette grille 3 × 6, c1 a un halo vertical de trois tuiles avec les c2 directes.
+    const auto first_c1 = std::span(masks).subspan(kernels::kSpanTileMaskWords, kernels::kSpanTileMaskWords);
+    int active = 0;
+    for (const auto word : first_c1) active += std::popcount(word);
+    CHECK(active == 14);
+  }
   kernels::pack_span_tiles(core, std::span(masks).subspan(kSpanBodyMaskWords));
   DeviceBytes device(masks.size() * sizeof(masks[0]));
   REQUIRE(cudaMemcpy(device.data, masks.data(), masks.size() * sizeof(masks[0]), cudaMemcpyHostToDevice) ==
@@ -545,7 +554,7 @@ TEST_CASE("SPAN FP16 natif : Winograd suit le chemin direct, et les bandes ne le
   if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
   const auto [channels, mode] =
       GENERATE(std::pair(64, SpanWinograd::On), std::pair(64, SpanWinograd::Vertical),
-               std::pair(48, SpanWinograd::Vertical));
+               std::pair(48, SpanWinograd::Vertical), std::pair(48, SpanWinograd::VerticalSecondDirect));
   INFO("mode Winograd : " << static_cast<int>(mode) << ", canaux : " << channels);
   Random random;
   span_fp8::Package package = random_package(random, channels, channels == 48 ? 5 : 8);
@@ -568,9 +577,11 @@ TEST_CASE("SPAN FP16 natif : Winograd suit le chemin direct, et les bandes ne le
     net->bind(workspace.data);
     const auto grid = net->tile_grid();
     REQUIRE(grid.accepts_shift(2, 4));
-    const bool vertical = winograd == SpanWinograd::Vertical || winograd == SpanWinograd::VerticalUnrolled;
+    const bool second_direct = winograd == SpanWinograd::VerticalSecondDirect;
+    const bool vertical =
+        winograd == SpanWinograd::Vertical || winograd == SpanWinograd::VerticalUnrolled || second_direct;
     CHECK(grid.accepts_shift(2, 2) == !vertical);
-    if (winograd != SpanWinograd::On && band == 5) check_layered_tiles(*net, in, workspace);
+    if (winograd != SpanWinograd::On && band == 5) check_layered_tiles(*net, in, workspace, second_direct);
     return launch_once(*net, in);
   };
   const std::vector<double> direct = run(SpanWinograd::Off, 0), wino = run(mode, 0);

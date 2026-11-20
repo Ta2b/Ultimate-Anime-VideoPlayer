@@ -232,7 +232,7 @@ class NativeBody final : public SpanFp8Body {
   kernels::SpanTileGrid tile_grid() const override {
     const int reach = radius(9) + used_ * 3 * radius(9) + radius(1) + radius(9);
     // Après les arrondis de Winograd, chaque paire lit jusqu'à deux lignes de son voisinage.
-    const int vertical_reach = vertical_ ? reach + used_ * 3 : reach;
+    const int vertical_reach = reach + extra_vertical_halo(0, used_ * 3);
     return kernels::SpanTileGrid{.tile_w = 2 * sn::kTW,
                                  .tile_h = 2 * sn::kTH,
                                  .cols = static_cast<int>(grid_.x),
@@ -252,7 +252,7 @@ class NativeBody final : public SpanFp8Body {
       // conv_1, les 3×3 des blocs, conv_cat. Après conv_cat, seul to_pixel lit un halo.
       const int ahead = std::max(0, 3 * used_ - layer);
       const int rx = kernels::span_reach_tiles(1 + ahead, sn::kTW);
-      const int ry = kernels::span_reach_tiles(1 + ahead * (vertical_ ? 2 : 1), sn::kTH);
+      const int ry = kernels::span_reach_tiles(1 + ahead + extra_vertical_halo(layer, ahead), sn::kTH);
       auto next = std::span(body + static_cast<std::size_t>(layer) * kernels::kSpanTileMaskWords,
                             kernels::kSpanTileMaskWords);
       if (rx == previous_x && ry == previous_y)
@@ -337,6 +337,13 @@ class NativeBody final : public SpanFp8Body {
 
   // Le rayon d'une convolution de taps positions (1 ou 9).
   static constexpr int radius(int taps) { return taps == 9 ? 1 : 0; }
+
+  int extra_vertical_halo(int layer, int ahead) const {
+    if (!vertical_) return 0;
+    // Les c2 directes sont aux couches 2, 5, 8... et n'ajoutent pas de ligne au rayon usuel.
+    const int direct = second_direct_ ? std::max(0, used_ - (layer + 1) / 3) : 0;
+    return ahead - direct;
+  }
 
   sn::Params params(const Conv& conv, __half* out, int layer = 0) const {
     sn::Params p;

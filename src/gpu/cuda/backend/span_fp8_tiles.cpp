@@ -69,21 +69,28 @@ std::expected<bool, Refusal> SpanFp8Engine::start_tiles(cudaStream_t stream, std
       return refuse(RefusalCode::VendorCallFailed, "SPAN tuiles : " + why);
     }
   }
-  const std::size_t slot = static_cast<std::size_t>(tile_stage_);
-  tile_stage_ = (tile_stage_ + 1) % kTileStages;
-  // L'envoi d'il y a kTileStages appels est fait depuis longtemps : l'attente est de principe.
-  if (cudaError_t e = cudaEventSynchronize(tile_sent_[slot]); e != cudaSuccess)
-    return failed(e, "attente d'un envoi de masques");
-  std::uint32_t* host = tile_staging_[slot];
-  net_->pack_tile_layers(job->core, host);
-  constexpr std::size_t kMaskWords = kSpanBodyMaskWords + kernels::kSpanTileMaskWords;
-  kernels::pack_span_tiles(job->core, std::span(host + kSpanBodyMaskWords, kernels::kSpanTileMaskWords));
-  const std::size_t bytes = kMaskWords * sizeof(std::uint32_t);
-  if (cudaError_t e = cudaMemcpyAsync(tile_masks_, host, bytes, cudaMemcpyHostToDevice, stream);
-      e != cudaSuccess)
-    return failed(e, "envoi des masques");
-  if (cudaError_t e = cudaEventRecord(tile_sent_[slot], stream); e != cudaSuccess)
-    return failed(e, "cudaEventRecord");
+  if (job->core != uploaded_core_) {
+    // Les appels du même moteur sont ordonnés entre voies, y compris l'envoi et la lecture des masques.
+    const std::size_t slot = static_cast<std::size_t>(tile_stage_);
+    if (cudaError_t e = cudaEventSynchronize(tile_sent_[slot]); e != cudaSuccess)
+      return failed(e, "attente d'un envoi de masques");
+    std::uint32_t* host = tile_staging_[slot];
+    net_->pack_tile_layers(job->core, host);
+    constexpr std::size_t kMaskWords = kSpanBodyMaskWords + kernels::kSpanTileMaskWords;
+    kernels::pack_span_tiles(job->core, std::span(host + kSpanBodyMaskWords, kernels::kSpanTileMaskWords));
+    const std::size_t bytes = kMaskWords * sizeof(std::uint32_t);
+    uploaded_core_.clear();
+    if (cudaError_t e = cudaMemcpyAsync(tile_masks_, host, bytes, cudaMemcpyHostToDevice, stream);
+        e != cudaSuccess)
+      return failed(e, "envoi des masques");
+    if (cudaError_t e = cudaEventRecord(tile_sent_[slot], stream); e != cudaSuccess) {
+      // La copie a pu démarrer sans événement : attendre avant de réutiliser le tampon épinglé.
+      static_cast<void>(cudaStreamSynchronize(stream));
+      return failed(e, "cudaEventRecord");
+    }
+    uploaded_core_ = std::move(job->core);
+    tile_stage_ = (tile_stage_ + 1) % kTileStages;
+  }
   net_->set_tile_masks(tile_masks_, tile_masks_ + kSpanBodyMaskWords, true);
   return true;
 }
@@ -125,6 +132,7 @@ void SpanFp8Engine::release_tiles() {
   }
   if (tile_masks_ != nullptr) cudaFree(tile_masks_);
   tile_masks_ = nullptr;
+  uploaded_core_.clear();
 }
 
 }  // namespace kirari::gpu::cuda

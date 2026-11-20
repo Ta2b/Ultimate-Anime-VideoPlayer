@@ -110,9 +110,10 @@ la grille. Les tuiles n'arrêtent aucune série du lot A : la ligne « SPAN repr
   n'atteint un multiple de 2 qu'après plusieurs images (12 pour 0,825), avec un reste de phase ; aucun
   extrait du PC n'en a montré d'un nombre entier de pas. Le décalage de la sortie d'avant n'est plus demandé
   (`TilePlan::shift_x` toujours nul) ; le moteur le garde. Les tuiles servent aux plans à caméra tenue.
-- **Moteur** (`gpu/cuda/backend/span_fp8_tiles.cpp`) : `next_span_tiles` avant l'appel, puis l'appel lance le
-  corps masqué en direct (pas le graphe de l'image entière) ; les masques passent par une mémoire épinglée
-  tournante. Le chemin qui écrit l'anneau depuis SPAN abandonne les tuiles. La sortie d'avant lue sur l'autre
+- **Moteur** (`gpu/cuda/backend/span_fp8_tiles.cpp`) : `next_span_tiles` prépare la demande. Le corps masqué
+  a son propre registre de graphes CUDA. Les masques passent par une mémoire épinglée tournante et restent
+  sur l'appareil tant que le cœur est identique. Chaque demande reprend aussi sa propre sortie précédente.
+  Le chemin qui écrit l'anneau depuis SPAN abandonne les tuiles. La sortie d'avant lue sur l'autre
   tampon est déclarée aux voies comme une lecture (`SpanFp8Engine::tile_read`). Un appel refusé avant le
   moteur annule la demande (`next_span_tiles` avec un cœur vide) : elle ne vaut pas pour l'appel suivant.
 
