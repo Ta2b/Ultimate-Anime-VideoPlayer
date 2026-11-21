@@ -425,6 +425,11 @@ tuiles modifiées, il passe de 87,0 à 19,2 µs. Ces durées concernent la prép
 Le plan du lecteur combine les deux dilatations du halo en une seule et reprend le premier compte
 de la région après l'élargissement du cœur. Les masques et les compteurs restent identiques.
 
+Les rectangles de tuiles couverts par les blocs de mesure sont calculés quand la géométrie change.
+Le banc du plan complet passe de 270 à 102 µs de médiane sur une mesure 120×68 et de 166 à 67 µs
+avec 90×51 blocs de côté fractionnaire. Le rejeu compare les décisions et masques octet pour octet
+sur 15 600 images, avec changements de mesure, pertes de mesure et redémarrages, sous UBSan.
+
 | Modèle FP16 | Cadence Wayland | Passes SPAN, médiane | Passes SPAN, p95 |
 | --- | ---: | ---: | ---: |
 | Balanced | 118,72 i/s | 7,298 ms | 10,819 ms |

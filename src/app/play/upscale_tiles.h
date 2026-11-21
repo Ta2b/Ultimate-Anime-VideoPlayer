@@ -153,6 +153,11 @@ class SpanTiles {
   // Toutes les sommes nulles (la sortie est celle d'un calcul complet, première image comprise) : la
   // géométrie de la mesure les remplace, exactement. Faux sans mesure ou avec une somme non nulle.
   bool adopt(const PairBlocks& blocks);
+
+  struct TileBounds {
+    int first_col, last_col, first_row, last_row;
+  };
+  void set_geometry(const PairBlocks& blocks);
   // Les tuiles de la grille sous le bloc b de la mesure, rendues par appel de visit.
   template <class Visit>
   void tiles_under(std::size_t b, Visit&& visit) const;
@@ -161,11 +166,12 @@ class SpanTiles {
   std::pair<int, int> reach(int spread_px) const;
 
   kernels::SpanTileGrid grid_;
-  bool span_ = false;                // set_grid appelé : l'étage a un SPAN
-  std::vector<int> age_;             // par tuile, images reprises depuis son dernier calcul
-  std::vector<std::uint32_t> sums_;  // par bloc, la somme des écarts des paires (en tête du fichier)
-  std::vector<std::uint32_t> base_;  // par bloc, sa majoration à l'ancre (la dernière image calculée)
-  std::uint32_t block_cols_ = 0;     // la géométrie de la mesure des sommes
+  bool span_ = false;                 // set_grid appelé : l'étage a un SPAN
+  std::vector<int> age_;              // par tuile, images reprises depuis son dernier calcul
+  std::vector<TileBounds> coverage_;  // tuiles couvertes par chaque bloc de mesure
+  std::vector<std::uint32_t> sums_;   // par bloc, la somme des écarts des paires (en tête du fichier)
+  std::vector<std::uint32_t> base_;   // par bloc, sa majoration à l'ancre (la dernière image calculée)
+  std::uint32_t block_cols_ = 0;      // la géométrie de la mesure des sommes
   float block_px_ = 0.0F;
   int since_full_ = 0;
   bool known_ = false;           // l'état des tuiles suit la sortie d'avant

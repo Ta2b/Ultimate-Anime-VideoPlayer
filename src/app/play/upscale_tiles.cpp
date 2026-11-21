@@ -12,17 +12,6 @@
 namespace kirari::app::play {
 namespace {
 
-// Les tuiles de la grille que touche un rectangle de pixels de travail [x0, x1) × [y0, y1), par leur indice.
-template <class F>
-void for_tiles(const kernels::SpanTileGrid& g, int x0, int y0, int x1, int y1, F&& f) {
-  if (x1 <= 0 || y1 <= 0) return;
-  const int c0 = std::max(0, x0 / g.tile_w), c1 = std::min(g.cols - 1, (x1 - 1) / g.tile_w);
-  const int r0 = std::max(0, y0 / g.tile_h), r1 = std::min(g.rows - 1, (y1 - 1) / g.tile_h);
-  for (int r = r0; r <= r1; ++r)
-    for (int c = c0; c <= c1; ++c)
-      f(static_cast<std::size_t>(r) * static_cast<std::size_t>(g.cols) + static_cast<std::size_t>(c));
-}
-
 // La somme d'un bloc et de l'écart d'une paire, bornée. La mesure tronque l'écart au 1/256 de niveau
 // (pair_diff) : un de plus le majore, même pour une dérive lente que chaque paire lirait nulle.
 std::uint32_t add_pair(std::uint32_t sum, std::uint32_t deviation) {
@@ -54,6 +43,7 @@ void SpanTiles::set_grid(const kernels::SpanTileGrid& grid) {
   grid_ = grid;
   span_ = true;
   age_.assign(grid.usable() ? static_cast<std::size_t>(grid.count()) : 0U, 0);
+  coverage_.clear();
   sums_.clear();
   base_.clear();
   block_cols_ = 0;
@@ -63,28 +53,43 @@ void SpanTiles::set_grid(const kernels::SpanTileGrid& grid) {
   unmeasured_ = false;
 }
 
+void SpanTiles::set_geometry(const PairBlocks& blocks) {
+  block_cols_ = blocks.cols;
+  block_px_ = blocks.side_px;
+  sums_.assign(blocks.deviation.size(), 0U);
+  coverage_.resize(sums_.size());
+  for (std::size_t block = 0; block < coverage_.size(); ++block) {
+    const auto col = static_cast<float>(block % block_cols_);
+    const auto row = static_cast<float>(block / block_cols_);
+    // Le rectangle est arrondi vers l'extérieur, comme le bloc recouvrant les tuiles.
+    const int x0 = static_cast<int>(std::floor(col * block_px_));
+    const int y0 = static_cast<int>(std::floor(row * block_px_));
+    const int x1 = static_cast<int>(std::ceil((col + 1.F) * block_px_));
+    const int y1 = static_cast<int>(std::ceil((row + 1.F) * block_px_));
+    coverage_[block] =
+        TileBounds{.first_col = std::max(0, x0 / grid_.tile_w),
+                   .last_col = x1 > 0 ? std::min(grid_.cols - 1, (x1 - 1) / grid_.tile_w) : -1,
+                   .first_row = std::max(0, y0 / grid_.tile_h),
+                   .last_row = y1 > 0 ? std::min(grid_.rows - 1, (y1 - 1) / grid_.tile_h) : -1};
+  }
+}
+
 template <class Visit>
 void SpanTiles::tiles_under(std::size_t b, Visit&& visit) const {
-  const std::size_t block_col = b % block_cols_, block_row = b / block_cols_;  // division entière voulue
-  const auto col = static_cast<float>(block_col), row = static_cast<float>(block_row);
-  // Arrondi vers l'extérieur : un bloc à cheval touche les deux tuiles.
-  for_tiles(grid_, static_cast<int>(std::floor(col * block_px_)),
-            static_cast<int>(std::floor(row * block_px_)),
-            static_cast<int>(std::ceil((col + 1.0F) * block_px_)),
-            static_cast<int>(std::ceil((row + 1.0F) * block_px_)), std::forward<Visit>(visit));
+  const TileBounds& bounds = coverage_[b];
+  for (int r = bounds.first_row; r <= bounds.last_row; ++r)
+    for (int c = bounds.first_col; c <= bounds.last_col; ++c)
+      visit(static_cast<std::size_t>(r) * static_cast<std::size_t>(grid_.cols) + static_cast<std::size_t>(c));
 }
 
 TilePlan SpanTiles::full(const PairBlocks& blocks) {
   std::ranges::fill(age_, 0);
   // Après une image entière, chaque somme est nulle à toute géométrie : celle de la mesure, ou sans mesure
   // celle d'avant (une paire non relue ne coûte que son image).
-  if (measured(blocks)) {
-    block_cols_ = blocks.cols;
-    block_px_ = blocks.side_px;
-    sums_.assign(blocks.deviation.size(), 0U);
-  } else {
+  if (measured(blocks) && !fits(blocks))
+    set_geometry(blocks);
+  else
     std::ranges::fill(sums_, 0U);
-  }
   base_.assign(sums_.size(), 0U);
   since_full_ = 0;
   known_ = true;
@@ -99,9 +104,7 @@ bool SpanTiles::fits(const PairBlocks& blocks) const {
 
 bool SpanTiles::adopt(const PairBlocks& blocks) {
   if (!measured(blocks) || !std::ranges::all_of(sums_, [](std::uint32_t s) { return s == 0; })) return false;
-  block_cols_ = blocks.cols;
-  block_px_ = blocks.side_px;
-  sums_.assign(blocks.deviation.size(), 0U);
+  set_geometry(blocks);
   base_.assign(sums_.size(), 0U);
   return true;
 }
