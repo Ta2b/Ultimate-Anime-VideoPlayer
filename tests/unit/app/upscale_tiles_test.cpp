@@ -71,6 +71,19 @@ TEST_CASE("Tuiles qui bougent : masques du moteur", "[app][tiles]") {
   kernels::pack_span_tiles(one, words);
   CHECK(words[2] == (1U << 4U));  // tuile 68 : mot 2, bit 4
   CHECK(words[0] == 0U);
+
+  // Le bit de poids fort reste dans la même colonne à la ligne suivante.
+  std::vector<std::uint8_t> edge(2 * 64, 0);
+  edge[63] = 255;
+  const auto near = kernels::dilate_span_tiles(edge, 64, 2, 1, 1);
+  CHECK(kernels::count_span_tiles(near) == 4);
+  CHECK(near[64] == 0);
+  CHECK(near[126] == 1);
+  CHECK(near[127] == 1);
+  const auto full = kernels::dilate_span_tiles(edge, 64, 2, 64, 0);
+  CHECK(kernels::count_span_tiles(full) == 64);
+  CHECK(full[0] == 1);
+  CHECK(full[64] == 0);
 }
 
 TEST_CASE("Tuiles qui bougent : décision sur l'écart des blocs", "[app][tiles]") {

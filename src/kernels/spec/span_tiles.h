@@ -68,10 +68,45 @@ constexpr int span_reach_tiles(int reach_px, int tile) {
   return tile > 0 ? (reach_px + tile - 1) / tile : 0;
 }
 
+// Une ligne de 64 tuiles au plus tient dans un mot. Propager à gauche et à droite
+// par portées 1, 2, 4, etc. évite de réécrire les halos qui se recouvrent.
+inline std::vector<std::uint8_t> dilate_span_tile_rows(std::span<const std::uint8_t> core, int cols, int rows,
+                                                       int reach_cols, int reach_rows) {
+  const auto stride = static_cast<std::size_t>(cols);
+  std::vector<std::uint64_t> wide(static_cast<std::size_t>(rows));
+  for (int row = 0; row < rows; ++row) {
+    const auto index = static_cast<std::size_t>(row) * stride;
+    std::uint64_t bits = 0;
+    for (std::size_t col = stride; col > 0; --col)
+      bits = (bits << 1) | static_cast<std::uint64_t>(core[index + col - 1] != 0);
+    int remaining = std::min(reach_cols, cols - 1);
+    for (int step = 1; remaining > 0; step *= 2) {
+      const int offset = std::min(remaining, step);
+      bits |= (bits << offset) | (bits >> offset);
+      remaining -= offset;
+    }
+    wide[static_cast<std::size_t>(row)] = bits;
+  }
+
+  std::vector<std::uint8_t> out(core.size(), 0);
+  const int reach = std::min(reach_rows, rows - 1);
+  for (int row = 0; row < rows; ++row) {
+    const int first = std::max(0, row - reach), last = std::min(rows - 1, row + reach);
+    std::uint64_t bits = 0;
+    for (int y = first; y <= last; ++y) bits |= wide[static_cast<std::size_t>(y)];
+    const auto index = static_cast<std::size_t>(row) * stride;
+    for (std::size_t col = 0; col < stride; ++col)
+      out[index + col] = static_cast<std::uint8_t>((bits >> col) & 1U);
+  }
+  return out;
+}
+
 // Le cœur dilaté d'un rectangle de reach_cols × reach_rows tuiles de chaque côté (séparable : lignes puis
 // colonnes). core : cols × rows octets, non nul = tuile à recalculer.
 inline std::vector<std::uint8_t> dilate_span_tiles(std::span<const std::uint8_t> core, int cols, int rows,
                                                    int reach_cols, int reach_rows) {
+  if (cols > 0 && cols <= 64 && rows > 0 && reach_cols >= 0 && reach_rows >= 0)
+    return dilate_span_tile_rows(core, cols, rows, reach_cols, reach_rows);
   const auto at = [cols](int c, int r) {
     return static_cast<std::size_t>(r) * static_cast<std::size_t>(cols) + static_cast<std::size_t>(c);
   };

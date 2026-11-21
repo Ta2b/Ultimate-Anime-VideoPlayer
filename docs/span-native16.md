@@ -400,6 +400,11 @@ Balanced et aucune sur les Performance. La réutilisation par tuiles s'applique 
 calculées du Balanced, à 59,3 % de celles du Balanced Sharp1 et à 66,2 % pour chaque Performance.
 Les temps associent donc des passes entières et partielles.
 
+Pour les grilles de 64 colonnes ou moins, le lecteur et le moteur calculent les halos en
+combinant des lignes de bits. Les mêmes tuiles sont marquées. À 30×68 et 10 % de tuiles
+modifiées, le microbanc du code final passe de 52,8 à 17,4 µs pour cinq masques. Avec 25 % de
+tuiles modifiées, il passe de 87,0 à 19,2 µs. Ces durées concernent la préparation des masques.
+
 | Modèle FP16 | Cadence Wayland | Passes SPAN, médiane | Passes SPAN, p95 |
 | --- | ---: | ---: | ---: |
 | Balanced | 118,72 i/s | 7,298 ms | 10,819 ms |
