@@ -112,14 +112,20 @@ __device__ __forceinline__ void vertical_gate(__half* s, Params p, int x0, int y
   }
 }
 
-template <int C>
+template <int C, bool L1Input>
 __device__ __forceinline__ void load_halo(std::uint32_t shared, const Params& p, int x0, int y0, int tid) {
   for (int i = tid; i < (kHeight + 2) * kRawWidth * (C / 8); i += kWorkers<C>) {
     const int pixel = i / (C / 8), c = (i % (C / 8)) * 8;
     const int x = x0 + pixel % kRawWidth - 1, y = y0 + pixel / kRawWidth - 1;
     const bool valid = x >= 0 && x < p.fw && y >= 0 && y < p.fh;
     const auto* from = valid ? p.in[0] + (static_cast<long>(y) * p.fw + x) * C + c : p.in[0];
-    cp_async16(shared + static_cast<std::uint32_t>((pixel * kStride<C> + c) * 2), from, valid);
+    const auto dst = shared + static_cast<std::uint32_t>((pixel * kStride<C> + c) * 2);
+    if constexpr (L1Input) {
+      asm volatile("cp.async.ca.shared.global [%0], [%1], 16, %2;" ::"r"(dst), "l"(from),
+                   "r"(valid ? 16 : 0));
+    } else {
+      cp_async16(dst, from, valid);
+    }
   }
   cp_async_wait_all();
 }
@@ -233,7 +239,7 @@ __device__ __forceinline__ void finish_tile(__half* s, const Params& p, const Pa
 // Deux warps en C64 et trois en C48 partagent les canaux de sortie d'une paire. V reste dans les registres
 // à 64 canaux. À 48 canaux, le calcul partagé de V évite de le refaire à chaque prise horizontale.
 // Le masque reste celui des tuiles 32 × 8 de SPAN, deux rangées de blocs ici.
-template <int C, bool Gate, bool Flat, bool Cat>
+template <int C, bool Gate, bool Flat, bool Cat, bool L1Input = false>
 __device__ __forceinline__ void convolution_tile(Params p, Params cat) {
   static_assert(C == 48 || C == 64);
   constexpr bool Prepared = C == 48;
@@ -254,7 +260,7 @@ __device__ __forceinline__ void convolution_tile(Params p, Params cat) {
   if constexpr (Prepared)
     prepare_input<C>(s, p, x0, y0, tid);
   else
-    load_halo<C>(shared, p, x0, y0, tid);
+    load_halo<C, L1Input>(shared, p, x0, y0, tid);
   __syncthreads();
   constexpr int kGroups = C == 48 ? 3 : 2;
   constexpr int kInner = C / 16, kGroup = C / kGroups;
@@ -326,9 +332,9 @@ __device__ __forceinline__ void convolution_tile(Params p, Params cat) {
   finish_tile<C, Gate, Packed, Cat>(s, p, cat, x0, y0, tid, warp, lane);
 }
 
-template <int C, bool Gate, bool Flat = false>
+template <int C, bool Gate, bool Flat = false, bool L1Input = false>
 __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
-  convolution_tile<C, Gate, Flat, false>(p, {});
+  convolution_tile<C, Gate, Flat, false, L1Input>(p, {});
 }
 
 template <int C>

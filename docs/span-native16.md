@@ -475,6 +475,21 @@ garde également les mêmes codes. Les minima du réseau Balanced passent de 7,9
 à 9,88–9,92 ms. Cette forme ajoute des barrières, et la taille du tampon la limite à
 deux blocs résidents par SM.
 
+Sur Ada en 1080p dense, les deux Balanced laissent les halos voisins dans le L1 lors de la
+copie asynchrone de la convolution verticale déroulée. Les poids gardent leur chemin. Les
+deux images du banc Balanced gardent les mêmes codes sur toute la sortie 4K. Les minima
+passent de 8,025–8,229 à 7,911–7,952 ms. Donner une priorité L1 aux poids seuls donne un
+résultat variable. Les registres et le nombre de blocs résidents ne changent pas.
+
+En fenêtre, source 120 i/s, sans interpolation ni réemploi SPAN, les deux passages témoins
+et les deux passages avec le L1 donnent les résultats suivants. La colonne CUDA agrège les
+médianes des passes. Wayland confirme toutes les images nouvelles dans le segment mesuré.
+
+| Modèle | CUDA témoin | CUDA avec L1 | Wayland témoin | Wayland avec L1 |
+|---|---:|---:|---:|---:|
+| Balanced | 10,414–10,470 ms | 10,099–10,136 ms | 95,18–95,55 i/s | 96,85–96,91 i/s |
+| Balanced Sharp1 | 10,419–10,471 ms | 10,091–10,116 ms | 94,29–94,49 i/s | 97,21–98,27 i/s |
+
 ## Mesurer
 
 Le PC ne mesure que les temps ; la justesse se juge sur processeur, dans le cloud. Un seul banc, sur CachyOS,

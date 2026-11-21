@@ -313,6 +313,8 @@ class NativeBody final : public SpanFp8Body {
       const bool tuned = used_ == 8 && fw_ == 960 && fh_ == 540 && ada_device();
       gate_cache_ = tuned && !shared_ && !wino_ && !vertical_;
       vertical_gate_cat_ = tuned && vertical_ && unrolled_;
+      const char* const l1 = std::getenv("KIRARI_AB_SPAN_L1_INPUT");  // env: banc
+      vertical_l1_input_ = vertical_gate_cat_ && (l1 == nullptr || std::string_view(l1) != "0");
     } else if constexpr (C == 48) {
       vertical_gate_cat_ = vertical_ && used_ == 5 && fw_ == 960 && fh_ == 540 && ada_device();
     }
@@ -497,6 +499,11 @@ class NativeBody final : public SpanFp8Body {
         const int first = rows.from & ~(sn::vertical::kHeight - 1);
         const dim3 grid(grid_.x, static_cast<unsigned>((rows.to - 1 - first) / sn::vertical::kHeight + 1));
         if constexpr (C == 64) {
+          if (vertical_l1_input_ && region_ == nullptr) {
+            sn::vertical::convolution<C, Mode == M::kGate, true, true>
+                <<<grid, sn::vertical::kWorkers<C>, sn::vertical::kShared<C>, stream>>>(p);
+            return;
+          }
           if (unrolled_) {
             sn::vertical::convolution<C, Mode == M::kGate, true>
                 <<<grid, sn::vertical::kWorkers<C>, sn::vertical::kShared<C>, stream>>>(p);
@@ -543,6 +550,7 @@ class NativeBody final : public SpanFp8Body {
   bool wino_ = false;               // les 3×3 des blocs par Winograd (SpanFp8Weights::winograd)
   bool gate_cache_ = false;         // conserver v float2 entre 1×1 et produit de la porte
   bool vertical_gate_cat_ = false;  // dernière porte et concaténation dans la même tuile
+  bool vertical_l1_input_ = false;  // les halos voisins du chemin Ada dense peuvent rester en L1
   bool gate_cat_ = false;           // banc de la porte finale suivie de conv_cat
   bool bound_ = false;
   const std::uint32_t* region_ = nullptr;  // tuiles qui bougent : masques d'appareil, nuls hors d'un appel
