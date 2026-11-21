@@ -427,7 +427,8 @@ namespace kirari::gpu::cuda {
 // réseau en 64 canaux, accumulateur f32. À 48 canaux réels, le corps natif calcule en 48. Il ne reste que
 // l'ordre des sommes et leur f16, ou f32 (SpanNativeSums).
 TEST_CASE("SPAN FP16 natif : suit la référence FP16", "[cuda][span_fp8]") {
-  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  if (!has_sm89() || !SpanFp8Net::supported_fp16_device(8, 9))
+    SKIP("noyaux SPAN FP16 natifs indisponibles sur Ada");
   const int real = GENERATE(48, 64);
   const SpanNativeSums sums = GENERATE(SpanNativeSums::F16, SpanNativeSums::F32);
   INFO(real << " canaux, sommes " << static_cast<int>(sums));
@@ -468,7 +469,8 @@ TEST_CASE("SPAN FP16 natif : suit la référence FP16", "[cuda][span_fp8]") {
 // Les poids partagés (SpanFp8Weights::shared_weights) ne changent que d'où viennent les poids de chaque pas :
 // mêmes produits, même ordre des sommes. La sortie doit être celle du chemin ordinaire, au bit près.
 TEST_CASE("SPAN FP16 natif : les poids partagés rendent la même sortie au bit près", "[cuda][span_fp8]") {
-  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  if (!has_sm89() || !SpanFp8Net::supported_fp16_device(8, 9))
+    SKIP("noyaux SPAN FP16 natifs indisponibles sur Ada");
   const int real = GENERATE(48, 64);
   const SpanNativeSums sums = GENERATE(SpanNativeSums::F16, SpanNativeSums::F32);
   INFO(real << " canaux, sommes " << static_cast<int>(sums));
@@ -551,7 +553,8 @@ void check_layered_tiles(SpanFp8Net& net, const DeviceBytes& in, const DeviceByt
 // de hauteur impaire doit garder la même phase et les mêmes bits que le calcul sans bandes.
 TEST_CASE("SPAN FP16 natif : Winograd suit le chemin direct, et les bandes ne le changent pas",
           "[cuda][span_fp8]") {
-  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  if (!has_sm89() || !SpanFp8Net::supported_fp16_device(8, 9))
+    SKIP("noyaux SPAN FP16 natifs indisponibles sur Ada");
   const auto [channels, mode] =
       GENERATE(std::pair(64, SpanWinograd::On), std::pair(64, SpanWinograd::Vertical),
                std::pair(48, SpanWinograd::Vertical), std::pair(48, SpanWinograd::VerticalSecondDirect));

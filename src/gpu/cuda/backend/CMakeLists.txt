@@ -23,13 +23,8 @@ target_compile_options(kirari_backend_tensorrt_kernels PRIVATE
   $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/W3>)
 set_target_properties(kirari_backend_tensorrt_kernels PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# Le SPAN entier en FP8 par noyaux CUTLASS (docs/span-fp8-cutlass.md). CUTLASS est vendorisé (third_party/cutlass,
-# BSD-3-Clause, en-têtes seulement) ; les noyaux n'existent que pour sm 8.9, et sont éteints sans CUDA, sans les
-# en-têtes, ou par défaut hors Linux. Windows (12.4) : -DKIRARI_WITH_SPAN_FP8=ON les construit avec MSVC
-# (/Zc:preprocessor ci-dessous ; KIRARI_WITH_SPAN_FP8=ON pour package-windows.ps1, entrée span_fp8 de
-# release-windows.yml) ; le défaut y reste OFF tant que PSNR et gain ne sont pas mesurés sur la RTX à ±3 % de
-# Linux (docs/span-fp8-cutlass.md). Éteints, une version vide (span_fp8_net_none.cpp) du même
-# contrat refuse toute demande et la chaîne reste sur TensorRT.
+# CUTLASS FP8 reste activé par défaut sous Linux avec ses en-têtes intégrés. Windows le construit à la demande,
+# avec le préprocesseur conforme de MSVC. L'option de paquet Windows reste à OFF (docs/span-fp8-cutlass.md).
 set(KIRARI_CUTLASS_INCLUDE "${PROJECT_SOURCE_DIR}/third_party/cutlass/include")
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${KIRARI_CUTLASS_INCLUDE}/cutlass/cutlass.h")
   set(kirari_span_fp8_default ON)
@@ -37,46 +32,62 @@ else()
   set(kirari_span_fp8_default OFF)
 endif()
 option(KIRARI_WITH_SPAN_FP8 "Construire les noyaux CUTLASS du SPAN entier en FP8 (sm 8.9)" ${kirari_span_fp8_default})
-if(KIRARI_WITH_SPAN_FP8)
-  # La référence de la dérivation FP8 (span_fp8_ref.cu) arrête nvcc 13.4 sous MSVC (erreur interne) : sous
-  # Windows, sa version vide la remplace, et seuls les noyaux du SPAN sont construits.
-  if(MSVC)
-    set(kirari_span_fp8_ref span_fp8_ref_none.cpp)
-  else()
-    set(kirari_span_fp8_ref span_fp8_ref.cu)
-  endif()
-  # Les options de nvcc de la bibliothèque des noyaux CUTLASS ci-dessous.
-  function(kirari_span_cutlass_target target architectures)
-    target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/src")
-    # SYSTEM : les avertissements de CUTLASS ne sont pas les nôtres.
-    target_include_directories(${target} SYSTEM PRIVATE "${KIRARI_CUTLASS_INCLUDE}")
-    target_link_libraries(${target} PRIVATE kirari::gpu_span_fp8 kirari::dep::cudart)
-    set_target_properties(${target} PROPERTIES CUDA_ARCHITECTURES "${architectures}" POSITION_INDEPENDENT_CODE ON)
-    # Comme les autres noyaux du backend : un débordement de registres de net_kernel est une erreur sous Linux
-    # (B02-03) ; les diag_suppress de CUTLASS restent.
-    target_compile_options(${target} PRIVATE
-      $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -lineinfo -Xcudafe=--diag_suppress=177
-        -Xcudafe=--diag_suppress=550 --ptxas-options=--verbose,--warn-on-spills>
-      $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<PLATFORM_ID:Windows>>>:-Werror=all-warnings -Xcompiler=-Wall,-Wextra>
-      # CCCL de CUDA 13 exige le préprocesseur conforme de MSVC.
-      $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
-  endfunction()
-  # Une seule bibliothèque pour les noyaux FP8 (CUTLASS) et FP16 natifs (span_native16.cu, sans CUTLASS), aux
-  # mêmes architectures. sm 89 (Ada) et sm 120 (Blackwell
-  # grand public, étape 10.2) : les mma FP8 m16n8k32 n'existent pas avant 89, et la liste
-  # KIRARI_CUDA_ARCHITECTURES n'y change rien. Le PTX de 120 (code réel et virtuel) garde le module chargeable sur
-  # une carte plus récente, où supported_device refuse de lancer les noyaux. CUDA 12.8 au moins.
-  add_library(kirari_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu span_native16.cu
-    ${kirari_span_fp8_ref})
-  kirari_span_cutlass_target(kirari_backend_span_fp8_kernels "89-real;120")
-  set(kirari_span_fp8_net kirari_backend_span_fp8_kernels)
+# AUTO suit le choix FP8 à chaque configuration, y compris lorsque la CI le reconfigure dans le même build.
+# ON et OFF permettent d'isoler le FP16 natif et le FP8. Le paquet Windows garde ses deux voies à OFF.
+set(KIRARI_WITH_SPAN_FP16 AUTO CACHE STRING "Noyaux SPAN FP16 natifs : AUTO, ON ou OFF")
+set_property(CACHE KIRARI_WITH_SPAN_FP16 PROPERTY STRINGS AUTO ON OFF)
+if(KIRARI_WITH_SPAN_FP16 STREQUAL "AUTO")
+  set(kirari_span_fp16 ${KIRARI_WITH_SPAN_FP8})
+elseif(KIRARI_WITH_SPAN_FP16 STREQUAL "ON" OR KIRARI_WITH_SPAN_FP16 STREQUAL "OFF")
+  set(kirari_span_fp16 ${KIRARI_WITH_SPAN_FP16})
 else()
-  add_library(kirari_backend_span_fp8_none STATIC span_fp8_net_none.cpp span_fp8_ref_none.cpp)
-  target_include_directories(kirari_backend_span_fp8_none PRIVATE "${PROJECT_SOURCE_DIR}/src")
-  target_link_libraries(kirari_backend_span_fp8_none PRIVATE kirari::gpu_span_fp8 kirari::dep::cudart)
-  set_target_properties(kirari_backend_span_fp8_none PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  kirari_set_warnings(kirari_backend_span_fp8_none)
-  set(kirari_span_fp8_net kirari_backend_span_fp8_none)
+  message(FATAL_ERROR "KIRARI_WITH_SPAN_FP16 attend AUTO, ON ou OFF")
+endif()
+
+# Les cibles SPAN spécialisées gardent Ada et Blackwell grand public, avec le PTX de 120 pour le chargement
+# sur une carte plus récente. Les capacités à l'exécution restent celles de SpanFp8Net.
+function(kirari_span_kernel_target target)
+  target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/src")
+  target_link_libraries(${target} PRIVATE kirari::gpu_span_fp8 kirari::dep::cudart)
+  set_target_properties(${target} PROPERTIES CUDA_ARCHITECTURES "89-real;120" POSITION_INDEPENDENT_CODE ON)
+  target_compile_options(${target} PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -lineinfo -Xcudafe=--diag_suppress=177
+      -Xcudafe=--diag_suppress=550 --ptxas-options=--verbose,--warn-on-spills>
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<PLATFORM_ID:Windows>>>:-Werror=all-warnings -Xcompiler=-Wall,-Wextra>
+    # CCCL de CUDA 13 exige le préprocesseur conforme de MSVC.
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
+endfunction()
+
+add_library(kirari_backend_span_net STATIC)
+target_include_directories(kirari_backend_span_net PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_link_libraries(kirari_backend_span_net PRIVATE kirari::gpu_span_fp8 kirari::dep::cudart)
+set_target_properties(kirari_backend_span_net PROPERTIES POSITION_INDEPENDENT_CODE ON)
+kirari_set_warnings(kirari_backend_span_net)
+if(KIRARI_WITH_SPAN_FP8 OR kirari_span_fp16)
+  target_sources(kirari_backend_span_net PRIVATE span_fp8_net.cpp)
+  target_compile_definitions(kirari_backend_span_net PRIVATE
+    KIRARI_SPAN_FP8_KERNELS=$<BOOL:${KIRARI_WITH_SPAN_FP8}> KIRARI_SPAN_FP16_KERNELS=$<BOOL:${kirari_span_fp16}>)
+else()
+  target_sources(kirari_backend_span_net PRIVATE span_fp8_net_none.cpp)
+endif()
+# La référence sert seulement à la dérivation FP8. nvcc 13.4 s'y arrête avec MSVC ; sa version vide la remplace.
+if(NOT KIRARI_WITH_SPAN_FP8 OR MSVC)
+  target_sources(kirari_backend_span_net PRIVATE span_fp8_ref_none.cpp)
+endif()
+
+if(KIRARI_WITH_SPAN_FP8)
+  add_library(kirari_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu)
+  if(NOT MSVC)
+    target_sources(kirari_backend_span_fp8_kernels PRIVATE span_fp8_ref.cu)
+  endif()
+  target_include_directories(kirari_backend_span_fp8_kernels SYSTEM PRIVATE "${KIRARI_CUTLASS_INCLUDE}")
+  kirari_span_kernel_target(kirari_backend_span_fp8_kernels)
+  target_link_libraries(kirari_backend_span_net PRIVATE kirari_backend_span_fp8_kernels)
+endif()
+if(kirari_span_fp16)
+  add_library(kirari_backend_span_fp16_kernels STATIC span_native16.cu)
+  kirari_span_kernel_target(kirari_backend_span_fp16_kernels)
+  target_link_libraries(kirari_backend_span_net PRIVATE kirari_backend_span_fp16_kernels)
 endif()
 
 add_library(kirari_backend_tensorrt MODULE
@@ -92,7 +103,7 @@ target_sources(kirari_backend_tensorrt PRIVATE scene_glow.cpp)
 # du pilote ; aucun fichier de NVIDIA n'est livré.
 target_include_directories(kirari_backend_tensorrt SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/nvidia-optical-flow")
 target_link_libraries(kirari_backend_tensorrt PRIVATE
-  kirari::gpu kirari::gpu_span_fp8 kirari::cuda_fused_keys kirari::cuda_native_mix kirari::cuda_rife_mix kirari::prepare kirari::core_log kirari::dep::spdlog kirari_backend_tensorrt_kernels ${kirari_span_fp8_net}
+  kirari::gpu kirari::gpu_span_fp8 kirari::cuda_fused_keys kirari::cuda_native_mix kirari::cuda_rife_mix kirari::prepare kirari::core_log kirari::dep::spdlog kirari_backend_tensorrt_kernels kirari_backend_span_net
   kirari::dep::tensorrt CUDA::cuda_driver ${CMAKE_DL_LIBS})
 # Le trtexec du paquet est celui de la configuration : son SHA-256 entre dans le module, qui refuse
 # tout autre fichier posé à côté de lui (P1.21). Le repli sur le trtexec de la machine est réservé
@@ -164,7 +175,7 @@ cmake_language(DEFER DIRECTORY "${PROJECT_SOURCE_DIR}" CALL kirari_backend_tenso
 if(KIRARI_WITH_SPAN_FP8)
   add_executable(kirari_span_fp8_run span_fp8_run.cpp)
   target_include_directories(kirari_span_fp8_run PRIVATE "${PROJECT_SOURCE_DIR}/src")
-  target_link_libraries(kirari_span_fp8_run PRIVATE kirari::gpu_span_fp8 kirari::gpu_span_fp8_onnx kirari_backend_span_fp8_kernels
+  target_link_libraries(kirari_span_fp8_run PRIVATE kirari::gpu_span_fp8 kirari::gpu_span_fp8_onnx kirari_backend_span_net
     kirari::dep::cudart)
   kirari_set_warnings(kirari_span_fp8_run)
   # Le banc des formes de tuile (span_tile_bench.cu) : des formes que le lecteur ne prend pas, dont certaines

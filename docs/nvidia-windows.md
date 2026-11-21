@@ -24,6 +24,19 @@ Le contrôle refuse une archive qui contient un fichier de NVIDIA, un index qui 
 taille) ou sans `[[vendor_file]]`. La CI (`release-windows.yml`) télécharge `engines-nvidia.lock` de la release de
 l'étiquette, s'il existe, et en reprend les moteurs dans l'`engines.lock` qu'elle joint.
 
+## Essayer le SPAN FP16 natif
+
+Depuis une invite MSVC x64 avec CUDA, TensorRT et `VCPKG_ROOT` configurés, construire le moteur dans un dossier dédié.
+
+```powershell
+cmake --preset windows-rtx -B build/windows-span-fp16 "-DKIRARI_TENSORRT_ROOT=$env:KIRARI_TENSORRT_ROOT" -DKIRARI_WITH_SPAN_FP8=OFF -DKIRARI_WITH_SPAN_FP16=ON
+cmake --build build/windows-span-fp16 --target kirari_backend_tensorrt
+```
+
+Le FP16 natif est disponible sur Ada et Blackwell grand public. Au cran Équilibre, le lecteur reprend le modèle
+TensorRT FP16 si la variante native est refusée. Le défaut `KIRARI_WITH_SPAN_FP16=AUTO` suit
+`KIRARI_WITH_SPAN_FP8`, désactivé dans le paquet Windows publié.
+
 ## Sans poste Windows : par la CI
 
 C'est le chemin normal. `release.yml` (une étiquette poussée) lance `release-windows.yml`, qui construit le paquet

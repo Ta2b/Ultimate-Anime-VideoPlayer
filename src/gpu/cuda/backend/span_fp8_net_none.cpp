@@ -1,6 +1,4 @@
-// SpanFp8Net d'un backend construit sans CUTLASS (KIRARI_WITH_SPAN_FP8 = OFF : plateforme autre que Linux, ou
-// third_party/cutlass absent) : l'appareil n'est jamais pris en charge, le backend ne l'annonce pas
-// (BackendCaps::span_fp8_cutlass) et la chaîne reste sur TensorRT.
+// Backend construit sans noyaux SPAN personnalisés. La chaîne choisit les autres voies TensorRT.
 #include "gpu/cuda/backend/span_fp8_net.h"
 
 namespace kirari::gpu::cuda {
@@ -21,7 +19,7 @@ bool SpanFp8Net::supported_fp16_device(int /*major*/, int /*minor*/) {
 std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& /*weights*/, int /*height*/,
                                                int /*width*/, SpanFp8Status& status, std::string& error) {
   status = SpanFp8Status::Failed;
-  error = "ce backend est construit sans les noyaux CUTLASS";
+  error = "ce backend est construit sans noyaux SPAN natifs";
   return nullptr;
 }
 

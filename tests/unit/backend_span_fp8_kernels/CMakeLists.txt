@@ -5,7 +5,7 @@
 add_executable(kirari_span_fp8_kernel_tests span_fp8_kernel_test.cpp span_fp8_48_test.cpp)
 target_include_directories(kirari_span_fp8_kernel_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(kirari_span_fp8_kernel_tests PRIVATE
-  kirari::gpu_span_fp8 kirari_backend_span_fp8_kernels kirari_backend_tensorrt_kernels kirari::dep::cudart
+  kirari::gpu_span_fp8 kirari_backend_span_net kirari_backend_tensorrt_kernels kirari::dep::cudart
   Catch2::Catch2WithMain)
 kirari_set_warnings(kirari_span_fp8_kernel_tests)
 catch_discover_tests(kirari_span_fp8_kernel_tests TEST_PREFIX "span_fp8_kernels: " DISCOVERY_MODE PRE_TEST)
