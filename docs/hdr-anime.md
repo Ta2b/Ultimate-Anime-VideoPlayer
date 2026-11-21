@@ -396,7 +396,31 @@ retire toutes les ancres malgré un déplacement exact. Les grilles 2×2, 1×1 p
 région retrouvent les mêmes ancres. Sur ces témoins, 4×4 suffit pour confirmer le trajet. Une
 couronne présente et compatible dans l'image courante reste nécessaire pour autoriser un éclat.
 
-L'activation dans le lecteur attend des effets mobiles annotés en scène réelle.
+Ces témoins ont servi à choisir le protocole sur des effets mobiles annotés en scène réelle.
+
+### Effets mobiles sur quatre extraits réels
+
+Le 21 novembre, le rejeu a suivi l'impact, le croissant, les arcs et le portail de Re:Zero, entre
+1028,737 et 1037,329 s. Les 58 paires ont des ancres aux deux extrémités et passent le contrôle de
+changement de plan. Les trois calculs NVOF utilisent les mêmes lumas de 960×540 issues du RGB SDR,
+en qualité moyenne et sans indices temporels. Pour une ancre courante, l'essai cherche une couronne
+de teinte compatible dans l'image précédente, transportée par le flux à moins de 16 pixels source.
+Le trajet doit rester dans l'image et garder un écart de luma d'au plus 12 codes. Le traitement
+requiert toujours un émetteur dans l'image courante.
+
+| Grille NVOF | Confirmations supplémentaires dans les régions d'effet avec déplacement ≥ 16 px | Médiane NVOF |
+|---|---:|---:|
+| 4×4 | 63 | 0,402 ms |
+| 2×2 | 67 | 0,920 ms |
+| 1×1 | 71 | 2,568 ms |
+
+Les 63 confirmations en 4×4 se répartissent en 5 sur l'impact, 2 sur le croissant, 43 sur les arcs
+et 13 sur le portail. Aucune confirmation supplémentaire n'apparaît dans les régions de contrôle
+pierre, visage et vêtement. Sur les arcs, le 4×4 perd aussi 33 confirmations fixes. Pour un essai
+de rendu, conserver la confirmation fixe et ajouter celle des trajectoires d'au moins 16 pixels
+qui passent les contrôles. La grille 4×4 donne 89 % du nombre de confirmations supplémentaires de
+la grille 1×1, pour 16 % de sa durée médiane. Ces temps couvrent l'appel NVOF. La qualification
+visuelle du grade et sa cadence composée restent à mesurer.
 
 ## A2 : décisions par plan
 La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
