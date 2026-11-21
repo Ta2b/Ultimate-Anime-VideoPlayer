@@ -44,6 +44,12 @@ entraînement.
   SPAN ou de RIFE déjà lancé finit d'abord. Passage 10 (19 novembre, une seule étape « NVOF et tuiles » à
   l'époque) : 0,62 ms en médiane, 1,15 au 95e centile, lumas 0,01 ms. La porte se juge au temps par image
   avec et sans `--scene-map` (banc A/B, `tools/bench/banc.sh`).
+- La réduction CUDA lit quatre lumas à la fois quand les lignes sont alignées, puis combine deux warps
+  par tuile avec une seule barrière. Les bords et les lignes non alignées gardent des lectures par octet.
+  Les sommes et les carrés sont identiques à l'ancienne réduction sur cinq tailles testées. Sur la
+  RTX 4070 Ti en lecture RIFE 1080p, la réduction passe de 13,50 à 5,54 µs en médiane et de 19,20 à
+  12,77 µs au p95 sur 145 paires par passage. Les deux passages tiennent 165,00 i/s présentées par
+  Wayland et posent 144 cartes dans leur paire. Le temps NVOFA est mesuré à part.
 
 ## Le chemin d'une paire
 
