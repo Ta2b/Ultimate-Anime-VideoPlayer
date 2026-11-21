@@ -390,6 +390,12 @@ le trafic entre couches et la présentation.
 
 La voie Performance Sharp1 qui garde la seconde 3×3 de chaque bloc en direct a une borne de 1,881 ms.
 Les 90 % du débit de calcul du Balanced vertical correspondent à une passe en 4,866 ms.
+Le [calculateur SPAN](../tools/bench/span_native/plafonds.py) lit ces formes dans les ONNX officiels.
+Il donne aussi un modèle qui compte un transfert VRAM par tenseur et par étage, ainsi que les
+transformées et la fusion de la dernière porte avec la concaténation. Avec cette hypothèse, le
+Balanced vertical arrive à 8,160 ms et F(4×4, 3×3) à 8,169 ms malgré la baisse du nombre de MMA.
+Le traitement en bandes peut servir une partie de ces transferts depuis le L2. Un ratio fondé
+sur ce modèle de trafic demande d'abord une mesure des octets réellement transférés.
 
 À 165 Hz, une lecture de 5 s à partir d'une source 1080p à 23,976 i/s demande environ 192 i/s avec
 RIFE 4.25 à ×8. Le Balanced FP16 natif produit le 3840×2160. Wayland confirme 693 images successives en
@@ -397,6 +403,13 @@ fenêtre SDR, puis 694 en plein écran HDR10, à 165,00 i/s dans les deux cas. L
 couvrent environ 4,2 s par passage. Les journaux ne signalent aucune perte GPU. Le plein écran HDR
 mesure 6,612 ms de médiane pour le SPAN et 2,062 ms pour RIFE. Le profil isolé utilise le grade sans LUT
 personnelle. Le plafond de l'écran et les temps d'exécution des deux réseaux se mesurent séparément.
+
+Un rejeu prolongé en plein écran HDR10 couvre 20,21 s confirmées par Wayland avec la même demande
+de cadence et le même mode du lecteur. Sans carte NVOF, il donne 3 300 images nouvelles à 163,41 i/s.
+Avec la carte et l'option d'éclats, il donne 3 296 images à 163,22 i/s. Les deux journaux comptent zéro
+perte GPU. La carte traite 504 paires, à 0,34 ms de médiane sur le moteur NVOFA. Ce rejeu du même
+extrait mesure la cadence présentée et le coût de la carte, indépendamment de l'évaluation visuelle
+des éclats.
 
 Sur une seconde lecture en fenêtre SDR, le lecteur met à l'échelle une source 1920×1080 à 120 i/s
 vers 3840×2160 avec chacun des quatre modèles et l'interpolation coupée. Les intervalles confirmés
