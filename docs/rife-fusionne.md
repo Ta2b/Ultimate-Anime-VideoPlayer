@@ -39,8 +39,15 @@ Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent
   position en pixels `x + flot` en FP32 (`pixel_tap`), ce que vaut la grille normalisée du graphe une fois ramenée en
   pixels, sans l'arrondi FP16 de la base (jusqu'à 0,234 pixel à 1920 de large). Mesuré sur le graphe 4.22 lite en ONNX
   Runtime, la grille seule changée : un plan fixe sort à 78 à 86 dB de sa source au lieu de 51 à 60, un panoramique de
-  6 pixels gagne 2 à 5 dB. Le RIFE entier v1 lit toujours ses plans 7 à 10 : seul le format v2 (grille calculée dans le
-  graphe, en FP32) le corrige.
+  6 pixels gagne 2 à 5 dB. Le RIFE entier v1 lit ses plans 7 à 10. Le format v2 calcule sa grille en FP32
+  dans le graphe.
+  Sur un panoramique à 720p, isoler ce seul arrondi dans les deux graphes du menu sous ONNX Runtime
+  change le flot à partir du deuxième bloc. À warp final identique, le rendu entre les deux grilles
+  diffère de 55,38 dB pour RIFE 4.25 et de 51,99 dB pour RIFE 4.22 Lite. Un prototype garde l'entrée à
+  11 plans et calcule les deux axes et leurs pas dans le graphe en FP32. Sur 720p et 1080p, ses
+  30 720 000 codes de flot et de masque correspondent exactement à la référence alimentée par des
+  axes FP32 externes, avec les mêmes poids. La construction et le coût du repli TensorRT se vérifient
+  séparément.
 - Entrée par pointeurs (étape 5.2, backend TensorRT) : les noyaux CUDA lisent l'instant à l'élément 0 du plan 6.
   Quand le dernier moteur à lire l'entrée est la chaîne fusionnée, `rife_time` n'écrit plus qu'un demi-flottant au lieu
   d'un plan entier ; un moteur TensorRT entier ou DistilDRBA fusionné qui lit la même adresse ramène l'écriture du plan

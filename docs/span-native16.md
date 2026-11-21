@@ -470,6 +470,10 @@ des passes utilisent un masque, et Wayland confirme 363/363 images nouvelles dan
 Le réemploi des poids entre deux paires de lignes de la convolution verticale C64 a aussi
 été testé sur l'image entière. Les deux sorties Balanced restent identiques au bit près,
 mais les minima du réseau passent de 8,173–8,233 à 8,179–8,314 ms. Cette forme reste au banc.
+Un double tampon partagé de 16 Kio pour les poids de la convolution verticale par CTA
+garde également les mêmes codes. Les minima du réseau Balanced passent de 7,97–8,89
+à 9,88–9,92 ms. Cette forme ajoute des barrières, et la taille du tampon la limite à
+deux blocs résidents par SM.
 
 ## Mesurer
 

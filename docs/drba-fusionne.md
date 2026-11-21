@@ -73,6 +73,11 @@ tient dans six noyaux.
   passe de 25,664 à 13,165 µs, celui de 320×192 de 12,618 à 8,592 µs. Les deux sorties et les
   sentinelles restent identiques. Les petits encodages et les grandes formes gardent le lancement
   unique, qui coûte moins au premier cas et reste compétitif au second.
+- Un essai relit le petit halo des treize plans de contrôle de X2 en mémoire partagée.
+  Le microbanc synthétique passe de 240,8 à 212,2 µs à 480×272 avec les mêmes bits.
+  En lecture 1080p ×8, les médianes du moteur passent de 0,668 ms à 0,679–0,680 ms
+  sur deux tours par voie. Le compositeur confirme 165,00 i/s sur les quatre passages.
+  La variante reste au banc.
 - Repli sur le DistilDRBA entier : réglage éteint, autre backend, cran Qualité avec son graphe `_fp32` (un cran dont
   le graphe manque garde la chaîne, et Performance la préfère au graphe `_fp8` : `drba_tier`), structure inconnue,
   taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne passe trois fois sur

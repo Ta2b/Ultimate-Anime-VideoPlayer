@@ -112,6 +112,21 @@ du MetricNet. Le rapport de 57,3 % porte donc sur la chaîne mesurée avec ces o
 Le [rejeu ultérieur de l'attention au quart](gmflow-natif.md#mode-rapide-facultatif) ramène cette
 plage à 6,585 ms.
 
+Dans cette trace, les trois premières dépenses par convolution de GridNet sont la tête
+C128→64 à 960×576 (0,656 ms), la tête C256→128 à 480×288 (0,656 ms) et le résidu C64 à
+960×576 qui suit la tête planaire (0,563 ms). Un candidat pour C256→128 partage le halo
+des deux groupes de sortie. Les vrais poids et le PReLU de sortie donnent les mêmes
+codes sur deux paires et une fenêtre de bord. Les chronos isolés sont de 0,657–0,704 ms
+pour le témoin et de 0,642–0,695 ms pour le candidat. Le réglage en lecture l'a mesuré,
+puis a gardé le noyau précédent. Les deux passages ont confirmé 48,00 i/s en ×2.
+
+Un autre essai réemploie la sortie du premier niveau du FeatureNet pour les tuiles
+dont le halo RGB est identique. Il publie les valeurs propres à la fois en plans
+et en NHWC, et n'exporte en plans que les tuiles recalculées. Sur la meilleure scène,
+3 112 tuiles sur 4 320 sont réemployées, avec les mêmes codes dans les trois sorties.
+Le calcul de l'image B passe de 2,428–2,434 à 2,485–2,486 ms. Le repli complet en présence
+d'une valeur non finie produit la sortie du témoin. Cette stratégie reste au banc.
+
 ### Projections directes dans GridNet
 
 L'option « Projections GMFSS directes (essai) » dans Interpolation > Avancé, ou

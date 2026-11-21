@@ -571,7 +571,14 @@ mouvement lu à l'instant) dans des tampons à part, un jeu par forme du mouveme
 de l'échelle par paire alternent dans une paire forte) ; le warp habituel fait le reste, avec la loi de
 mélange de RIFE. Vulkan ne l'a pas : il n'a pas non plus de carte.
 
-Sans carte (AMD, Intel, Turing, NVOF refusé) ou sans l'option : la décision d'avant, image pour image. La
+Sur les Turing équipées de NVOFA, le pilote fournit la grille 4×4. La carte de la scène demande aussi
+la sortie de coût matériel, disponible à partir d'Ampere. Une mesure séparée sur 48 paires a confronté
+le résidu de luminance après recalage au coût du pilote. Sur deux panoramiques, sa version centrée
+retrouve 37 à 38 % des cellules classées sans correspondance par le pilote, et marque jusqu'à 6,24 %
+des cellules d'un plan où le pilote en marque 3,79 %. Elle reste une piste de mesure, sans remplacement
+du coût dans les décisions du lecteur. [Capacités NVOFA](https://docs.nvidia.com/video-technologies/optical-flow-sdk/nvofa-application-note/).
+
+Sans carte exploitable ou sans l'option, les décisions habituelles s'appliquent image par image. La
 ligne de fin `tri des paires par le flux : …` compte les paires lues, tenues, fondues (dont celles sans
 correspondance ni caméra) et fondues par endroits, avec la part moyenne de leurs tuiles qui doutent (avant le
 bord élargi).
