@@ -313,10 +313,12 @@ TEST_CASE(
   const std::array<std::string_view, 2> gmfss{"film.mkv", "--motion=gmfss"};
   const auto union_only = parse_play_options(gmfss);
   REQUIRE(union_only);
-  CHECK(settings_for(rife_file, *union_only).motion_engine == MotionEngine::Gmfss);
-  CHECK(settings_to_save(settings_for(rife_file, *union_only), rife_file,
-                         settings_for(rife_file, *union_only), *union_only)
-            .motion_engine == MotionEngine::Rife);
+  const PlaySettings only = settings_for(rife_file, *union_only);
+  CHECK(only.motion_engine == MotionEngine::Gmfss);
+  CHECK(only.gmfss_every_instant);
+  const PlaySettings restored = settings_to_save(only, rife_file, only, *union_only);
+  CHECK(restored.motion_engine == MotionEngine::Rife);
+  CHECK_FALSE(restored.gmfss_every_instant);
   const std::array<std::string_view, 2> wrong{"film.mkv", "--motion=dain"};
   CHECK_FALSE(parse_play_options(wrong));
 }

@@ -40,6 +40,7 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   if (options.motion) {
     constexpr std::array kEngines{MotionEngine::Rife, MotionEngine::DistilDrba, MotionEngine::Gmfss};
     s.motion_engine = kEngines[static_cast<std::size_t>(*options.motion)];
+    if (s.motion_engine == MotionEngine::Gmfss) s.gmfss_every_instant = true;
   }
   if (options.was_given("--rife")) {
     s.rife_factor = options.rife_factor;
@@ -70,6 +71,7 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   keep("--rife-model", &PlaySettings::rife_model);
   keep("--rife-model", &PlaySettings::motion_engine);
   keep("--motion", &PlaySettings::motion_engine);
+  if (options.motion == MotionChoice::Gmfss) keep("--motion", &PlaySettings::gmfss_every_instant);
   keep("--rife", &PlaySettings::rife_factor);
   keep("--rife", &PlaySettings::rife_factor_den);
   keep("--rife", &PlaySettings::rife_auto);  // l'option la coupe pour cette lecture seulement (A22-05)
