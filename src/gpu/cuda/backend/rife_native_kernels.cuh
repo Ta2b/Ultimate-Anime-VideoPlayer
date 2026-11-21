@@ -391,6 +391,15 @@ __device__ __forceinline__ void stage(const Frag<A> (&acc)[Rows * 2][CT / 8], __
   }
 }
 
+__device__ __forceinline__ float2 add_residual_pair(__half2 biased, __half2 skip) {
+  const float2 a = __half22float2(biased), b = __half22float2(skip);
+  return make_float2(a.x + b.x, a.y + b.y);
+}
+
+__device__ __forceinline__ float2 activate_pair(float2 v, float2 slope) {
+  return make_float2(v.x < 0.F ? v.x * slope.x : v.x, v.y < 0.F ? v.y * slope.y : v.y);
+}
+
 // Huit canaux d'un pixel : + résiduel, puis activation ; n : premier canal dans la grille de la couche.
 __device__ __forceinline__ uint4 finish8(uint4 v, const Params& p, long pixel, int n) {
   std::uint32_t w[4] = {v.x, v.y, v.z, v.w};
@@ -403,15 +412,8 @@ __device__ __forceinline__ uint4 finish8(uint4 v, const Params& p, long pixel, i
     __half2 h, k;
     *reinterpret_cast<std::uint32_t*>(&h) = w[j];
     *reinterpret_cast<std::uint32_t*>(&k) = s[j];
-    float2 f = __half22float2(h);
-    const float2 r = __half22float2(k);
-    f.x += r.x;
-    f.y += r.y;
-    if (p.slope != nullptr) {
-      const float2 sl = __ldg(reinterpret_cast<const float2*>(p.slope + n + 2 * j));
-      f.x = f.x < 0.F ? f.x * sl.x : f.x;
-      f.y = f.y < 0.F ? f.y * sl.y : f.y;
-    }
+    float2 f = add_residual_pair(h, k);
+    if (p.slope != nullptr) f = activate_pair(f, __ldg(reinterpret_cast<const float2*>(p.slope + n + 2 * j)));
     h = to_half2(f.x, f.y);
     w[j] = *reinterpret_cast<std::uint32_t*>(&h);
   }

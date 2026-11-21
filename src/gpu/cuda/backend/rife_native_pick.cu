@@ -13,6 +13,7 @@
 
 #include "gpu/cuda/backend/conv_stream_kernels.cuh"
 #include "gpu/cuda/backend/rife_native_plan.h"
+#include "gpu/cuda/backend/rife_native_resident.cuh"
 
 namespace kirari::gpu::cuda::rife_native {
 namespace {
@@ -208,6 +209,14 @@ Launch pick_for(RifeNativeSums sums, Kind kind, int kc, int ct, int rows, bool a
       return pick<Acc::kF32>(kind, kc, ct, rows, ahead);
   }
   return nullptr;
+}
+
+Launch pick_resident_residual() {
+  return resident::launch;
+}
+
+int resident_residual_smem() {
+  return resident::kInputValues * static_cast<int>(sizeof(__half));
 }
 
 Launch pick_compact_encoder(RifeNativeSums sums, Kind kind, const Config& cfg) {

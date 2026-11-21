@@ -161,6 +161,26 @@ Rien n'est propre à 4.25 : les couches se lisent dans les morceaux ONNX de la d
 chaîne Conv, activation, Mul, Add, ConvTranspose), donc 4.22 lite, 4.26 et 4.25 lite (poids déjà permutés) passent
 par le même code. Une structure inconnue est refusée et TensorRT garde la chaîne.
 
+### Résiduel issu du halo en C32
+
+Le ResConv FP16 Ada à K32 et une ligne par warp réutilise le centre du halo chargé pour
+la convolution. Le noyau y écrit ses sorties après le biais arrondi en FP16, l'addition
+FP32 du résiduel et l'activation. L'essai au chargement compare les codes au lancement
+K32 précédent et conserve le plus rapide. Les autres formes gardent leur épilogue.
+`KIRARI_AB_RIFE_RESIDENT=0` désactive le candidat au banc.
+
+En lecture SDR à ×8, source 1080p à 23,976 i/s, quatre passages ABBA confirment 165,00 i/s
+sur les deux modèles. Pour RIFE 4.25, le p95 du moteur passe de 2,769–2,870 à 2,636–2,637 ms,
+avec des médianes de 2,112–2,142 et 2,109–2,124 ms. Pour 4.22 Lite, les médianes passent de
+2,152–2,175 à 2,143–2,159 ms, avec un p95 variable. La variante C64 gagnait au microbanc,
+mais les deux essais du lecteur avec C32 et C64 ensemble ralentissaient Lite de 0,032 et
+0,037 ms en médiane. Le C64 garde donc sa forme précédente.
+
+Le relevage CRD 4×4 de D2 et la projection finale à phases appariées réduisent les lectures
+et gardent les mêmes codes sur deux modèles et des recadrages. Leurs temps 1080p augmentent
+toutefois de quelques microsecondes au banc. L'écriture CRD directe garde la parité et gagne
+environ 5 µs sur la tête Lite 1080p. Elle reste hors du lecteur en attendant une mesure intégrée.
+
 ## Comparaison avec le RIFE natif d'AnimeJaNai
 
 Lu dans the-database/animejanai-inference (`src/native/gconv.cuh`, `gconv.cu`, `rife.cpp`), rien recopié. Même

@@ -7,6 +7,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <set>
@@ -178,7 +180,9 @@ class Net final : public RifeNativeNet {
            std::to_string(l.cfg.rows) + (l.cfg.rows > 1 ? " lignes" : " ligne") + " par warp, K en " +
            std::to_string(l.cfg.ksplit) + (l.cfg.ahead ? ", poids à l'avance" : "") +
            (l.cfg.bands > 0 ? ", flux jusqu'à " + std::to_string(l.cfg.bands) + " bandes par bloc" : "") +
-           (l.cfg.compact_encoder ? ", encodeur compact" : "") + ", sommes " + rn::sums_name(l.sums) +
+           (l.cfg.compact_encoder ? ", encodeur compact" : "") +
+           (l.cfg.resident_residual ? ", résiduel en mémoire partagée" : "") + ", sommes " +
+           rn::sums_name(l.sums) +
            (l.rejected > 0 ? ", " + std::to_string(l.rejected) + " formes écartées (sortie différente)"
                            : "") +
            end;
@@ -294,7 +298,8 @@ class Net final : public RifeNativeNet {
 
   static bool same_shape(const Config& a, const Config& b) {
     return a.kc == b.kc && a.ct == b.ct && a.rows == b.rows && a.ksplit == b.ksplit && a.ahead == b.ahead &&
-           a.bands == b.bands && a.compact_encoder == b.compact_encoder;
+           a.bands == b.bands && a.compact_encoder == b.compact_encoder &&
+           a.resident_residual == b.resident_residual;
   }
 
   struct Tuning {
@@ -302,6 +307,22 @@ class Net final : public RifeNativeNet {
     rn::Bench& bench;
     std::vector<RifeNativeTuned>& tuned;
   };
+
+  // Compare d'abord les codes du même calendrier K32. La référence K16 utilisée
+  // pour le réglage général additionne certains produits dans un autre ordre.
+  void try_resident(rn::Bench& bench, Layer& layer, const void* weights, float fastest, Config& best) const {
+    if (!ada_ || !rn::can_reside(layer, best)) return;
+    const char* const resident_ab = std::getenv("KIRARI_AB_RIFE_RESIDENT");  // env: banc
+    if (resident_ab != nullptr && std::strcmp(resident_ab, "0") == 0) return;
+    std::string ignored;
+    if (!bench.reference(layer, weights, ignored)) return;
+    Config resident = best;
+    resident.resident_residual = true;
+    if (!shape(layer, resident)) return;
+    const auto timed = bench.time(layer, weights, ignored);
+    if (timed && !timed->differs && timed->ms < fastest) best = resident;
+    (void)shape(layer, best);
+  }
 
   // La forme de la couche : celle que tuned garde déjà pour ces sommes, sinon la plus rapide au banc parmi
   // celles qui rendent la sortie de la forme de référence (tranche et tuile de 16, sans découpe de K : la
@@ -317,7 +338,8 @@ class Net final : public RifeNativeNet {
                                                        .ksplit = known->ksplit,
                                                        .ahead = known->ahead,
                                                        .bands = known->bands,
-                                                       .compact_encoder = known->compact_encoder}))
+                                                       .compact_encoder = known->compact_encoder,
+                                                       .resident_residual = known->resident_residual}))
       return upload_weights(layer.w, dense, layer.cfg.ct, error);
     std::array<rn::Buffer, 3> packs;  // tuiles de 16, 32 et 64
     const auto packed = [&](int ct) -> const void* {
@@ -362,6 +384,7 @@ class Net final : public RifeNativeNet {
       error = "aucun noyau ne fait la couche " + std::to_string(conv.cin) + "→" + std::to_string(conv.cout);
       return false;
     }
+    try_resident(at.bench, layer, packed(best.ct), fastest, best);
     at.tuned.push_back({.piece = at.piece,
                         .layer = at.layer,
                         .sums = layer.sums,
@@ -371,7 +394,8 @@ class Net final : public RifeNativeNet {
                         .ksplit = best.ksplit,
                         .ahead = best.ahead,
                         .bands = best.bands,
-                        .compact_encoder = best.compact_encoder});
+                        .compact_encoder = best.compact_encoder,
+                        .resident_residual = best.resident_residual});
     return upload_weights(layer.w, dense, best.ct, error);
   }
 

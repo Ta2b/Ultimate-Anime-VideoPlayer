@@ -38,6 +38,7 @@ struct Config {
   bool ahead = false;
   int bands = 0;
   bool compact_encoder = false;
+  bool resident_residual = false;
 };
 
 constexpr int kernel_size(Kind kind) {
@@ -64,6 +65,9 @@ struct Extent {
 // l'avance seulement en pas 1 (kSame), tranche de 32 ou 64, hors f32 : les ResConv des blocs, où les poids
 // d'une couche large viennent du L2.
 Launch pick_for(RifeNativeSums sums, Kind kind, int kc, int ct, int rows, bool ahead = false);
+// ResConv à sommes FP16, tranche 32, une ligne par warp. Voir can_reside pour l'interface.
+Launch pick_resident_residual();
+int resident_residual_smem();
 // Formes exactes de l'encodeur : RGB sans rembourrage en mémoire partagée, transposée sans prises nulles.
 Launch pick_compact_encoder(RifeNativeSums sums, Kind kind, const Config& cfg);
 // Les trois premières convolutions du GridNet peuvent lire les plans de groupes de huit canaux.

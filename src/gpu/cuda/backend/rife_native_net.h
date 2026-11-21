@@ -47,6 +47,7 @@ struct RifeNativeTuned {
   bool ahead = false;  // poids une prise à l'avance (rife_native_kernels.cuh, accumulate)
   int bands = 0;       // bandes par bloc en flux ; 0 pour les tuiles
   bool compact_encoder = false;
+  bool resident_residual = false;
 };
 
 class RifeNativeNet {
