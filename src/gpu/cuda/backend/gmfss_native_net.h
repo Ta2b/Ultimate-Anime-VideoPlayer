@@ -49,6 +49,9 @@ class GmfssNativeNet : public GmfssNativeParts {
   virtual void use_folded_tail(bool enabled) = 0;
   virtual bool planar_head_ready() const = 0;
   virtual void use_planar_head(bool enabled) = 0;
+  virtual bool planar_ring_ready() const = 0;
+  virtual std::string planar_ring_report() const = 0;
+  virtual void use_planar_ring(bool enabled) = 0;
   // Les convolutions d'un morceau seul, sur ce que la zone garde : pour son temps.
   // La queue peut écrire dans un tampon externe, comme en lecture.
   virtual cudaError_t run_piece(cudaStream_t stream, int piece, void* out = nullptr) const = 0;

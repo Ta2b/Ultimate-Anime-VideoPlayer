@@ -64,6 +64,12 @@ std::string ring_shape_name(const Shape& shape) {
          (c.ahead ? "/avance" : "") + (c.ksplit > 1 ? "/K découpé" : "") + (c.bands > 0 ? "/flux" : "");
 }
 
+std::string planar_ring_shape(const Layer& layer) {
+  const auto& c = layer.shape().cfg;
+  return std::string(rn::sums_name(layer.sums)) + "/" + ring_shape_name(layer.shape()) +
+         "/split=" + std::to_string(c.ksplit) + "/bandes=" + std::to_string(c.bands);
+}
+
 bool join_shapes(const Layer& a, const Layer& b, const Layer& up, const Layer& add) {
   constexpr auto f16 = sums_index(RifeNativeSums::kF16);
   const auto& ac = a.shapes[f16].cfg;
@@ -297,6 +303,21 @@ bool ConvNet::tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string&
     return false;
   }
   return sums != RifeNativeSums::kF16 || tune_shuffle(tuner, layer, band, best, error);
+}
+
+std::string ConvNet::planar_ring_report() const {
+  std::string result = "GMFSS natif, anneau de la tête planaire, garde";
+  if (planar_head_ >= 0) {
+    const auto i = static_cast<std::size_t>(planar_head_);
+    result += " (producteur " + std::to_string(i) + "=" + planar_ring_shape(layers_[i]);
+    if (i + 1 < layers_.size())
+      result += ", consommateur " + std::to_string(i + 1) + "=" + planar_ring_shape(layers_[i + 1]);
+    result += ")";
+  }
+  const char* blocker = planar_ring_blocker();
+  result += " : ";
+  result += blocker == nullptr ? "prêt pour le contrôle de parité" : blocker;
+  return result;
 }
 
 // Le premier filtre applique le PReLU. Le deuxième ajoute le résiduel et il est le seul

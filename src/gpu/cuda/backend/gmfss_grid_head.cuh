@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gpu/cuda/backend/rife_native_kernels.cuh"
+#include "gpu/cuda/backend/gmfss_grid_ring.cuh"
 #include "gpu/cuda/backend/rife_native_plan.h"
 
 namespace kirari::gpu::cuda::gmfss_grid_head {
@@ -25,13 +25,14 @@ __device__ __forceinline__ std::uint32_t activated_pair(__half lo, __half hi, fl
 
 // Les neuf plans entrent dans la même tuile de 16 canaux que le chemin pack_head, PReLU inclus.
 // Le poids rangé, l'ordre des MMA et l'épilogue sont ceux de la convolution ordinaire.
-template <int CT, int Rows, rn::Acc A>
-__global__ void __launch_bounds__(rn::kThreads, 2) conv_planes(rn::Params p, Images images) {
+template <int CT, int Rows, rn::Acc A, bool WriteRing = false>
+__global__ void __launch_bounds__(rn::kThreads, 2) conv_planes(rn::Params p, Images images, int first_y) {
+  static_assert(!WriteRing || (CT == gmfss_grid_ring::kChannels && A == rn::Acc::kF16));
   constexpr int kInput = 16, kPad = kInput + 8;
   using G = rn::Geometry<3, 1, Rows>;
   extern __shared__ __align__(16) unsigned char bytes[];
   auto* shared = reinterpret_cast<__half*>(bytes);
-  const int top = static_cast<int>(blockIdx.y) * G::kTH;
+  const int top = (WriteRing ? first_y : 0) + static_cast<int>(blockIdx.y) * G::kTH;
   const int left = static_cast<int>(blockIdx.x) * rn::kTW;
   const long plane = static_cast<long>(p.iw) * p.ih;
   const __half zero = __ushort_as_half(0);
@@ -66,12 +67,36 @@ __global__ void __launch_bounds__(rn::kThreads, 2) conv_planes(rn::Params p, Ima
   __syncthreads();
   rn::stage<CT, Rows, A>(sums, shared, p.bias + z * CT, warp, lane);
   __syncthreads();
-  rn::store<CT, Rows, rn::Out::kNhwc>(shared, p, top, left, 0, z * CT);
+  if constexpr (WriteRing)
+    gmfss_grid_ring::store_ring<Rows>(shared, p, top, left);
+  else
+    rn::store<CT, Rows, rn::Out::kNhwc>(shared, p, top, left, 0, z * CT);
 }
 
 template <int CT, int Rows, rn::Acc A>
 void launch(dim3 grid, int bytes, cudaStream_t stream, const rn::Params& p, Images images) {
-  conv_planes<CT, Rows, A><<<grid, rn::kThreads, bytes, stream>>>(p, images);
+  conv_planes<CT, Rows, A><<<grid, rn::kThreads, bytes, stream>>>(p, images, 0);
+}
+
+template <int Rows>
+void enqueue_ring(rn::Params first, rn::Params second, Images images, gmfss_grid_ring::Band consume,
+                  cudaStream_t stream, int band_rows) {
+  const auto produce = [images](rn::Params p, int y, int end, cudaStream_t s) {
+    constexpr int CT = gmfss_grid_ring::kChannels;
+    constexpr int tile = rn::kWarps * Rows;
+    constexpr int bytes = rn::smem_bytes(16, CT, 3, 1, Rows);
+    const dim3 grid((p.ow + rn::kTW - 1) / rn::kTW, (end - y + tile - 1) / tile);
+    p.oh = end;
+    conv_planes<CT, Rows, rn::Acc::kF16, true><<<grid, rn::kThreads, bytes, s>>>(p, images, y);
+  };
+  gmfss_grid_ring::enqueue_bands(first, second, Rows, produce, consume, stream, band_rows);
+}
+
+inline void enqueue_ring(rn::Params first, rn::Params second, Images images, const rn::Config& config,
+                         gmfss_grid_ring::Band consume, cudaStream_t stream,
+                         int band_rows = gmfss_grid_ring::kBandRows) {
+  if (config.rows == 2) return enqueue_ring<2>(first, second, images, consume, stream, band_rows);
+  enqueue_ring<1>(first, second, images, consume, stream, band_rows);
 }
 
 inline Launch pick(const rn::Config& config, RifeNativeSums sums) {

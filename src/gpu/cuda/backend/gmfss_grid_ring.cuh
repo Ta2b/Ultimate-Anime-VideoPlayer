@@ -10,6 +10,21 @@ namespace rn = rife_native;
 inline constexpr int kChannels = 64, kBandRows = 96, kRingRows = 128;
 static_assert(kBandRows + 2 * rn::kWarps + 1 <= kRingRows && (kRingRows & (kRingRows - 1)) == 0);
 
+template <int Rows>
+__device__ __forceinline__ void store_ring(const __half* s, const rn::Params& p, int y, int x) {
+  constexpr int tile_height = Rows * rn::kWarps;
+  constexpr int chunks = kChannels / 8, ld = kChannels + 8;
+  for (int i = static_cast<int>(threadIdx.x); i < tile_height * rn::kTW * chunks; i += rn::kThreads) {
+    const int q = i / chunks, c = (i % chunks) * 8;
+    const int yy = y + q / rn::kTW, xx = x + q % rn::kTW;
+    if (yy >= p.oh || xx >= p.ow) continue;
+    const uint4 v = *reinterpret_cast<const uint4*>(s + q * ld + c);
+    const long pixel = static_cast<long>(yy) * p.ow + xx;
+    const long ring_pixel = static_cast<long>(yy & (kRingRows - 1)) * p.ow + xx;
+    *reinterpret_cast<uint4*>(p.out + ring_pixel * p.out_ld + c) = rn::finish8(v, p, pixel, c);
+  }
+}
+
 template <int Rows, bool ReadRing, bool Ahead>
 __global__ void __launch_bounds__(rn::kThreads, 2) conv_band(rn::Params p, int first_y) {
   extern __shared__ __align__(16) unsigned char shared[];
@@ -48,16 +63,7 @@ __global__ void __launch_bounds__(rn::kThreads, 2) conv_band(rn::Params p, int f
   rn::stage<kChannels, Rows, acc_type>(acc, s, p.bias, warp, lane);
   __syncthreads();
   if constexpr (!ReadRing) {
-    constexpr int chunks = kChannels / 8, ld = kChannels + 8;
-    for (int i = static_cast<int>(threadIdx.x); i < tile_height * rn::kTW * chunks; i += rn::kThreads) {
-      const int q = i / chunks, c = (i % chunks) * 8;
-      const int yy = y + q / rn::kTW, xx = x + q % rn::kTW;
-      if (yy >= p.oh || xx >= p.ow) continue;
-      const uint4 v = *reinterpret_cast<const uint4*>(s + q * ld + c);
-      const long pixel = static_cast<long>(yy) * p.ow + xx;
-      const long ring_pixel = static_cast<long>(yy & ring_mask) * p.ow + xx;
-      *reinterpret_cast<uint4*>(p.out + ring_pixel * p.out_ld + c) = rn::finish8(v, p, pixel, c);
-    }
+    store_ring<Rows>(s, p, y, x);
   } else {
     rn::store<kChannels, Rows, rn::Out::kNhwc>(s, p, y, x, 0, 0);
   }
@@ -80,19 +86,59 @@ Band pick_band(int rows, bool ahead) {
   return ahead ? enqueue_band<2, ReadRing, true> : enqueue_band<2, ReadRing, false>;
 }
 
-inline void enqueue_residual(rn::Params first, rn::Params second, int first_rows, bool first_ahead,
-                             int second_rows, bool second_ahead, cudaStream_t stream) {
-  const Band produce = pick_band<false>(first_rows, first_ahead);
-  const Band consume = pick_band<true>(second_rows, second_ahead);
+// Le lecteur garde les deux tranches K32 et la prélecture choisies par le régleur.
+template <int Rows, bool Ahead>
+__global__ void __launch_bounds__(rn::kThreads, 2) read_k32(rn::Params p, int first_y) {
+  extern __shared__ __align__(16) unsigned char memory[];
+  auto* shared = reinterpret_cast<__half*>(memory);
+  constexpr auto acc = rn::Acc::kF16;
+  const int warp = static_cast<int>(threadIdx.x) / 32, lane = static_cast<int>(threadIdx.x) % 32;
+  const int y = first_y + static_cast<int>(blockIdx.y) * (rn::kWarps * Rows);
+  const int x = static_cast<int>(blockIdx.x) * rn::kTW;
+  rn::Frag<acc> sums[Rows * 2][kChannels / 8];
+  rn::conv_sums<32, kChannels, 3, 1, Rows, rn::In::kNhwc, acc, Ahead, kRingRows>(sums, shared, p, y, x, 0, 0,
+                                                                                 warp, lane);
+  __syncthreads();
+  rn::stage<kChannels, Rows, acc>(sums, shared, p.bias, warp, lane);
+  __syncthreads();
+  rn::store<kChannels, Rows, rn::Out::kNhwc>(shared, p, y, x, 0, 0);
+}
+
+template <int Rows, bool Ahead>
+void read_k32_band(rn::Params p, int first, int last, cudaStream_t stream) {
+  constexpr int rows = Rows * rn::kWarps;
+  constexpr int bytes = rn::smem_bytes(32, kChannels, 3, 1, Rows);
+  const dim3 grid((p.ow + rn::kTW - 1) / rn::kTW, (last - first + rows - 1) / rows);
+  p.oh = last;
+  read_k32<Rows, Ahead><<<grid, rn::kThreads, bytes, stream>>>(p, first);
+}
+
+inline Band pick_exact(int kc, int ct, int rows, bool ahead) {
+  if (ct != kChannels || (rows != 1 && rows != 2)) return nullptr;
+  if (kc == kChannels) return pick_band<true>(rows, ahead);
+  if (kc != 32) return nullptr;
+  if (rows == 1) return ahead ? read_k32_band<1, true> : read_k32_band<1, false>;
+  return ahead ? read_k32_band<2, true> : read_k32_band<2, false>;
+}
+
+template <class Producer>
+inline void enqueue_bands(rn::Params first, rn::Params second, int first_rows, const Producer& produce,
+                          Band consume, cudaStream_t stream, int band_rows = kBandRows) {
   const int tile = first_rows * rn::kWarps;
   int produced = 0;
-  for (int y = 0; y < second.oh; y += kBandRows) {
-    const int end = std::min(y + kBandRows, second.oh);
+  for (int y = 0; y < second.oh; y += band_rows) {
+    const int end = std::min(y + band_rows, second.oh);
     // Le noyau suivant lit jusqu'à la ligne end. La tuile entière qui la contient est produite une fois.
     const int need = std::min(first.oh, (end + tile) / tile * tile);
     if (need > produced) produce(first, produced, need, stream);
     consume(second, y, end, stream);
     produced = need;
   }
+}
+
+inline void enqueue_residual(rn::Params first, rn::Params second, int first_rows, bool first_ahead,
+                             int second_rows, bool second_ahead, cudaStream_t stream) {
+  enqueue_bands(first, second, first_rows, pick_band<false>(first_rows, first_ahead),
+                pick_band<true>(second_rows, second_ahead), stream);
 }
 }  // namespace kirari::gpu::cuda::gmfss_grid_ring

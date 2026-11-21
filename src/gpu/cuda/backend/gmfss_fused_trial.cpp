@@ -149,6 +149,11 @@ std::expected<void, Refusal> verify_folded_tail(GmfssNativeNet& native, const Pa
   return {};
 }
 
+bool allow_planar_ring() {
+  const char* const planar_ring = std::getenv("KIRARI_AB_GMFSS_PLANAR_RING");  // env: banc
+  return planar_ring == nullptr || std::string_view(planar_ring) != "0";
+}
+
 template <class Pass, class Full>
 std::expected<void, Refusal> verify_grid_variants(GmfssNativeNet& native, const Pass& pass, const Full& full,
                                                   double min_db, cudaStream_t stream, void* out,
@@ -191,6 +196,15 @@ std::expected<void, Refusal> verify_grid_variants(GmfssNativeNet& native, const 
                           "GMFSS natif, lecture de la tête en neuf plans retenue (FP16 identique)",
                           "GMFSS natif, lecture de la tête en neuf plans écartée : ");
     if (!checked) return std::unexpected(std::move(checked.error()));
+    if (*checked && allow_planar_ring()) {
+      lines.push_back(native.planar_ring_report());
+      if (native.planar_ring_ready()) {
+        auto ring = verify([&](bool on) { native.use_planar_ring(on); },
+                           "GMFSS natif, anneau de la tête planaire retenu (FP16 identique)",
+                           "GMFSS natif, anneau de la tête planaire écarté : ");
+        if (!ring) return std::unexpected(std::move(ring.error()));
+      }
+    }
   }
   if (native.tail_ready()) {
     auto checked =

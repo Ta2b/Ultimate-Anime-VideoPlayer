@@ -127,6 +127,31 @@ et en NHWC, et n'exporte en plans que les tuiles recalculées. Sur la meilleure 
 Le calcul de l'image B passe de 2,428–2,434 à 2,485–2,486 ms. Le repli complet en présence
 d'une valeur non finie produit la sortie du témoin. Cette stratégie reste au banc.
 
+### Anneau entre la tête planaire et son premier résiduel
+
+Sur Ada avec au moins 40 Mio de L2, GridNet à 960×576 peut enchaîner les couches 02 et 03 par bandes
+de 96 lignes dans les 15 Mio d'un anneau existant dans l'arène. Le premier noyau lit ses neuf plans
+directement et le second garde le regroupement K32 ou K64, les prises et leur ordre. Le plan vérifie
+que le temporaire n'a qu'un lecteur et reste disjoint du résiduel externe et de la sortie.
+L'essai de chargement compare l'image RGB FP16 bit à bit et conserve la tête dense si elle diffère.
+
+Sur deux paires réelles à formes identiques K16/R1 et K32/R1, les deux couches passent de
+0,747–0,790 à 0,549–0,562 ms en bandes de 96 lignes. Les 35 389 440 codes du tenseur restent
+identiques sur chaque paire et les recadrages 127×145 confirment la parité. Le producteur R2,
+suivi du consommateur K64, garde aussi les mêmes codes et passe de 0,754–0,808 à 0,570–0,640 ms
+sur ces bandes.
+
+En lecture sur 123 à 124 paires, la plage des deux couches passe de 0,760 à 0,542 ms et Wayland
+confirme 122 images sur 122 à 47,99 i/s des deux côtés. Le témoin a choisi un consommateur K64 et
+le passage avec l'anneau un K32. D'autres formes de GridNet changent au réglage entre les deux
+passages. La médiane de la fusion GridNet complète augmente dans cet A/B, de 17,67 à 19,22 ms.
+Le banc K32 à formes identiques isole le gain de l'anneau. `KIRARI_AB_GMFSS_PLANAR_RING=0` garde
+le chemin dense pour une comparaison.
+
+Le même principe appliqué entre 00 et 01 garde les bits avec un producteur C8 et deux tranches
+K32 côté résiduel. Les bandes qui réduisent le trafic ne gagnent pas en durée sur ces scènes.
+Ce second anneau reste au banc.
+
 ### Projections directes dans GridNet
 
 L'option « Projections GMFSS directes (essai) » dans Interpolation > Avancé, ou

@@ -145,6 +145,9 @@ class Net final : public GmfssNativeNet {
   void use_folded_tail(bool enabled) override { net_.use_folded_tail(enabled); }
   bool planar_head_ready() const override { return net_.planar_head_ready(); }
   void use_planar_head(bool enabled) override { planar_head_ = enabled; }
+  bool planar_ring_ready() const override { return planar_head_ && net_.planar_ring_ready(); }
+  std::string planar_ring_report() const override { return net_.planar_ring_report(); }
+  void use_planar_ring(bool enabled) override { net_.use_planar_ring(enabled && planar_head_); }
   void use(std::span<const RifeNativePrecision> precisions) override { net_.use(precisions); }
   void trim() override { net_.trim(); }
   GmfssTuning& tuning() { return tuning_; }

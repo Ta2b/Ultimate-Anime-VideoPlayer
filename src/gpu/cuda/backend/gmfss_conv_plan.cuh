@@ -146,6 +146,9 @@ class ConvNet {
 
   bool has_head(int piece) const;
   bool planar_head_ready() const;
+  bool planar_ring_ready() const { return planar_ring_blocker() == nullptr; }
+  std::string planar_ring_report() const;
+  void use_planar_ring(bool enabled) { planar_ring_on_ = enabled && planar_ring_ready(); }
   bool join_ready() const;
   bool tail_ready() const;
   bool folded_tail_ready() const { return folded_weights_.as<const void>() != nullptr; }
@@ -169,6 +172,7 @@ class ConvNet {
  private:
   void lifetimes(const prepare::GmfssGrid& grid, const Io& io);
   void place(const prepare::GmfssGrid& grid, const Io& io);
+  const char* planar_ring_blocker() const;
   void pack();
   bool residual_pair(std::size_t index) const;
   void plan_residual_rings(const Tuner& tuner);
@@ -200,6 +204,8 @@ class ConvNet {
   bool folded_tail_on_ = false;
   rn::Buffer folded_weights_, folded_edges_, folded_bias_;
   int planar_head_ = -1;
+  bool planar_ring_device_ = false;
+  bool planar_ring_on_ = false;
   std::vector<Layer> layers_;
   std::int64_t zone_bytes_ = 0;
   std::int64_t partial_bytes_ = 0;

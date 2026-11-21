@@ -221,8 +221,9 @@ __device__ __forceinline__ __half2 to_half2(float lo, float hi) {
 
 // La tranche [c0, c0 + Kc) de la tuile d'entrée en mémoire partagée, au pas Kc + 8 : kIR × kIC pixels dont
 // l'origine est (y0, x0) ; zéros hors de l'image.
-template <int Kc, int S, int IR, int IC, bool Blocked8 = false>
+template <int Kc, int S, int IR, int IC, bool Blocked8 = false, int RingRows = 0>
 __device__ __forceinline__ void load_nhwc(__half* s, const Params& p, int c0, int y0, int x0) {
+  static_assert(RingRows == 0 || (!Blocked8 && (RingRows & (RingRows - 1)) == 0));
   constexpr int kChunks = Kc / 8, kLds = Kc + 8;
   const std::uint32_t base = smem_u32(s);
   for (int i = static_cast<int>(threadIdx.x); i < IR * IC * kChunks; i += kThreads) {
@@ -230,7 +231,8 @@ __device__ __forceinline__ void load_nhwc(__half* s, const Params& p, int c0, in
     const int r = q / IC, col = q - r * IC;
     const int y = y0 + r, x = x0 + col;
     const bool ok = y >= 0 && y < p.ih && x >= 0 && x < p.iw;
-    const long pixel = static_cast<long>(y) * p.iw + x;
+    const int memory_y = RingRows == 0 ? y : y & (RingRows - 1);
+    const long pixel = static_cast<long>(memory_y) * p.iw + x;
     const long src = Blocked8 ? ((c0 / 8 + c) * p.in_plane + pixel) * 8 : pixel * p.in_ld + c0 + c * 8;
     const __half* from = ok ? p.in + src : p.in;
     const int at = r * IC + smem_col<S, IC>(col);
@@ -535,7 +537,7 @@ __global__ void reduce_kernel(ParamsOf<Batch> p, int width) {
 // d'origine (ty0, tx0), le paquet z de poids (phase · tiles + tuile), la part kz de K ; s, la mémoire
 // partagée de la tuile d'entrée. KH = 3 : 3 × 3 de bord 1, pas S. KH = 2 (S = 1) : la phase z / tiles d'une
 // transposée 4 × 4 de pas 2, dont les deux prises par axe sont aux décalages py - 1 et py.
-template <int Kc, int CT, int KH, int S, int Rows, In I, Acc A, bool Ahead>
+template <int Kc, int CT, int KH, int S, int Rows, In I, Acc A, bool Ahead, int RingRows = 0>
 __device__ __forceinline__ void conv_sums(Frag<A> (&acc)[Rows * 2][CT / 8], __half* s, const Params& p,
                                           int ty0, int tx0, int z, int kz, int warp, int lane) {
   using G = Geometry<KH, S, Rows>;
@@ -560,8 +562,8 @@ __device__ __forceinline__ void conv_sums(Frag<A> (&acc)[Rows * 2][CT / 8], __ha
     if constexpr (I == In::kImage) {
       load_image<S, G::kIR, G::kIC>(s, p, ty0 * S + origin_y, tx0 * S + origin_x);
     } else {
-      load_nhwc<Kc, S, G::kIR, G::kIC, I == In::kBlocked8>(s, p, q * Kc, ty0 * S + origin_y,
-                                                           tx0 * S + origin_x);
+      load_nhwc<Kc, S, G::kIR, G::kIC, I == In::kBlocked8, RingRows>(s, p, q * Kc, ty0 * S + origin_y,
+                                                                     tx0 * S + origin_x);
       cp_async_wait_all();
     }
     __syncthreads();

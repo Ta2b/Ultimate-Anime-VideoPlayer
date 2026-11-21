@@ -118,6 +118,33 @@ bool shuffle_ring_source(const Layer& layer) {
          layer.packs[pack_index(64)].as<const void>() != nullptr;
 }
 
+bool planar_ring_fits_cache() {
+  constexpr int kMinL2Bytes = 40 * 1024 * 1024;
+  int device = 0, l2 = 0;
+  return cudaGetDevice(&device) == cudaSuccess &&
+         cudaDeviceGetAttribute(&l2, cudaDevAttrL2CacheSize, device) == cudaSuccess && l2 >= kMinL2Bytes;
+}
+
+bool planar_ring_consumer(const Layer& layer, int height, int width) {
+  constexpr int channels = gmfss_grid_ring::kChannels;
+  return layer.kind == Kind::kSame && layer.phases == 1 && !layer.blocked8 && layer.skip_ld == channels &&
+         layer.in_ld == channels && layer.out_ld == channels && layer.cin == channels &&
+         layer.cout == channels && layer.in_slope == 1.F && layer.ih == height && layer.oh == height &&
+         layer.iw == width && layer.ow == width;
+}
+
+const char* planar_ring_launch_blocker(const Layer& layer) {
+  const Shape& shape = layer.shape();
+  const auto& c = shape.cfg;
+  if (c.ksplit != 1) return "K découpé dans la forme du consommateur";
+  if (c.bands != 0) return "forme en flux du consommateur";
+  if (!shape.launch || shape.launch != rn::pick_for(layer.sums, layer.kind, c.kc, c.ct, c.rows, c.ahead))
+    return "lanceur du consommateur distinct du noyau natif direct";
+  if (!gmfss_grid_ring::pick_exact(c.kc, c.ct, c.rows, c.ahead))
+    return "tuiles du consommateur sans équivalent dans l'anneau";
+  return nullptr;
+}
+
 bool on_ada() {
   int device = 0, major = 0, minor = 0;
   return cudaGetDevice(&device) == cudaSuccess &&
@@ -238,6 +265,8 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
   join_tensors_.clear();
   join_on_ = false;
   planar_head_ = -1;
+  planar_ring_device_ = false;
+  planar_ring_on_ = false;
   tail_on_ = false;
   folded_tail_on_ = false;
   folded_weights_.release();
@@ -266,6 +295,7 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
   }();
   const bool try_join = io.rgb >= 0 && grid.steps.size() == 45 && width_ == 960 && height_ == 576 && on_ada();
   planar_head_ = find_planar_head(grid, layers_, height_, width_, try_join);
+  planar_ring_device_ = planar_head_ >= 0 && planar_ring_fits_cache();
   if (try_ring && io.rgb >= 0 && height_ >= gmfss_grid_ring::kRingRows) plan_residual_rings(tuner);
   if (try_join) {
     const auto bytes = std::int64_t{gmfss_grid_join::kWorkspaceRows} * width_ * 64 * 2;
@@ -329,6 +359,37 @@ bool ConvNet::planar_head_ready() const {
   return shape.launch != nullptr &&
          shape.launch == rn::pick_for(l.sums, l.kind, c.kc, c.ct, c.rows, c.ahead) &&
          gmfss_grid_head::pick(c, l.sums) != nullptr;
+}
+
+const char* ConvNet::planar_ring_blocker() const {
+  constexpr int channels = gmfss_grid_ring::kChannels;
+  constexpr auto f16 = RifeNativeSums::kF16;
+  if (planar_head_ < 0) return "tête planaire indisponible pour cette taille ou architecture";
+  if (!planar_ring_device_) return "L2 inférieur à 40 Mio ou non renseigné";
+  if (!planar_head_ready()) return "forme de la tête planaire sans lanceur compatible";
+  const auto i = static_cast<std::size_t>(planar_head_);
+  if (i + 1 >= layers_.size()) return "consommateur absent";
+  const Layer& first = layers_[i];
+  const Layer& second = layers_[i + 1];
+  if (first.sums != f16 || second.sums != f16) return "sommes différentes de f16";
+  if (first.shape().cfg.ct != channels) return "tuile du producteur différente de CT64";
+  if (!planar_ring_consumer(second, height_, width_)) return "géométrie du consommateur incompatible";
+  if (const char* blocker = planar_ring_launch_blocker(second)) return blocker;
+  if (first.piece != second.piece) return "producteur et consommateur dans des morceaux différents";
+  if (second.from != first.to) return "entrée du consommateur différente du temporaire";
+  if (second.skip < 0 || second.skip == first.to || second.skip == second.to)
+    return "identité du résiduel externe incompatible";
+  const Placed& temp = tensor(first.to);
+  const auto bytes = std::int64_t{gmfss_grid_ring::kRingRows} * width_ * channels * 2;
+  if (temp.external >= 0 || temp.first != planar_head_ || temp.last != planar_head_ + 1)
+    return "durée de vie du temporaire différente de la paire";
+  if (temp.bytes < bytes) return "temporaire trop petit pour l'anneau";
+  const auto aliases = [&](const Placed& t) {
+    return t.external >= 0 || (t.offset < temp.offset + bytes && temp.offset < t.offset + t.bytes);
+  };
+  if (aliases(tensor(second.skip))) return "résiduel hors arène ou superposé à l'anneau";
+  if (aliases(tensor(second.to))) return "sortie hors arène ou superposée à l'anneau";
+  return nullptr;
 }
 
 bool ConvNet::tail_ready() const {
@@ -398,8 +459,17 @@ bool ConvNet::run(cudaStream_t stream, void* zone, float* partial, std::span<con
     const rn::Params p = parameters(layer, direct ? rgb : address(layer.to, zone, bound));
     constexpr auto f16 = RifeNativeSums::kF16;
     if (planar_head && static_cast<int>(i) == planar_head_) {
-      const auto launch = gmfss_grid_head::pick(shape.cfg, layer.sums);
-      launch(shape.grid, shape.smem, stream, p, {(*planar_head)[0], (*planar_head)[1], (*planar_head)[2]});
+      const gmfss_grid_head::Images images{(*planar_head)[0], (*planar_head)[1], (*planar_head)[2]};
+      if (planar_ring_on_) {
+        const Layer& second = layers_[++i];
+        const auto q = parameters(second, address(second.to, zone, bound));
+        const auto& c = second.shape().cfg;
+        const auto consume = gmfss_grid_ring::pick_exact(c.kc, c.ct, c.rows, c.ahead);
+        gmfss_grid_head::enqueue_ring(p, q, images, shape.cfg, consume, stream);
+      } else {
+        const auto launch = gmfss_grid_head::pick(shape.cfg, layer.sums);
+        launch(shape.grid, shape.smem, stream, p, images);
+      }
     } else if (folded_tail_on_ && separate_tail_output(i, piece, rgb, zone, bound)) {
       gmfss_grid_folded::enqueue({.input = p.in,
                                   .output = rgb,
