@@ -372,6 +372,11 @@ structurellement nulles de la reconstruction réduit la médiane de cette couche
 Les 33 177 600 codes FP16 sont égaux sur la même image. Le temps reste supérieur à la référence
 verticale mesurée à 341,4 µs dans le banc précédent.
 
+La zone de travail Winograd verticale compacte passe de 398 à 145 Mo en bandes de 64 lignes,
+et à 224 Mo en bandes de 128 lignes. Le banc Ada conserve les octets de sortie sur deux images
+dans les deux configurations. Les bandes de 64 lignes rallongent les médianes sur les deux
+images. Les bandes de 128 lignes donnent un résultat variable. Le candidat reste au banc.
+
 Pour une entrée 1920×1080, le décompte sur les convolutions des ONNX officiels, à 160 TFLOP/s en
 accumulation FP16, donne les bornes arithmétiques suivantes. Il compte le premier filtre avec un K
 rembourré de 12 à 16 canaux, les portes 1×1 et les autres convolutions à leur taille réelle. Le calcul
@@ -404,6 +409,8 @@ Pour les grilles de 64 colonnes ou moins, le lecteur et le moteur calculent les 
 combinant des lignes de bits. Les mêmes tuiles sont marquées. À 30×68 et 10 % de tuiles
 modifiées, le microbanc du code final passe de 52,8 à 17,4 µs pour cinq masques. Avec 25 % de
 tuiles modifiées, il passe de 87,0 à 19,2 µs. Ces durées concernent la préparation des masques.
+Le plan du lecteur combine les deux dilatations du halo en une seule et reprend le premier compte
+de la région après l'élargissement du cœur. Les masques et les compteurs restent identiques.
 
 | Modèle FP16 | Cadence Wayland | Passes SPAN, médiane | Passes SPAN, p95 |
 | --- | ---: | ---: | ---: |

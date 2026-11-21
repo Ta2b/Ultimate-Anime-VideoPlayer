@@ -169,12 +169,11 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
     raw[i] = why[i] != Cause::None ? 1 : 0;
     ++causes[static_cast<std::size_t>(why[i])];
   }
-  // Le cœur : ce qui a changé, et toute sortie qui le voit ; la région : le cœur, et tout ce qu'il lit.
+  // La région ajoute au halo des changements le halo du réseau. Les deux dilatations
+  // rectangulaires se composent en additionnant leurs portées sur chaque axe.
   const auto [reach_cols, reach_rows] = reach(facts.spread_px);
-  std::vector<std::uint8_t> core =
-      kernels::dilate_span_tiles(raw, grid_.cols, grid_.rows, reach_cols, reach_rows);
-  const std::vector<std::uint8_t> wide =
-      kernels::dilate_span_tiles(core, grid_.cols, grid_.rows, grid_.reach_cols, grid_.reach_rows);
+  const std::vector<std::uint8_t> wide = kernels::dilate_span_tiles(
+      raw, grid_.cols, grid_.rows, reach_cols + grid_.reach_cols, reach_rows + grid_.reach_rows);
   const int wide_count = kernels::count_span_tiles(wide);
   if (static_cast<double>(wide_count) > kMaxShare * static_cast<double>(age_.size())) {
     ++too_wide_;
@@ -185,7 +184,7 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
   }
   // Toute sortie dont le champ du réseau tient dans la région calculée est exacte : elle s'écrit aussi, sans
   // rien calculer de plus (le moteur ne dilate pas au-delà de wide), et repart de cette image.
-  core = eroded(wide, grid_, grid_.reach_cols, grid_.reach_rows);
+  auto core = eroded(wide, grid_, grid_.reach_cols, grid_.reach_rows);
   for (std::size_t i = 0; i < age_.size(); ++i) age_[i] = core[i] != 0 ? 0 : age_[i] + 1;
   // Un bloc repart de zéro quand toute sortie qui le voit est recalculée : ses tuiles et tout ce qui est à
   // leur portée. Recalculer ses seules tuiles ne suffit pas : une voisine reprise a vu son entrée d'avant.
@@ -196,9 +195,9 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
     if (all) sums_[b] = 0;
   }
   base_ = sums_;
+  // Le cœur élargi contient le cœur initial et son halo reste dans wide. Le halo redonne donc wide.
   last_ = Counted{.core = static_cast<std::uint64_t>(kernels::count_span_tiles(core)),
-                  .wide = static_cast<std::uint64_t>(kernels::count_span_tiles(kernels::dilate_span_tiles(
-                      core, grid_.cols, grid_.rows, grid_.reach_cols, grid_.reach_rows)))};
+                  .wide = static_cast<std::uint64_t>(wide_count)};
   ++tiled_;
   tiles_done_ += last_.core;
   tiles_wide_ += last_.wide;
