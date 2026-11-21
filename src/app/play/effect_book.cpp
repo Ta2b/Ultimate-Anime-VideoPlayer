@@ -1,12 +1,19 @@
 #include "app/play/effect_book.h"
 
 #include <algorithm>
-#include <cstdlib>
+#include <limits>
 #include <utility>
 
 #include "core/frame.h"
 
 namespace kirari::app::play {
+namespace {
+
+constexpr std::uint64_t elapsed_pts(std::int64_t earlier, std::int64_t later) {
+  return static_cast<std::uint64_t>(later) - static_cast<std::uint64_t>(earlier);
+}
+
+}  // namespace
 
 render::EffectTiles effect_tiles_of(const kernels::SceneMotion& scene, int work_width, int work_height,
                                     std::int64_t span_us, bool cut) {
@@ -57,7 +64,7 @@ std::optional<EffectNote> EffectBook::for_source(std::uint32_t epoch, std::int64
     if (pts_us == kNoPts || note.to_us == pts_us) return note;
     if (note.to_us > pts_us) continue;
     // Après le contrôle de l'ordre, l'écart non signé couvre aussi des PTS de signes opposés.
-    const auto age_us = static_cast<std::uint64_t>(pts_us) - static_cast<std::uint64_t>(note.to_us);
+    const auto age_us = elapsed_pts(note.to_us, pts_us);
     if (age_us > static_cast<std::uint64_t>(kEffectStaleUs)) continue;
     if (newest == nullptr || newest->to_us < note.to_us) newest = &note;
   }
@@ -98,7 +105,8 @@ void EffectTally::keep(Moment moment) {
   // Un moment plus fort à moins de 10 s l'emporte ; sinon celui-ci remplace les plus faibles de son
   // voisinage, puis le plus faible de tous.
   const auto near = [&](const Moment& kept) {
-    return kept.effect > 0.0 && std::abs(kept.pts_us - moment.pts_us) < kTallySpacingUs;
+    const auto [earlier, later] = std::minmax(kept.pts_us, moment.pts_us);
+    return kept.effect > 0.0 && elapsed_pts(earlier, later) < static_cast<std::uint64_t>(kTallySpacingUs);
   };
   for (const Moment& kept : moments_) {
     if (near(kept) && kept.effect >= moment.effect) return;
@@ -122,14 +130,17 @@ bool EffectFollower::show(const std::optional<EffectNote>& note, std::int64_t pt
     // Pas de carte pour l'image montrée : vers le neutre, au temps écoulé entre deux images montrées (une
     // image représentée ne compte pas ; un pts inconnu ou qui recule, comme une image à 23,976 i/s).
     seen_ = false;
+    const auto current = known_pts(pts_us);
     if (mask_.neutral()) {
-      last_pts_ = pts_us;
+      last_pts_ = current;
       return mask_.serial() != before;
     }
-    if (last_pts_ && *last_pts_ == pts_us) return false;
-    const std::int64_t span = last_pts_ && pts_us > *last_pts_ ? pts_us - *last_pts_ : 0;
-    last_pts_ = pts_us;
-    mask_.relax(span);
+    if (current && current == last_pts_) return false;
+    const auto earlier = last_pts_.value_or(pts_us);
+    const auto span = pts_us > earlier ? elapsed_pts(earlier, pts_us) : 0U;
+    constexpr auto max_span = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    last_pts_ = current;
+    mask_.relax(static_cast<std::int64_t>(std::min(span, max_span)));
     return mask_.serial() != before;
   }
   last_pts_.reset();

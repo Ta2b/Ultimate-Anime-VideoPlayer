@@ -392,6 +392,10 @@ flux 4×4 les retrouve toutes (six et quatre). Une extinction de la couleur à l
 retire toutes les ancres malgré un déplacement exact. Les grilles 2×2, 1×1 pleine image et 1×1 en
 région retrouvent les mêmes ancres. Sur ces témoins, 4×4 suffit pour confirmer le trajet. Une
 couronne présente et compatible dans l'image courante reste nécessaire pour autoriser un éclat.
+
+Sans carte de scène, l'éclat revient progressivement au neutre. Une image dont le PTS est inconnu
+fait avancer ce fondu d'un pas nominal. Le premier PTS connu après elle reprend sur un pas nominal
+également. Une nouvelle présentation du même PTS connu ne fait pas avancer le masque.
 L'activation dans le lecteur attend des effets mobiles annotés en scène réelle.
 
 ## A2 : décisions par plan

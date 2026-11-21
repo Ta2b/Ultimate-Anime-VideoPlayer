@@ -2,8 +2,10 @@
 // le masque, les notes par paire, et le masque que suivent l'écran et le grade avant le warp.
 #include "app/play/effect_book.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -133,6 +135,23 @@ TEST_CASE("Éclats des effets : une coupe sans tuiles signale la fin du masque a
   CHECK_FALSE(follower.show(next, next.to_us));
 }
 
+TEST_CASE("Éclats des effets : les PTS inconnus et distants gardent la bonne durée", "[app]") {
+  EffectFollower follower;
+  REQUIRE(follower.show(note(0, 41'708, 0.0F, true), 41'708));
+  auto expected = follower.mask();
+  CHECK(follower.show(std::nullopt, kNoPts));
+  expected.relax(0);
+  CHECK(follower.show(std::nullopt, kNoPts));
+  expected.relax(0);
+  CHECK(follower.show(std::nullopt, 83'416));
+  expected.relax(0);
+  CHECK(std::ranges::equal(follower.mask().values(), expected.values()));
+
+  CHECK(follower.show(std::nullopt, kNoPts + 1));
+  CHECK(follower.show(std::nullopt, std::numeric_limits<std::int64_t>::max()));
+  CHECK(follower.mask().neutral());
+}
+
 TEST_CASE("Éclats des effets : après un saut, une image sans carte ne garde pas l'ancien masque", "[app]") {
   const auto old = note(0, 41'708, 0.0F, true);
   EffectFollower follower;
@@ -243,6 +262,11 @@ TEST_CASE("Éclats des effets : le journal de fin compte les images et garde les
   CHECK(seen.held > 0.2);
   CHECK_FALSE(effect_summary(half, false).on);
   CHECK_FALSE(effect_summary(none, true).on);
+  EffectTally distant;
+  distant.count(true, true, half, kNoPts + 1);
+  distant.count(true, true, half, std::numeric_limits<std::int64_t>::max());
+  CHECK(distant.moments()[0].effect > 0.0);
+  CHECK(distant.moments()[1].effect > 0.0);
 }
 
 }  // namespace kirari::app::play
