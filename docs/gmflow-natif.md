@@ -172,6 +172,18 @@ Le [modèle du demi-flot mixte](../tools/gmfss/gmflow_natif_couts.py) donne 4,09
 et Winograd, soit 4,551 ms pour le palier de 90 %. Le banc GMFlow avec réemploi atteint environ
 74 % sur cette base. La plage du lecteur inclut les préparations et s'établit à environ 62 %.
 
+La même table d'indices accélère aussi l'attention stricte au huitième, avec les tuiles de 64
+requêtes et les sommes FP32. Le MLP rapide Ada groupe par deux les opérations de la GELU
+effectuées aux frontières FP16, avec le même polynôme FP32. Les 65 536 codes Half testés donnent les
+mêmes bits. En ABBA sur trois triplets, les neuf sorties de la paire restent identiques bit à bit.
+Les minima du GMFlow complet gagnent 55 à 99 µs avec réemploi et 107 à 131 µs à froid.
+
+Dans un A/B lecteur en ×2, la médiane du noyau d'attention au huitième passe de 44,06 à 39,46 µs.
+Celle des MLP au quart passe de 258,29 à 247,44 µs. La plage complète GMFlow passe de 6,769 à
+6,347 ms, soit environ 65 % du plancher modélisé avec les préparations incluses. D'autres étages
+varient entre les deux passages. Le compositeur confirme 170 images sur 170 de chaque côté,
+à 48,00 et 47,99 i/s, sans interpolation RIFE.
+
 ```sh
 python3 tools/gmfss/gmflow_natif_couts.py --width 1920 --height 1152 --scale 0.5 \
   --plancher --reprise --winograd --rapide

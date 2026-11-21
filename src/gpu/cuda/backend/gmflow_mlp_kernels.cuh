@@ -202,21 +202,38 @@ __device__ __forceinline__ float half_round(float v) {
   return __half2float(__float2half_rn(v));
 }
 
+// Approximation 7.1.25 d'Abramowitz–Stegun entre les deux frontières Half du moteur de référence.
+__device__ __forceinline__ float erf_fast(float z) {
+  const float denom = fmaf(fabsf(z), 0.470470011F, 1.F);
+  float t, exp;
+  asm("rcp.approx.ftz.f32 %0, %1;" : "=f"(t) : "f"(denom));
+  const float power = (z * z) * (-1.4426950216F);
+  asm("ex2.approx.ftz.f32 %0, %1;" : "=f"(exp) : "f"(power));
+  const float polynomial = fmaf(t, fmaf(t, -0.7478556037F, 0.09587980062F), -0.3480240107F);
+  return copysignf(fmaf(t * polynomial, exp, 1.F), z);
+}
+
 template <Acc A>
 __device__ __forceinline__ float gelu(float v) {
   if constexpr (A == Acc::kF16) {
-    // Approximation 7.1.25 d'Abramowitz–Stegun avec les frontières FP16 du moteur de référence.
     const float z = half_round(v * 0.70703125F);
-    const float denom = fmaf(fabsf(z), 0.470470011F, 1.F);
-    float t, exp;
-    asm("rcp.approx.ftz.f32 %0, %1;" : "=f"(t) : "f"(denom));
-    const float power = (z * z) * (-1.4426950216F);
-    asm("ex2.approx.ftz.f32 %0, %1;" : "=f"(exp) : "f"(power));
-    const float polynomial = fmaf(t, fmaf(t, -0.7478556037F, 0.09587980062F), -0.3480240107F);
-    const float error_function = copysignf(fmaf(t * polynomial, exp, 1.F), z);
-    return half_round(.5F * v) * half_round(1.F + half_round(error_function));
+    return half_round(.5F * v) * half_round(1.F + half_round(erf_fast(z)));
   }
   return 0.5F * v * (1.F + erff(v * kInvSqrt2));
+}
+
+// Les opérations entre valeurs Half rendent exactement les mêmes codes que leurs frontières f32 → Half.
+// Le polynôme garde ses opérations f32, et les limites de pack_half2 restent appliquées à l'écriture.
+__device__ __forceinline__ std::uint32_t gelu_half2(std::uint32_t bits) {
+  const __half2 x = *reinterpret_cast<const __half2*>(&bits);
+  const auto splat = [](float v) { return __floats2half2_rn(v, v); };
+  const float2 z = __half22float2(__hmul2_rn(x, splat(0.70703125F)));
+  const __half2 e = __floats2half2_rn(erf_fast(z.x), erf_fast(z.y));
+  const __half2 a = __hadd2_rn(splat(1.F), e);
+  const __half2 scaled = __hmul2_rn(x, splat(.5F));
+  const __half2 product = __hmul2_rn(scaled, a);
+  const __half2 clamped = __hmax2(__hmin2(product, splat(65504.F)), splat(-65504.F));
+  return *reinterpret_cast<const std::uint32_t*>(&clamped);
 }
 
 __device__ __forceinline__ std::uint32_t pack_half2(float lo, float hi) {
@@ -230,9 +247,17 @@ template <Acc A>
 __device__ __forceinline__ void gelu_stage(const rn::Frag<A> (&h)[2 * kNP1], int j, std::uint32_t (&a)[4]) {
 #pragma unroll
   for (int half = 0; half < 2; ++half) {
-    const float2 lo = h[2 * j + half].pair(0), hi = h[2 * j + half].pair(1);
-    a[2 * half] = pack_half2(gelu<A>(lo.x), gelu<A>(lo.y));
-    a[2 * half + 1] = pack_half2(gelu<A>(hi.x), gelu<A>(hi.y));
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 890
+    if constexpr (A == Acc::kF16) {
+      a[2 * half] = gelu_half2(h[2 * j + half].r[0]);
+      a[2 * half + 1] = gelu_half2(h[2 * j + half].r[1]);
+    } else
+#endif
+    {
+      const float2 lo = h[2 * j + half].pair(0), hi = h[2 * j + half].pair(1);
+      a[2 * half] = pack_half2(gelu<A>(lo.x), gelu<A>(lo.y));
+      a[2 * half + 1] = pack_half2(gelu<A>(hi.x), gelu<A>(hi.y));
+    }
   }
 }
 

@@ -94,6 +94,12 @@ __global__ void __launch_bounds__(ga::kFastQueryThreads, kIndexedMinBlocks)
   ga::attention<ga::Acc::kF16, true, ga::kFastQueryRows, ga::kFastQueryThreads, true>(p, smem_raw, index);
 }
 
+__global__ void __launch_bounds__(ga::kThreads, 2)
+    attention_strict_indexed(ga::AttnParams p, const std::uint32_t* index) {
+  extern __shared__ __align__(16) unsigned char smem_raw[];
+  ga::attention<ga::Acc::kF32, false, ga::kRows, ga::kThreads, true>(p, smem_raw, index);
+}
+
 std::vector<std::uint32_t> window_indices(ga::Grid g, bool shifted) {
   g.shifted = shifted;
   g.sh = shifted ? g.wh / 2 : 0;
@@ -123,7 +129,9 @@ class Net final : public GmflowAttentionNet {
     const int s = a.splits[static_cast<std::size_t>(scale)];
     grid_ = {.height = height, .width = width, .splits = s, .wh = height / s, .ww = width / s};
     grid_.length = grid_.wh * grid_.ww;
-    if (fast_ && scale == 1 && height == 72 && width == 120 && s == 8) {
+    const bool indexed_quarter = fast_ && scale == 1 && height == 72 && width == 120 && s == 8;
+    const bool indexed_eighth = !fast_ && scale == 0 && height == 36 && width == 60 && s == 2;
+    if (indexed_quarter || indexed_eighth) {
       int device = 0;
       cudaDeviceProp properties{};
       if (cudaGetDevice(&device) == cudaSuccess &&
@@ -223,6 +231,9 @@ class Net final : public GmflowAttentionNet {
       } else {
         ga::attention_kernel<ga::Acc::kF16, true><<<grid, ga::kThreads, smem, stream>>>(p);
       }
+    } else if (indexed_) {
+      attention_strict_indexed<<<grid, ga::kThreads, ga::kSmemBytes, stream>>>(
+          p, indices_[l.shifted].as<const std::uint32_t>());
     } else {
       ga::attention_kernel<ga::Acc::kF32><<<grid, ga::kThreads, ga::kSmemBytes, stream>>>(p);
     }
