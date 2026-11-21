@@ -22,7 +22,7 @@ DataPlaces locate_launch_data(const std::filesystem::path& data, const std::file
   const auto said = [](const std::string& line) { log_channel("app")->info("données : {}", line); };
   // Moteurs, modèles et caches en local (P3.15) ; ceux d'une version d'avant y sont déplacés une fois. Sous
   // Linux, les caches qui se refont seuls vont ensuite dans ~/.cache/kirari (A36-08).
-  DataPlaces places{.heavy = normal_launch ? local_data(data) : data};
+  DataPlaces places{.heavy = local_data(data, normal_launch)};
   places.cache = cache_data(home, places.heavy, xdg_cache);
   // --data-dir ou --bench-out peuvent viser un cache jetable sur un autre disque. Déplacer les plans
   // personnels dans ce cache les ferait disparaître à la fin de l'essai.

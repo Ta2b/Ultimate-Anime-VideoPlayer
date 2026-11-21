@@ -69,7 +69,8 @@ bool update_leftovers(const std::filesystem::path& updates, bool signed_by_updat
 
 }  // namespace
 
-std::filesystem::path local_data(const std::filesystem::path& roaming) {
+std::filesystem::path local_data(const std::filesystem::path& roaming,
+                                 [[maybe_unused]] bool migrate_previous) {
 #ifdef _WIN32
   PWSTR found = nullptr;
   if (SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &found) == S_OK && found) {
@@ -81,7 +82,7 @@ std::filesystem::path local_data(const std::filesystem::path& roaming) {
     if (!pref.has_filename()) pref = pref.parent_path();
     const std::filesystem::path base = local;
     local = base / pref.filename();
-    adopt_legacy_dir(base / kLegacyName / kLegacyName, local);
+    if (migrate_previous) adopt_legacy_dir(base / kLegacyName / kLegacyName, local);
     std::error_code made;
     std::filesystem::create_directories(local, made);
     if (!made) return local;

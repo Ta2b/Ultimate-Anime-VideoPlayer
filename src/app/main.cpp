@@ -661,9 +661,9 @@ int run_player(int argc, char** argv) {
   // Le thread principal présente les images : il passe devant les travaux de fond (core/thread_role.h).
   kirari::set_thread_role(kirari::ThreadRole::Playback);
   if (options->bake_looks) {
-    const auto baked = kirari::app::play::bake_looks(kirari::app::play::paths::play_settings(settings_dir),
-                                                     kirari::app::play::local_data(data) / "luts",  // A18-06
-                                                     *options->bake_looks);
+    const auto baked = kirari::app::play::bake_looks(
+        kirari::app::play::paths::play_settings(settings_dir),
+        kirari::app::play::local_data(data, normal_launch) / "luts", *options->bake_looks);
     if (!baked) return fail(baked.error());
     return 0;
   }

@@ -388,7 +388,7 @@ std::expected<Evaluation, Refusal> evaluate_machine(const BenchPlan& plan,
   // (media/bench_clip.h).
   BenchPlan own = plan;
   if (own.video.empty()) {
-    own.video = local_data(data_dir) / "bench-clip-v4.mkv";  // B36-08 : hors du profil itinérant
+    own.video = local_data(data_dir, false) / "bench-clip-v4.mkv";  // B36-08 : hors du profil itinérant
     std::error_code error;
     if (!std::filesystem::is_regular_file(own.video, error)) {
       if (plan.shown != nullptr)
