@@ -108,7 +108,15 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   n'est pas écrit. L'essai par morceau écrit toujours Y. L'essai chronomètre la passe retenue avec la fin fondue
   et avec la fin à part, et garde la plus rapide (ligne « fin du dernier bloc » du journal) ; la passe comparée
   part de sorties à NaN, pour qu'un pixel oublié ne garde pas la valeur de TensorRT. Neuf noyaux, sans
-  débordement de sm_75 à sm_120 ;
+  débordement de sm_75 à sm_120.
+
+  Dans la variante FP16 qui partage les quatre phases sur Ada à 1920 × 1088, la fin ne calcule que trois
+  fragments de huit canaux par phase, car elle ne lit que les 20 premiers canaux de Y. Elle consomme
+  22 464 octets de mémoire partagée contre 26 560 et supprime un quart des instructions MMA de la tête.
+  Le banc CUDA apparié sur RTX 4070 Ti donne 67–69 → 59–67 µs en sortie mouvement et 181–187 → 159–171 µs
+  en sortie image. Flots, masque et image bilinéaire sont identiques octet pour octet à 1920 × 1088,
+  de même que l'image Catmull-Rom avec recadrage à 208 × 144. Le chemin générique conserve sa tuile de
+  32 canaux.
 - **pas 2 sans conflit de banques** : la tuile d'entrée est rangée colonnes paires puis impaires, les 16 lignes
   d'un `ldmatrix` restent des pixels voisins (au pas 2 brut, deux lignes tombaient sur les mêmes banques) ;
 - **fragments B préchargés** : les poids du pas k suivant se lisent pendant les mma du pas courant ;

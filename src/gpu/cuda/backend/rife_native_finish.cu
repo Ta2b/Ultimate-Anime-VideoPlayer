@@ -14,16 +14,19 @@
 namespace kirari::gpu::cuda::rife_native {
 namespace {
 
-constexpr int kCT = 32;  // une tuile : les canaux 0 à 19 de Y y sont, 4c + parité pour c < 5
+constexpr int kCT = 32;  // pas des poids pour la première tuile de Y
+constexpr int kUsedChannels = 20;
+constexpr int kHeadFragments = (kUsedChannels + 7) / 8;
+constexpr int kHeadPitch = 8 * kHeadFragments;
 
-// La fin sur la tuile de sortie (o : la mémoire partagée de stage, pas kCT + 8). Le pixel (y, x) de la
+// La fin sur la tuile de sortie (o : la mémoire partagée au pas Pitch). Le pixel (y, x) de la
 // grille, à la phase (py, px), est le pixel (2y + py, 2x + px) de Y ; son canal 4c + 2a + b est le canal c de
 // Z au point pleine résolution (2(2y + py) + a, 2(2x + px) + b). Un fil par point ; deux fils voisins font
 // deux points voisins d'une ligne.
-template <int Rows>
+template <int Rows, int Pitch = kCT + 8>
 __device__ __forceinline__ void finish_tile(const __half* o, const Params& p, const FusedFinishParams& f,
                                             int ty0, int tx0, int phase) {
-  constexpr int kTH = kWarps * Rows, kLdo = kCT + 8;
+  constexpr int kTH = kWarps * Rows;
   const int py = phase >> 1, px = phase & 1;
   const std::size_t plane = static_cast<std::size_t>(f.height) * static_cast<std::size_t>(f.width);
   for (int i = static_cast<int>(threadIdx.x); i < kTH * kTW * 4; i += kThreads) {
@@ -32,7 +35,7 @@ __device__ __forceinline__ void finish_tile(const __half* o, const Params& p, co
     const int gy = ty0 + row, gx = tx0 + col;
     if (gy >= p.oh || gx >= p.ow) continue;
     const int x = 2 * (2 * gx + px) + b, y = 2 * (2 * gy + py) + a;
-    const __half* v = o + (row * kTW + col) * kLdo + 2 * a + b;
+    const __half* v = o + (row * kTW + col) * Pitch + 2 * a + b;
     float z[5];
 #pragma unroll
     for (int c = 0; c < 5; ++c) z[c] = __half2float(v[4 * c]);
@@ -74,6 +77,26 @@ FinishLaunch by_slice(int kc) {
   return nullptr;
 }
 
+// Seulement 24 canaux, dont les 20 lus par le warp final.
+__device__ __forceinline__ void stage_head(const Frag<Acc::kF16> (&acc)[2][kHeadFragments], __half* output,
+                                           const float* bias, int warp, int lane) {
+  const int g = lane >> 2, t = lane & 3;
+#pragma unroll
+  for (int f = 0; f < 2; ++f) {
+    const int q = warp * kTW + 16 * f + g;
+#pragma unroll
+    for (int n = 0; n < kHeadFragments; ++n) {
+      const int ch = n * 8 + 2 * t;
+      const float2 b = __ldg(reinterpret_cast<const float2*>(bias + ch));
+#pragma unroll
+      for (int h = 0; h < 2; ++h) {
+        const float2 v = acc[f][n].pair(h);
+        *reinterpret_cast<__half2*>(output + (q + 8 * h) * kHeadPitch + ch) = to_half2(v.x + b.x, v.y + b.y);
+      }
+    }
+  }
+}
+
 // RIFE Lite en 1080p : les quatre phases partagent l’entrée, gardée jusqu’au dernier warp.
 __global__ void __launch_bounds__(kThreads, 2) finish_four(Params p, FusedFinishParams f) {
   constexpr int kK = 32, kLd = kK + 8;
@@ -93,11 +116,11 @@ __global__ void __launch_bounds__(kThreads, 2) finish_four(Params p, FusedFinish
   for (int phase = 0; phase < 4; ++phase) {
     const int z = phase * p.tiles;
     const auto* weights = p.w + static_cast<long>(z) * 4 * 2 * 2 * 32 + lane;
-    Frag<Acc::kF16> acc[2][4];
+    Frag<Acc::kF16> acc[2][kHeadFragments];
 #pragma unroll
     for (int frag = 0; frag < 2; ++frag)
 #pragma unroll
-      for (int n = 0; n < 4; ++n) acc[frag][n].clear();
+      for (int n = 0; n < kHeadFragments; ++n) acc[frag][n].clear();
 #pragma unroll 1
     for (int tap = 0; tap < 4; ++tap) {
       const int row = warp + (phase >> 1) + (tap >> 1);
@@ -105,7 +128,8 @@ __global__ void __launch_bounds__(kThreads, 2) finish_four(Params p, FusedFinish
 #pragma unroll
       for (int sub = 0; sub < 2; ++sub) {
         const auto* at = weights + (tap * 2 + sub) * 64;
-        const uint4 lo = __ldg(at), hi = __ldg(at + 32);
+        const uint4 lo = __ldg(at);
+        const uint2 hi = __ldg(reinterpret_cast<const uint2*>(at + 32));
 #pragma unroll
         for (int frag = 0; frag < 2; ++frag) {
           std::uint32_t a[4];
@@ -114,19 +138,18 @@ __global__ void __launch_bounds__(kThreads, 2) finish_four(Params p, FusedFinish
           acc[frag][0].mma(a, lo.x, lo.y);
           acc[frag][1].mma(a, lo.z, lo.w);
           acc[frag][2].mma(a, hi.x, hi.y);
-          acc[frag][3].mma(a, hi.z, hi.w);
         }
       }
     }
     if (phase != 0) __syncthreads();  // la fin précédente a fini de lire output
-    stage<kCT, 1, Acc::kF16>(acc, output, p.bias + static_cast<long>(z) * kCT, warp, lane);
+    stage_head(acc, output, p.bias + static_cast<long>(z) * kCT, warp, lane);
     __syncthreads();
-    finish_tile<1>(output, p, f, y, x, phase);
+    finish_tile<1, kHeadPitch>(output, p, f, y, x, phase);
   }
 }
 void finish_four_phases(dim3 grid, int, cudaStream_t stream, const Params& p, const FusedFinishParams& f) {
   constexpr int kHeight = kWarps + 2;
-  constexpr int kBytes = (kHeight * (kTW + 2) + kWarps * kTW) * (kCT + 8) * 2;
+  constexpr int kBytes = (kHeight * (kTW + 2) * (kCT + 8) + kWarps * kTW * kHeadPitch) * 2;
   grid.z = 1;
   finish_four<<<grid, kThreads, kBytes, stream>>>(p, f);
 }
