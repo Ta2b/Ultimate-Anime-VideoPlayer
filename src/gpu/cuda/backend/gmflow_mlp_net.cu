@@ -25,6 +25,7 @@ static_assert(gm::kChannels == prepare::kGmflowMlpChannels &&
               gm::kHiddenTile == prepare::kGmflowMlpHiddenTile);
 
 constexpr int kMaxSplits = 8;
+constexpr int kLastFastScaleLayer = 5;
 
 // Le noyau lit et écrit les jetons par 16 octets (cp.async, uint4) : un tampon décalé dans un espace de
 // travail partagé doit le rester.
@@ -150,6 +151,67 @@ class Net final : public GmflowMlpNet {
       return false;
     }
     hidden_ = mlp.hidden;
+    if (!prepare_device(fast, error)) return false;
+    if (!prepare_compact(error)) return false;
+    if (!upload_layers(mlp, error)) return false;
+    partial_floats_ = partial_floats();
+    if (!sent(partial_.allocate(static_cast<std::size_t>(partial_floats_) * sizeof(float)), error))
+      return false;
+    return prepare_compact_strict(mlp, error);
+  }
+
+  std::int64_t workspace_bytes() const override { return partial_floats_ * 4; }
+
+  cudaError_t run(cudaStream_t stream, int layer, const void* x, const void* message, void* out,
+                  long tokens) const override {
+    if (layer < 0 || layer >= static_cast<int>(layers_.size()) || x == nullptr || message == nullptr ||
+        out == nullptr || tokens < 1 || tokens > max_tokens_ || !aligned16(x) || !aligned16(message) ||
+        !aligned16(out))
+      return cudaErrorInvalidValue;
+    const Layer& l = layers_[static_cast<std::size_t>(layer)];
+    const bool fast = fast_ && layer < kLastFastScaleLayer;
+    const bool compact = fast && compact_fast_ && tokens == max_tokens_;
+    const long block_tokens = compact ? gm::CompactBlock::kTokens : tokens_per_block();
+    const long blocks = (tokens + block_tokens - 1) / block_tokens;
+    gm::Params p;
+    p.x = static_cast<const __half*>(x);
+    p.message = static_cast<const __half*>(message);
+    p.out = static_cast<__half*>(out);
+    p.tokens = tokens;
+    p.hidden = hidden_;
+    p.splits = fast ? 1 : splits_for(blocks);
+    p.partial = p.splits > 1 ? partial_.as<float>() : nullptr;
+    const bool compact_strict =
+        compact_strict_ && layer == kLastFastScaleLayer && tokens == max_tokens_ && p.splits == 1;
+    p.w = (compact_strict ? strict_weights_ : l.w).as<const uint4>();
+    p.gamma = l.gamma.as<const float>();
+    p.beta = l.beta.as<const float>();
+    p.eps = l.eps;
+    const dim3 grid(static_cast<unsigned>(blocks), static_cast<unsigned>(p.splits));
+    enqueue(grid, stream, p, fast, compact, compact_strict);
+    if (p.splits > 1) gm::finish_kernel<<<static_cast<unsigned>((tokens + 7) / 8), 256, 0, stream>>>(p);
+    return cudaGetLastError();
+  }
+
+ private:
+  void enqueue(dim3 grid, cudaStream_t stream, const gm::Params& p, bool fast, bool compact,
+               bool compact_strict) const {
+    if (compact_strict) {
+      gm::mlp_compact_strict64<<<grid, gm::Block<4>::kThreads, gm::kCompactStrictSmem, stream>>>(p);
+    } else if (compact) {
+      gm::mlp_compact96<<<grid, gm::CompactBlock::kThreads, gm::kCompactSmem, stream>>>(p);
+    } else if (fast) {
+      launch<4, true, gm::Acc::kF16>(grid, stream, p);
+    } else if (paired_) {
+      launch<4, true>(grid, stream, p);
+    } else if (warps_ == 8) {
+      launch<8>(grid, stream, p);
+    } else {
+      launch<4>(grid, stream, p);
+    }
+  }
+
+  bool prepare_device(bool fast, std::string& error) {
     int device = 0, optin = 0, major = 0, minor = 0;
     if (!sent(cudaGetDevice(&device), error) ||
         !sent(cudaDeviceGetAttribute(&sms_, cudaDevAttrMultiProcessorCount, device), error) ||
@@ -176,57 +238,15 @@ class Net final : public GmflowMlpNet {
         paired_ ? prepare_kernel<4, true>() : (warps_ == 8 ? prepare_kernel<8>() : prepare_kernel<4>());
     if (!sent(prepared, error)) return false;
     if (fast_ && !sent(prepare_kernel<4, true, gm::Acc::kF16>(), error)) return false;
-    if (!prepare_compact(error)) return false;
-    if (!upload_layers(mlp, error)) return false;
-    partial_floats_ = partial_floats();
-    return sent(partial_.allocate(static_cast<std::size_t>(partial_floats_) * sizeof(float)), error);
+    return true;
   }
 
-  std::int64_t workspace_bytes() const override { return partial_floats_ * 4; }
-
-  cudaError_t run(cudaStream_t stream, int layer, const void* x, const void* message, void* out,
-                  long tokens) const override {
-    if (layer < 0 || layer >= static_cast<int>(layers_.size()) || x == nullptr || message == nullptr ||
-        out == nullptr || tokens < 1 || tokens > max_tokens_ || !aligned16(x) || !aligned16(message) ||
-        !aligned16(out))
-      return cudaErrorInvalidValue;
-    const Layer& l = layers_[static_cast<std::size_t>(layer)];
-    const bool fast = fast_ && layer < 5;
-    const bool compact = fast && compact_fast_ && tokens == max_tokens_;
-    const long block_tokens = compact ? gm::CompactBlock::kTokens : tokens_per_block();
-    const long blocks = (tokens + block_tokens - 1) / block_tokens;
-    gm::Params p;
-    p.x = static_cast<const __half*>(x);
-    p.message = static_cast<const __half*>(message);
-    p.out = static_cast<__half*>(out);
-    p.tokens = tokens;
-    p.hidden = hidden_;
-    p.splits = fast ? 1 : splits_for(blocks);
-    p.partial = p.splits > 1 ? partial_.as<float>() : nullptr;
-    p.w = l.w.as<const uint4>();
-    p.gamma = l.gamma.as<const float>();
-    p.beta = l.beta.as<const float>();
-    p.eps = l.eps;
-    const dim3 grid(static_cast<unsigned>(blocks), static_cast<unsigned>(p.splits));
-    if (compact) {
-      gm::mlp_compact96<<<grid, gm::CompactBlock::kThreads, gm::kCompactSmem, stream>>>(p);
-    } else if (fast) {
-      launch<4, true, gm::Acc::kF16>(grid, stream, p);
-    } else if (paired_) {
-      launch<4, true>(grid, stream, p);
-    } else if (warps_ == 8) {
-      launch<8>(grid, stream, p);
-    } else {
-      launch<4>(grid, stream, p);
-    }
-    if (p.splits > 1) gm::finish_kernel<<<static_cast<unsigned>((tokens + 7) / 8), 256, 0, stream>>>(p);
-    return cudaGetLastError();
+  bool compact_shape() const {
+    return fast_ && compact_requested_ && hidden_ == gm::kCompactHidden && max_tokens_ == 4 * 72 * 120;
   }
 
- private:
   bool prepare_compact(std::string& error) {
-    if (!fast_ || !compact_requested_ || hidden_ != gm::kCompactHidden || max_tokens_ != 4 * 72 * 120)
-      return true;
+    if (!compact_shape()) return true;
     const char* const compact = std::getenv("KIRARI_AB_GMFLOW_MLP_COMPACT96");  // env: banc
     if (compact != nullptr && std::strcmp(compact, "0") == 0) return true;
     const auto configured = cudaFuncSetAttribute(
@@ -237,6 +257,29 @@ class Net final : public GmflowMlpNet {
     }
     compact_fast_ = sent(configured, error);
     return compact_fast_;
+  }
+
+  bool prepare_compact_strict(const GmflowMlp& mlp, std::string& error) {
+    if (!compact_shape() || mlp.layers.size() != kLastFastScaleLayer + 1) return true;
+    const char* const enabled = std::getenv("KIRARI_AB_GMFLOW_MLP_STRICT64");  // env: banc
+    if (enabled != nullptr && std::strcmp(enabled, "0") == 0) return true;
+    const auto configured =
+        cudaFuncSetAttribute(gm::mlp_compact_strict64, cudaFuncAttributePreferredSharedMemoryCarveout,
+                             cudaSharedmemCarveoutMaxShared);
+    if (configured == cudaErrorNotSupported || configured == cudaErrorInvalidValue) {
+      static_cast<void>(cudaGetLastError());
+      return true;
+    }
+    if (!sent(configured, error)) return false;
+    // Le pack apparié reste disponible pour les appels à moins de jetons et le repli.
+    const auto packed = stages(mlp.layers[kLastFastScaleLayer], hidden_, false);
+    const auto uploaded = strict_weights_.upload(packed.data(), packed.size() * sizeof(uint4));
+    if (uploaded == cudaErrorMemoryAllocation) {
+      static_cast<void>(cudaGetLastError());
+      return true;
+    }
+    compact_strict_ = sent(uploaded, error);
+    return compact_strict_;
   }
 
   bool upload_layers(const GmflowMlp& mlp, std::string& error) {
@@ -299,6 +342,8 @@ class Net final : public GmflowMlpNet {
   bool fast_ = false;
   bool compact_requested_ = false;
   bool compact_fast_ = false;
+  bool compact_strict_ = false;
+  Buffer strict_weights_;
   std::vector<Layer> layers_;
   std::int64_t partial_floats_ = 0;
   Buffer partial_;

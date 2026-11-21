@@ -1,4 +1,4 @@
-// MLP FP16 au quart sur Ada : six warps partagent les poids et chacun garde ses 16 jetons.
+// MLP au quart sur Ada : chaque warp garde ses 16 jetons. La dernière couche accumule en FP32.
 #pragma once
 #include "gpu/cuda/backend/gmflow_mlp_kernels.cuh"
 
@@ -103,6 +103,71 @@ __global__ void __launch_bounds__(CompactBlock::kThreads, 2) mlp_compact96(Param
 #pragma unroll 1
   for (int c = 0; c < kChunks; c += 2) compact_chunk<B::kThreads>(o, ring, q, s, warp, lane, cached);
   finish_rows<Acc::kF16, true>(o, s, p, t0, warp, lane);
+}
+
+using StrictFrag = rn::Frag<Acc::kF32>;
+inline constexpr int kCompactStrictSmem = Block<4>::kTokens * kChannels * 2 + 4 * kStageVec * 16;
+
+// Une seule tranche cachée en vol. Le flux non apparié met deux étages W1 successifs dans une case large.
+__device__ __forceinline__ void compact_strict_chunk(StrictFrag (&o)[kTiles], Ring& ring, int& q, __half* s,
+                                                     int warp, int lane, const MessageFragments& cached) {
+  constexpr int kThreads = Block<4>::kThreads;
+  StrictFrag h[2 * kNP1];
+#pragma unroll
+  for (auto& tile : h) tile.clear();
+#pragma unroll 1
+  for (int i = 0; i < kStagesPerPlane; i += 2) {
+    const auto* slot = acquire_wide<kThreads>(ring, q++);
+    InputStage a;
+    residual_stage(a, s, warp, lane, i);
+    gemm1_stage(h, a, slot, lane);
+    residual_stage(a, s, warp, lane, i + 1);
+    gemm1_stage(h, a, slot + kStageVec, lane);
+  }
+#pragma unroll
+  for (int i = 0; i < kStagesPerPlane; i += 2) {
+    const auto* slot = acquire_wide<kThreads>(ring, q++);
+    gemm1_stage(h, cached[i], slot, lane);
+    gemm1_stage(h, cached[i + 1], slot + kStageVec, lane);
+  }
+  paired_gemm2<kThreads>(o, h, ring, q, lane);
+}
+
+// Seule Ada emprunte ce chemin. Les autres binaires compilent sans contraindre les registres à trois CTA.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ != 890
+inline constexpr int kCompactStrictBlocks = 2;
+#else
+inline constexpr int kCompactStrictBlocks = 3;
+#endif
+
+// Dernier MLP au quart, 1 024 canaux cachés et une seule part.
+__global__ void __launch_bounds__(Block<4>::kThreads, kCompactStrictBlocks) mlp_compact_strict64(Params p) {
+  using B = Block<4>;
+  constexpr int kHiddenChunks = kCompactHidden / kHiddenTile;
+  constexpr int kGroupsPerChunk = kChunkStages / 2;
+  extern __shared__ __align__(16) unsigned char smem_raw[];
+  auto* s = reinterpret_cast<__half*>(smem_raw);
+  const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
+  const long t0 = static_cast<long>(blockIdx.x) * B::kTokens;
+
+  load_residual<B::kThreads, B::kTokens>(s, p, t0);
+  cp_async_commit();
+  Ring ring{.w = p.w,
+            .slots = reinterpret_cast<uint4*>(s + B::kTokens * kChannels),
+            .next = 0,
+            .end = kHiddenChunks * kGroupsPerChunk};
+  issue_wide<B::kThreads>(ring);
+  MessageFragments cached{};
+#pragma unroll
+  for (int i = 0; i < kStagesPerPlane; ++i) message_stage(cached[i], p, t0, warp, lane, i);
+  StrictFrag o[kTiles];
+#pragma unroll
+  for (auto& tile : o) tile.clear();
+  int q = 0;
+#pragma unroll 1
+  for (int c = 0; c < kHiddenChunks; ++c) compact_strict_chunk(o, ring, q, s, warp, lane, cached);
+  round_mlp_output(o);
+  finish_rows<Acc::kF32, true>(o, s, p, t0, warp, lane);
 }
 
 }  // namespace kirari::gpu::cuda::gmflow_mlp

@@ -196,6 +196,14 @@ La plage GMFlow passe de 6,644 à 6,362 ms et son p95 de 7,539 à 7,343 ms. Wayl
 170 images sur 170 dans les deux passages, à 47,91 et 48,00 i/s, sans repli sur RIFE.
 `KIRARI_AB_GMFLOW_MLP_COMPACT96=0` choisit les tuiles précédentes pour un banc.
 
+Le sixième MLP garde maintenant les fragments du message en registres dans une tuile de 64 jetons.
+Sur 34 560 jetons à 1 024 canaux cachés, le noyau strict garde les sommes FP32 et l'arrondi avant
+la LayerNorm. Le banc utilise 4 423 680 codes de sortie identiques et passe de 386,5 à 370,3 µs.
+La comparaison de la paire native donne des sorties identiques sur les trois paires de chacun
+des trois triplets. La trace en lecture donne 385,9 à 372,8 µs pour ce sixième noyau (149 appels
+par passage), avec 170 images sur 170 confirmées par Wayland à 47,91 et 47,99 i/s.
+`KIRARI_AB_GMFLOW_MLP_STRICT64=0` rétablit le noyau précédent, indépendamment des cinq MLP rapides.
+
 Des Q/K/V groupés sur de vraies matrices donnent les mêmes codes FP16. Le meilleur minimum
 au quart passe de 164,3 à 169,9 µs pour les deux projections, et au huitième de 19,2 à 21,3 µs.
 Le regroupement réduit les lectures logiques mais limite le nombre de blocs résidents. Il reste

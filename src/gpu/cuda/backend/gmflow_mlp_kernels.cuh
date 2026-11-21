@@ -426,6 +426,18 @@ __device__ __forceinline__ void spill_rows(const rn::Frag<A> (&o)[kTiles], const
   }
 }
 
+// La sortie de W2 est arrondie en FP16 avant la LayerNorm, une fois toutes les sommes FP32 finies.
+template <Acc A>
+__device__ __forceinline__ void round_mlp_output(rn::Frag<A> (&o)[kTiles]) {
+  if constexpr (A != Acc::kF16) {
+#pragma unroll
+    for (auto& tile : o) {
+#pragma unroll
+      for (float& value : tile.r) value = __half2float(__float2half_rn(value));
+    }
+  }
+}
+
 // Une couche du MLP sur 16 · Warps jetons (blockIdx.x), pour les tranches cachées de la part blockIdx.y.
 template <int Warps, Acc A, bool Paired = false>
 __global__ void __launch_bounds__(Warps * 32, Warps == 4 ? 2 : 1) mlp_kernel(Params p) {
@@ -471,14 +483,7 @@ __global__ void __launch_bounds__(Warps * 32, Warps == 4 ? 2 : 1) mlp_kernel(Par
     spill_rows<A>(o, p, t0, warp, lane);
     return;
   }
-  // La sortie de W2 est Half à l'entrée de la LayerNorm TensorRT, après l'accumulation entière.
-  if constexpr (A != Acc::kF16) {
-#pragma unroll
-    for (auto& tile : o) {
-#pragma unroll
-      for (float& value : tile.r) value = __half2float(__float2half_rn(value));
-    }
-  }
+  round_mlp_output(o);
   finish_rows<A>(o, s, p, t0, warp, lane);
 }
 
