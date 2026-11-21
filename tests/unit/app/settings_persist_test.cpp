@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/chain.h"
@@ -536,6 +537,29 @@ TEST_CASE("play.toml : la taille de l'interface s'enregistre, automatique dans u
   PlaySettings wrong;
   wrong.ui_scale = 90;
   CHECK_FALSE(validate(wrong));
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("play.toml : deux lancements, chacun ne réécrit que les clés qu'il a changées (P2.14)",
+          "[app][settings]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-two.toml";
+  std::filesystem::remove(path);
+  REQUIRE(kirari::app::play::save_settings(path, kirari::app::play::PlaySettings{}));
+  auto ours = kirari::app::play::load_settings(path);
+  REQUIRE(ours);
+  // L'autre lancement réécrit le fichier : le volume change.
+  kirari::app::play::PlaySettings theirs = *ours;
+  theirs.volume = 0.25F;
+  {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << kirari::app::play::format_settings(theirs);
+  }
+  ours->audio_delay_ms = 120;
+  REQUIRE(kirari::app::play::save_settings(path, *ours));
+  const auto merged = kirari::app::play::load_settings(path);
+  REQUIRE(merged);
+  CHECK(merged->audio_delay_ms == 120);
+  CHECK(merged->volume == Catch::Approx(0.25F));
   std::filesystem::remove(path);
 }
 
