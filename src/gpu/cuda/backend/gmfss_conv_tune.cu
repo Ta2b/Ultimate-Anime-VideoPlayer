@@ -9,9 +9,11 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -363,6 +365,8 @@ void ConvNet::plan_join_rings(std::int64_t bytes, const Tuner& tuner) {
   for (std::size_t i = 0; i + 3 < layers_.size(); ++i)
     if (join_candidate(i, bytes, tuner)) candidates.push_back(i);
   if (candidates.empty()) return;
+  const char* phases = std::getenv("KIRARI_AB_GMFSS_JOIN_PHASES");  // env: banc
+  join_phases_ = phases == nullptr || std::string_view(phases) != "0";
   auto original_tensors = tensors_;
   const auto original_bytes = zone_bytes_;
   for (const auto i : candidates) {

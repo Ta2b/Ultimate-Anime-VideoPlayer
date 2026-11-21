@@ -62,6 +62,11 @@ FP16 complète avec et sans anneaux. Un écart conserve le plan normal. Sur deux
 960×576, la somme des médianes des groupes passe de 3,94 à 3,47 ms avec K32, à sortie bit à bit et à
 taille d'arène inchangée.
 
+Les transposées de ces jonctions partagent maintenant un halo entre les deux phases horizontales.
+Chaque phase garde ses poids, son ordre de produits et son arrondi FP16. Le chargeur vérifie toujours
+la sortie native entière. `KIRARI_AB_GMFSS_JOIN_PHASES=0` reprend les phases séparées pour un essai
+de comparaison sur la même arène.
+
 À cette même taille, certaines formes de la première convolution sur x0 lisent directement les neuf
 plans FP16 et appliquent le PReLU dans la tuile. Le message au chargement confirme un deuxième contrôle
 bit à bit de l'image entière. Sur les formes mesurées, la préparation et cette convolution gagnent

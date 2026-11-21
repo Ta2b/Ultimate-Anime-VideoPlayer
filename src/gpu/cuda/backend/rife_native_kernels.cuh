@@ -284,10 +284,12 @@ __device__ __forceinline__ void load_image(__half* s, const Params& p, int y0, i
 // le réglage au chargement choisit, couche par couche, entre l'occupation et la distance. L'ordre des sommes
 // est le même. En sommes mixtes, chaque prise finit par son report en f32.
 // acc[f][nt] : fragment f (ligne f / 2 du warp, colonnes 16·(f % 2) à + 15), tuile n8 nt.
-template <int Kc, int CT, int KH, int S, int Rows, Acc A, bool Ahead = false>
+template <int Kc, int CT, int KH, int S, int Rows, Acc A, bool Ahead = false,
+          int SharedWidth = Geometry<KH, S, Rows>::kIC>
 __device__ __forceinline__ void accumulate(Frag<A> (&acc)[Rows * 2][CT / 8], const __half* s, const uint4* w,
                                            int q, int kcs, int t0, int t1, int warp, int lane) {
   using G = Geometry<KH, S, Rows>;
+  static_assert(SharedWidth >= G::kIC);
   constexpr int kLds = Kc + 8, kSub = Kc / 16, kNP = CT / 16, kMF = Rows * 2;
   // ldmatrix.x4 : la lane l donne la ligne l % 16 du fragment (la colonne de sortie), demi-K l / 16. En pas
   // 2, ces 16 colonnes sont voisines dans la moitié paire ou impaire de la tuile.
@@ -306,7 +308,7 @@ __device__ __forceinline__ void accumulate(Frag<A> (&acc)[Rows * 2][CT / 8], con
     for (int f = 0; f < kMF; ++f) {
       const int row = (warp * Rows + (f >> 1)) * S + dy;
       const int col = 16 * (f & 1) + col0;
-      ldmatrix4(a[f], base + static_cast<std::uint32_t>(((row * G::kIC + col) * kLds + sub * 16) * 2));
+      ldmatrix4(a[f], base + static_cast<std::uint32_t>(((row * SharedWidth + col) * kLds + sub * 16) * 2));
     }
 #pragma unroll
     for (int f = 0; f < kMF; ++f)

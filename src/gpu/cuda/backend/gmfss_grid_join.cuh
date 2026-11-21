@@ -45,6 +45,75 @@ __device__ __forceinline__ void sums_ring(rn::Frag<rn::Acc::kF16> (&acc)[Rows * 
   }
 }
 
+template <int Rows>
+__device__ __forceinline__ void store_phase(const __half* s, const rn::Params& p, int y, int x, int z) {
+  constexpr int kChunks = kChannels / 8, kStride = kChannels + 8;
+  for (int i = static_cast<int>(threadIdx.x); i < Rows * rn::kWarps * rn::kTW * kChunks; i += rn::kThreads) {
+    const int q = i / kChunks, c = (i % kChunks) * 8;
+    const int yy = y + q / rn::kTW, xx = x + q % rn::kTW;
+    if (yy >= p.oh || xx >= p.ow) continue;
+    const long row = (2 * yy + (z >> 1)) & kRingMask;
+    const long pixel = row * (2 * p.ow) + 2 * xx + (z & 1);
+    const __half* from = s + q * kStride + c;
+    auto* out = reinterpret_cast<uint4*>(p.out + pixel * p.out_ld + c);
+    *out = *reinterpret_cast<const uint4*>(from);
+  }
+}
+
+template <int Kc, int Rows>
+__device__ __forceinline__ void sums_up_pair(rn::Frag<rn::Acc::kF16> (&acc)[2][Rows * 2][8], __half* s,
+                                             const rn::Params& p, int y, int x, int first_phase, int warp,
+                                             int lane) {
+  constexpr int kWidth = rn::kTW + 2, kRows = Rows * rn::kWarps + 1, kStride = Kc + 8;
+  const int kcs = p.cin / 16;
+#pragma unroll
+  for (int px = 0; px < 2; ++px)
+#pragma unroll
+    for (int f = 0; f < Rows * 2; ++f)
+#pragma unroll
+      for (int n = 0; n < kChannels / 8; ++n) acc[px][f][n].clear();
+#pragma unroll 1
+  for (int slice = 0; slice < p.cin / Kc; ++slice) {
+    if (slice != 0) __syncthreads();
+    rn::load_nhwc<Kc, 1, kRows, kWidth>(s, p, slice * Kc, y + (first_phase >> 1) - 1, x - 1);
+    rn::cp_async_wait_all();
+    __syncthreads();
+    if (p.in_slope != 1.F) {
+      rn::prelu_tile<Kc, kRows * kWidth>(s, p.in_slope);
+      __syncthreads();
+    }
+#pragma unroll
+    for (int px = 0; px < 2; ++px) {
+      const auto* weights = p.w + (first_phase + px) * 4 * kcs * (kChannels / 16) * 32;
+      rn::accumulate<Kc, kChannels, 2, 1, Rows, rn::Acc::kF16, false, kWidth>(
+          acc[px], s + px * kStride, weights, slice, kcs, 0, 4, warp, lane);
+    }
+  }
+}
+
+// Deux phases horizontales lisent la même tuile, à une colonne de distance. Chacune somme ses produits
+// dans le même ordre qu'un bloc de la transposée ordinaire, sans partager ses accumulateurs avec l'autre.
+template <int Kc, int Rows>
+__global__ void __launch_bounds__(rn::kThreads, 2) up_pair(rn::Params p, int first_y) {
+  extern __shared__ __align__(16) unsigned char bytes[];
+  auto* s = reinterpret_cast<__half*>(bytes);
+  const int warp = static_cast<int>(threadIdx.x) / 32, lane = static_cast<int>(threadIdx.x) % 32;
+  const int y = first_y + static_cast<int>(blockIdx.y) * Rows * rn::kWarps;
+  const int x = static_cast<int>(blockIdx.x) * rn::kTW;
+  const int first = 2 * static_cast<int>(blockIdx.z);
+  rn::Frag<rn::Acc::kF16> acc[2][Rows * 2][kChannels / 8];
+  sums_up_pair<Kc, Rows>(acc, s, p, y, x, first, warp, lane);
+  // Réutilisation du partagé après la dernière lecture de l'entrée, puis entre les deux écritures.
+#pragma unroll
+  for (int px = 0; px < 2; ++px) {
+    const int z = first + px;
+    __syncthreads();
+    rn::stage<kChannels, Rows, rn::Acc::kF16>(acc[px], s, p.bias + z * kChannels, warp, lane);
+    __syncthreads();
+    store_phase<Rows>(s, p, y, x, z);
+  }
+}
+
 template <int Kc, int Rows, bool Phase, bool SkipRing, bool Ahead = false>
 __global__ void __launch_bounds__(rn::kThreads, 2) conv_band(rn::Params p, int first_y) {
   static_assert(!Phase || (!SkipRing && !Ahead));
@@ -67,16 +136,14 @@ __global__ void __launch_bounds__(rn::kThreads, 2) conv_band(rn::Params p, int f
   rn::stage<kChannels, Rows, kAcc>(acc, s, p.bias + static_cast<long>(z) * kChannels, warp, lane);
   __syncthreads();
 
-  for (int i = static_cast<int>(threadIdx.x); i < kRows * rn::kTW * kChunks; i += rn::kThreads) {
-    const int q = i / kChunks, c = (i % kChunks) * 8;
-    const int yy = y + q / rn::kTW, xx = x + q % rn::kTW;
-    if (yy >= p.oh || xx >= p.ow) continue;
-    const uint4 v = *reinterpret_cast<const uint4*>(s + q * kStride + c);
-    if constexpr (Phase) {
-      const long row = (2 * yy + (z >> 1)) & kRingMask;
-      const long pixel = row * (2 * p.ow) + 2 * xx + (z & 1);
-      *reinterpret_cast<uint4*>(p.out + pixel * p.out_ld + c) = v;
-    } else {
+  if constexpr (Phase) {
+    store_phase<Rows>(s, p, y, x, z);
+  } else {
+    for (int i = static_cast<int>(threadIdx.x); i < kRows * rn::kTW * kChunks; i += rn::kThreads) {
+      const int q = i / kChunks, c = (i % kChunks) * 8;
+      const int yy = y + q / rn::kTW, xx = x + q % rn::kTW;
+      if (yy >= p.oh || xx >= p.ow) continue;
+      const uint4 v = *reinterpret_cast<const uint4*>(s + q * kStride + c);
       const long dst = static_cast<long>(SkipRing ? yy : yy & kRingMask) * p.ow + xx;
       const long skip = static_cast<long>(SkipRing ? yy & kRingMask : yy) * p.ow + xx;
       *reinterpret_cast<uint4*>(p.out + dst * p.out_ld + c) = rn::finish8(v, p, skip, c);
@@ -101,12 +168,30 @@ struct Config {
   bool residual_ahead;
   int residual_k, up_k, up_rows;
   bool add_ahead;
+  bool share_phases;
 };
+
+template <int Kc, int Rows>
+void launch_up_pair(rn::Params p, int first, int last, cudaStream_t stream) {
+  constexpr int kTile = Rows * rn::kWarps;
+  constexpr int kInput = (kTile + 1) * (rn::kTW + 2) * (Kc + 8);
+  constexpr int kOutput = kTile * rn::kTW * (kChannels + 8);
+  constexpr int kSmem = 2 * std::max(kInput, kOutput);
+  static_assert(kSmem <= 48 * 1024);
+  const dim3 grid((p.ow + rn::kTW - 1) / rn::kTW, (last - first + kTile - 1) / kTile, 2);
+  p.oh = last;
+  up_pair<Kc, Rows><<<grid, rn::kThreads, kSmem, stream>>>(p, first);
+}
+
+template <int Kc, int Rows>
+inline auto up_shape(bool share) {
+  return share ? launch_up_pair<Kc, Rows> : launch_band<Kc, Rows, true, false>;
+}
 
 inline gmfss_grid_ring::Band up_band(const Config& cfg) {
   if (cfg.up_k == 32)
-    return cfg.up_rows == 1 ? launch_band<32, 1, true, false> : launch_band<32, 2, true, false>;
-  return cfg.up_rows == 1 ? launch_band<64, 1, true, false> : launch_band<64, 2, true, false>;
+    return cfg.up_rows == 1 ? up_shape<32, 1>(cfg.share_phases) : up_shape<32, 2>(cfg.share_phases);
+  return cfg.up_rows == 1 ? up_shape<64, 1>(cfg.share_phases) : up_shape<64, 2>(cfg.share_phases);
 }
 
 inline constexpr int prefix(int rows, int tile, int end) {

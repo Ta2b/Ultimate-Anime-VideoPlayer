@@ -194,6 +194,7 @@ class ConvNet {
   std::vector<Placed> tensors_;
   std::vector<Placed> join_tensors_;
   bool join_on_ = false;
+  bool join_phases_ = true;
   bool try_tail_ = false;
   bool tail_on_ = false;
   bool folded_tail_on_ = false;

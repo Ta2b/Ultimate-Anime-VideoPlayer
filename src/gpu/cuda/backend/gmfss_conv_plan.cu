@@ -442,8 +442,12 @@ bool ConvNet::run(cudaStream_t stream, void* zone, float* partial, std::span<con
       args.up_second.in = storage + 2 * ring;
       args.up_second.skip = storage + ring;
       const auto& uc = up.shape().cfg;
-      const gmfss_grid_join::Config cfg{shape.cfg.ahead, b.shape().cfg.kc, uc.kc, uc.rows,
-                                        add.shape().cfg.ahead};
+      const gmfss_grid_join::Config cfg{.residual_ahead = shape.cfg.ahead,
+                                        .residual_k = b.shape().cfg.kc,
+                                        .up_k = uc.kc,
+                                        .up_rows = uc.rows,
+                                        .add_ahead = add.shape().cfg.ahead,
+                                        .share_phases = join_phases_};
       gmfss_grid_join::join(args, cfg, stream);
       i += 3;
     } else if (layer.ring_next && layer.sums == f16 && layers_[i + 1].sums == f16) {
