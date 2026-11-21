@@ -40,6 +40,7 @@ toml::table experimental_table(const ExperimentalSettings& s) {
                      {"nvof_layer_guard", s.nvof_layer_guard},
                      {"span_fp8_native_blocks", s.span_fp8_native_blocks},
                      {"effect_glow", s.effect_glow},
+                     {"guided_glows", s.guided_glows},
                      {"map_effects", s.map_effects}};
 }
 

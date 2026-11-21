@@ -28,7 +28,7 @@ const void* address(const Tensor& t) {
 }  // namespace
 
 std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Tensor& a, const Tensor& b,
-                                                                        bool restart) {
+                                                                        bool restart, bool guide) {
   if (!rgb_image(a) || !rgb_image(b) || a.type != b.type || a.shape.dims[2] != b.shape.dims[2] ||
       a.shape.dims[3] != b.shape.dims[3]) {
     return refuse(RefusalCode::ShapeInvalid,
@@ -38,12 +38,13 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Te
   const auto height = static_cast<int>(a.shape.dims[2]);
   const int divisor = kernels::scene_flow_divisor(height);
   if (auto ok = bind(); !ok) return std::unexpected(std::move(ok.error()));
-  if (!scene_flow_) scene_flow_ = std::make_unique<SceneFlow>(nvof_roundtrip_);
+  if (!scene_flow_) scene_flow_ = std::make_unique<SceneFlow>(nvof_roundtrip_, nvof_glow_);
   auto fresh = scene_flow_->prepare(width / divisor, height / divisor, divisor);
   if (!fresh) return std::unexpected(std::move(fresh.error()));
   // Une session neuve n'a pas d'indices : la couper ne change rien, et le dit au pilote. Sans coupure, a est
   // l'image b de la paire d'avant (gpu/kernel_ops.h) : sa luma est déjà dans un tampon de NVOF.
   const bool cold = restart || *fresh;
+  const bool want_guide = guide && nvof_glow_;
   // NVOF lit encore un tampon à écrire : la paire n'est pas lancée, la voie n'attend pas (ticket 0).
   auto plan = scene_flow_->plan(!cold);
   if (!plan) return std::unexpected(std::move(plan.error()));
@@ -54,8 +55,9 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Te
   const NvofSession::Pitched into_b = session.luma(lumas.b);
   const auto slot_a = reinterpret_cast<std::uintptr_t>(into_a.data);
   const auto slot_b = reinterpret_cast<std::uintptr_t>(into_b.data);
-  std::expected<void, Refusal> ready =
-      lumas.keep_a ? order({b.handle}, {slot_b}) : order({a.handle, b.handle}, {slot_a, slot_b});
+  std::expected<void, Refusal> ready = lumas.keep_a && !want_guide
+                                           ? order({b.handle}, {slot_b})
+                                           : order({a.handle, b.handle}, {slot_a, slot_b});
   if (ready) ready = scene_flow_->before_lumas(stream_, lumas);
   if (ready) {
     const kernels::Coefficients k = kernels::coefficients(kernels::Matrix::Bt709);
@@ -82,8 +84,16 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Te
   if (!ready) return std::unexpected(std::move(ready.error()));
   // Le flux tourne sur le bloc NVOFA, à côté des SM : sa mesure est une latence, pas un temps ajouté à chaque
   // image. Ce qui s'ajoute, ce sont les lumas et les tuiles (docs/carte-de-la-scene.md).
-  return scene_flow_->run(stream_, lumas, cold, stage("carte de la scène : flux (NVOFA)"),
-                          stage("carte de la scène : tuiles"));
+  GlowProfile glow_profile;
+  if (want_guide) {
+    glow_profile.reduce = &stage("lueurs HDR : agrégats");
+    glow_profile.crowns = &stage("lueurs HDR : couronnes");
+    glow_profile.match = &stage("lueurs HDR : rapprochement");
+  }
+  return scene_flow_->run(
+      stream_, lumas, cold, stage("carte de la scène : flux (NVOFA)"), stage("carte de la scène : tuiles"),
+      GlowSource{want_guide ? address(a) : nullptr, a.type == TensorType::F16, width, height},
+      GlowSource{want_guide ? address(b) : nullptr, b.type == TensorType::F16, width, height}, glow_profile);
 }
 
 std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> TensorRtBackend::scene_flow_take(
@@ -91,6 +101,10 @@ std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> TensorRtBackend::
   if (!scene_flow_)
     return refuse(RefusalCode::SequenceOrder, std::format("scene_flow_take : ticket {} périmé", ticket));
   return scene_flow_->take(ticket);
+}
+
+std::optional<kernels::SceneGlowTiles> TensorRtBackend::scene_glow_take(std::uint64_t ticket) {
+  return scene_flow_ ? scene_flow_->take_glow(ticket) : std::nullopt;
 }
 
 std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> TensorRtBackend::scene_roundtrip_take(

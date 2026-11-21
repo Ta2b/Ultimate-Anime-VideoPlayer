@@ -167,6 +167,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->span_fp8_native_blocks_ = (init.trials & kTrialSpanFp8NativeBlocks) != 0;
   backend->tfix_native_ = (init.trials & kTrialTfixNative) != 0;
   backend->nvof_roundtrip_ = (init.trials & kTrialNvofRoundtrip) != 0;
+  backend->nvof_glow_ = (init.trials & kTrialNvofGlow) != 0;
   backend->trtexec_ = std::move(trtexec);
   if (!backend->trtexec_.empty()) {
     // Son empreinte d'ouverture, revérifiée avant chaque construction (A05-05).

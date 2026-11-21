@@ -318,7 +318,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   // offer_still_scene : relue aussitôt, une scène où rien n'est mesuré (ni mouvement, ni changement).
   void offer_still_scene(bool on) { still_scene_ = on; }
   std::expected<std::uint64_t, Refusal> scene_flow_start(const gpu::Tensor& a, const gpu::Tensor& b,
-                                                         bool /*restart*/) override {
+                                                         bool /*restart*/, bool /*guide*/) override {
     const std::scoped_lock lock(mutex_);
     const gpu::PairScores ids = scores_of(a, b);
     push(std::format("scene_flow_start {} {}", ids.left.value, ids.right.value));

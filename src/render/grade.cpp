@@ -509,9 +509,12 @@ std::span<const pl_hook* const> Grade::hooks() const {
   return std::span<const pl_hook* const>(impl_->listed.data(), impl_->listed.size());
 }
 
-bool Grade::set_effect_mask(const EffectMask* mask) {
+bool Grade::set_effect_mask(const EffectMask* mask, EffectGuide guide) {
   Impl& s = *impl_;
-  const bool wanted = mask != nullptr && !mask->neutral();
+  const bool mask_wanted = mask != nullptr && !mask->neutral();
+  const bool guide_wanted = guide.cols > 0 && guide.rows > 0 &&
+                            guide.scores.size() == static_cast<std::size_t>(guide.cols) * guide.rows;
+  const bool wanted = mask_wanted || guide_wanted;
   if (wanted && !s.fx && !s.fx_refused) {
     auto made = EffectPass::create(s.gpu);
     if (made) {
@@ -521,7 +524,7 @@ bool Grade::set_effect_mask(const EffectMask* mask) {
     }
   }
   s.fx_on = wanted && s.fx;
-  if (s.fx_on) {
+  if (s.fx_on && mask_wanted) {
     // Les deux couches en une valeur (3-anime.hook) : codes 0 à 127 sur 255 pour la part de la marge gardée,
     // 127 à 255 pour l'effet sûr. Un 8 bits garde ainsi exactement « tout gardé, aucun effet » (127).
     const std::span<const float> keep = mask->values();
@@ -532,6 +535,13 @@ bool Grade::set_effect_mask(const EffectMask* mask) {
       s.fx_codes[i] = ((127.0F * std::clamp(keep[i], 0.0F, 1.0F)) + (128.0F * on)) / 255.0F;
     }
     s.fx->set(mask->cols(), mask->rows(), s.fx_codes, mask->cover_x(), mask->cover_y());
+  } else if (s.fx) {
+    s.fx->set(0, 0, {}, 1.0, 1.0);
+  }
+  if (s.fx && guide_wanted) {
+    s.fx->set_guide(guide.cols, guide.rows, guide.scores, guide.cover_x, guide.cover_y);
+  } else if (s.fx) {
+    s.fx->set_guide(0, 0, {}, 1.0, 1.0);
   }
   if (pl_var_data* data = find_param(*s.grade.hook, "fx_on")) data->f = s.fx_on ? 1.0F : 0.0F;
   return s.fx_on;

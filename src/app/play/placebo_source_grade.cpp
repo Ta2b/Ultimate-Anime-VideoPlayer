@@ -59,10 +59,15 @@ class PlaceboSourceGrader final : public SourceGrader {
     }
     if (const auto line = effect_tally_line("grade avant le warp", effects_tally_))
       log_channel("app")->info("{}", *line);
+    if (glow_submitted_ > 0)
+      log_channel("app")->info("lueurs HDR : {} cartes reçues sur {} sources gradées", glow_submitted_,
+                               graded_);
     ring_.clear(gpu_);
     pl_renderer_destroy(&renderer_);
     grade_.reset();
   }
+
+  bool available() const override { return share_->available(); }
 
   std::expected<bool, Refusal> grade(gpu::KernelOps& ops, const gpu::Tensor& rgb, bool debanded,
                                      const GradedSource& source) override {
@@ -77,7 +82,7 @@ class PlaceboSourceGrader final : public SourceGrader {
     const int height = static_cast<int>(rgb.shape.dims[2]);
     if (auto ok = open(width, height); !ok) return std::unexpected(std::move(ok.error()));
     if (auto ok = follow(state); !ok) return std::unexpected(std::move(ok.error()));
-    follow_effects(source);
+    const bool guided = follow_effects(source);
 
     // Entrée : le backend écrit (attente de sa libération, signal impair), libplacebo la lit puis la rend.
     const std::uint64_t in_ready = in_ready_ == 0 ? 1 : in_ready_ + 2;
@@ -105,6 +110,7 @@ class PlaceboSourceGrader final : public SourceGrader {
     if (auto ok = ops.read_ring(slots_[kOut], {.wait_value = out_ready, .signal_value = out_free_}, rgb); !ok)
       return std::unexpected(std::move(ok.error()));
     ++graded_;
+    if (guided) ++glow_submitted_;
     return true;
   }
 
@@ -154,10 +160,18 @@ class PlaceboSourceGrader final : public SourceGrader {
 
   // Éclats sur les seuls effets (effect_book.h) : le masque de cette source, posé dans le grade à part comme
   // l'écran le pose dans le sien (PlaceboScreen::Impl::follow_effects).
-  void follow_effects(const GradedSource& source) {
-    if (!grade_) return;  // jamais : follow vient de le poser
+  bool follow_effects(const GradedSource& source) {
+    if (!grade_) return false;  // jamais : follow vient de le poser
     effects_.source(source.epoch, source.effects);
-    const bool on = grade_->set_effect_mask(&effects_.mask());
+    render::EffectGuide guide;
+    if (const auto& glow = source.glow) {
+      guide = {.cols = glow->cols,
+               .rows = glow->rows,
+               .scores = glow->scores,
+               .cover_x = glow->cover_x,
+               .cover_y = glow->cover_y};
+    }
+    const bool on = grade_->set_effect_mask(&effects_.mask(), guide);
     effects_tally_.count(source.effects.has_value(), on, effects_.mask(), source.pts_us);
     EffectSummary seen = effect_summary(effects_.mask(), on);
     seen.pts_us = source.pts_us;
@@ -168,6 +182,7 @@ class PlaceboSourceGrader final : public SourceGrader {
           "grade avant le warp : passe du masque des effets refusée ({}), marge des éclats sur toute lumière",
           refused->detail);
     }
+    return on && source.glow.has_value();
   }
 
   bool render(pl_tex in, pl_tex out, const SourceGradeState& state, bool deband) {
@@ -213,6 +228,7 @@ class PlaceboSourceGrader final : public SourceGrader {
   bool effects_refusal_noted_ = false;
   std::optional<std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots>> looks_;
   std::uint64_t graded_ = 0;
+  std::uint64_t glow_submitted_ = 0;
   std::uint64_t gpu_ns_ = 0;
   std::uint64_t timed_ = 0;
   std::uint64_t left_ = 0;     // images laissées à l'écran : rien publié à grader (SourceGradeState::off)

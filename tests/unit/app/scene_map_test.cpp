@@ -88,6 +88,7 @@ class Ops : public gpu::KernelOps {
   std::map<std::uint64_t, bool> off;
   std::map<std::uint64_t, bool> photo_edges;
   std::map<std::uint64_t, std::optional<SceneRoundtripTiles>> roundtrips;
+  std::map<std::uint64_t, kernels::SceneGlowTiles> glows;
   bool fail_flow = false;
 
   void done_flow(std::uint64_t ticket) { flows_.at(ticket).done = true; }
@@ -113,7 +114,7 @@ class Ops : public gpu::KernelOps {
   }
 
   std::expected<std::uint64_t, Refusal> scene_flow_start(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
-                                                         bool /*restart*/) override {
+                                                         bool /*restart*/, bool /*guide*/) override {
     REQUIRE(!queue.empty());
     flows_[++flow_tickets_] = {.flow = queue.front(), .done = false};
     queue.erase(queue.begin());
@@ -124,6 +125,11 @@ class Ops : public gpu::KernelOps {
     const Started& s = flows_.at(ticket);
     if (!s.done) return std::optional<SceneFlowTiles>{};
     return std::optional(s.flow.tiles);
+  }
+  std::optional<kernels::SceneGlowTiles> scene_glow_take(std::uint64_t ticket) override {
+    const auto it = glows.find(ticket);
+    if (it == glows.end()) return std::nullopt;
+    return it->second;
   }
   std::expected<std::optional<SceneRoundtripTiles>, Refusal> scene_roundtrip_take(
       std::uint64_t ticket) override {
@@ -204,6 +210,30 @@ TEST_CASE("Carte de scène : une ancienne époque et un flot refusé ne laissent
   CHECK_FALSE(map.on());
   CHECK_FALSE(map.latest());
   CHECK(ops.queue.size() == 1);  // la panne relue au lancement a déjà arrêté la carte
+}
+
+TEST_CASE("Lueurs mobiles : seul le guide de la paire exacte peut atteindre le grade", "[app][scene]") {
+  Ops ops;
+  ops.queue = {translated(1, 0), translated(1, 0)};
+  SceneMap map(true);
+  const gpu::Tensor t;
+  map.start(ops, t, t, id(4), id(5), 7);
+  ops.glows[1] = {.ticket = 1, .cols = 1, .rows = 1, .scores = {0.35F}};
+  CHECK_FALSE(map.glow_for_pair(ops, id(4), id(5), 7));
+  ops.done_flow(1);
+  REQUIRE(map.for_pair(ops, id(4), id(5), 7));
+  CHECK_FALSE(map.glow_for_pair(ops, id(4), id(6), 7));
+  CHECK_FALSE(map.glow_for_pair(ops, id(4), id(5), 8));
+  ops.glows[1].ticket = 2;
+  CHECK_FALSE(map.glow_for_pair(ops, id(4), id(5), 7));
+  ops.glows[1].ticket = 1;
+  const auto exact = map.glow_for_pair(ops, id(4), id(5), 7);
+  REQUIRE(exact);
+  CHECK(exact->scores == std::vector{0.35F});
+  map.cut(id(4), id(5), 7);
+  CHECK_FALSE(map.glow_for_pair(ops, id(4), id(5), 7));
+  map.start(ops, t, t, id(4), id(5), 8);
+  CHECK_FALSE(map.glow_for_pair(ops, id(4), id(5), 7));
 }
 
 TEST_CASE("carte de la scène : l'affinage derrière le flux, et relu après sa paire", "[scene_map]") {

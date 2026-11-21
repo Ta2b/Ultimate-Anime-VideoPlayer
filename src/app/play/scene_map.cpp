@@ -54,7 +54,7 @@ void SceneMap::stop(const Refusal& refusal, const char* where) {
 }
 
 void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tensor& b, SourceId left,
-                     SourceId right, std::uint32_t epoch) {
+                     SourceId right, std::uint32_t epoch, bool guide) {
   if (!on_) return;
   if (last_epoch_ != epoch) {
     pending_.clear();
@@ -72,7 +72,7 @@ void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tenso
   const bool follows = last_right_ && *last_right_ == left && last_epoch_ == epoch;
   const bool restart = restart_ || !follows;
   const auto asked = std::chrono::steady_clock::now();
-  auto ticket = ops.scene_flow_start(a, b, restart);
+  auto ticket = ops.scene_flow_start(a, b, restart, guide);
   start_us_ += since_us(asked);
   if (!ticket) {
     stop(ticket.error(), "scene_flow_start");
@@ -347,6 +347,16 @@ std::optional<kernels::SceneMotion> SceneMap::for_pair(gpu::KernelOps& ops, Sour
     }
   }
   return latest_->motion;
+}
+
+std::optional<kernels::SceneGlowTiles> SceneMap::glow_for_pair(gpu::KernelOps& ops, SourceId left,
+                                                               SourceId right, std::uint32_t epoch) const {
+  if (!on_ || !latest_ || latest_->left != left || latest_->right != right || latest_->epoch != epoch ||
+      latest_->motion.cut_likely || latest_->motion.fade)
+    return std::nullopt;
+  auto guide = ops.scene_glow_take(latest_->ticket);
+  if (guide && guide->ticket == latest_->ticket) return guide;
+  return std::nullopt;
 }
 
 void SceneMap::cut(SourceId left, SourceId right, std::uint32_t epoch) {

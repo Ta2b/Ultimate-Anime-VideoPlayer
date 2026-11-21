@@ -194,13 +194,17 @@ class GuardedKernelOps final : public KernelOps {
   std::expected<std::optional<kernels::FrameStats>, Refusal> frame_stats_take(std::uint64_t ticket) override {
     return guarded_detail::call("frame_stats_take", [&] { return in_->frame_stats_take(ticket); });
   }
-  std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& a, const Tensor& b,
-                                                         bool restart) override {
-    return guarded_detail::call("scene_flow_start", [&] { return in_->scene_flow_start(a, b, restart); });
+  std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& a, const Tensor& b, bool restart,
+                                                         bool guide = false) override {
+    return guarded_detail::call("scene_flow_start",
+                                [&] { return in_->scene_flow_start(a, b, restart, guide); });
   }
   std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
       std::uint64_t ticket) override {
     return guarded_detail::call("scene_flow_take", [&] { return in_->scene_flow_take(ticket); });
+  }
+  std::optional<kernels::SceneGlowTiles> scene_glow_take(std::uint64_t ticket) override {
+    return guarded_detail::call("scene_glow_take", [&] { return in_->scene_glow_take(ticket); });
   }
   std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> scene_roundtrip_take(
       std::uint64_t ticket) override {

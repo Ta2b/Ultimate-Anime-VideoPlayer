@@ -10,6 +10,8 @@ add_library(kirari_backend_tensorrt_kernels STATIC deband_kernels.cu doubt_kerne
   tfix_blend_kernels.cu tfix_fused_kernels.cu tfix_head.cu tfix_native_net.cu warp_kernels.cu warp_lib.cu)
 target_include_directories(kirari_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(kirari_backend_tensorrt_kernels PRIVATE kirari::dep::cudart)
+target_sources(kirari_backend_tensorrt_kernels PRIVATE scene_glow_kernels.cu scene_glow_anchors.cu)
+set_source_files_properties(scene_glow_kernels.cu scene_glow_anchors.cu PROPERTIES COMPILE_OPTIONS "--fmad=false")
 # -lineinfo pour ncu ; ptxas donne les registres de chaque noyau au journal de build, et un
 # débordement de registres en mémoire locale est une erreur (pixel_kernels.cuh) sous Linux, où le
 # PC de référence et la CI le vérifient ; le code de l'appareil est le même sous Windows, où les
@@ -85,6 +87,7 @@ add_library(kirari_backend_tensorrt MODULE
   span_timing.cpp tensorrt_span_fp8.cpp tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_tfix_fused.cpp tensorrt_warp.cpp tfix_fused_engine.cpp tfix_fused_native.cpp
   trt_engine.cpp)
 target_include_directories(kirari_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_sources(kirari_backend_tensorrt PRIVATE scene_glow.cpp)
 # En-têtes BSD de NVIDIA Optical Flow (nvof_session.cpp) : types et signatures seulement, la bibliothèque vient
 # du pilote ; aucun fichier de NVIDIA n'est livré.
 target_include_directories(kirari_backend_tensorrt SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/nvidia-optical-flow")

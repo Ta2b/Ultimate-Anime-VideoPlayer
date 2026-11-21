@@ -422,6 +422,26 @@ qui passent les contrôles. La grille 4×4 donne 89 % du nombre de confirmations
 la grille 1×1, pour 16 % de sa durée médiane. Ces temps couvrent l'appel NVOF. La qualification
 visuelle du grade et sa cadence composée restent à mesurer.
 
+Une seconde exécution NVOF dans le sens inverse porte la médiane cumulée à 0,813 ms. Demander
+une fermeture du trajet à 2 pixels source garde 47 des 63 confirmations supplémentaires,
+sans retirer de confirmation dans les zones de contrôle parmi ces témoins. Le prochain essai
+de rendu utilise donc le flux aller et conserve le contrôle de luma sur le trajet.
+
+**Guider les lueurs mobiles (essai)** se règle dans HDR → Avancé, ou par `--guided-glows`.
+La case est décochée par défaut. Sur les cartes qui fournissent la carte de scène et son coût
+NVOF, le guide peut renforcer une lueur de la source SDR BT.709 gradée en HDR avant le warp.
+Il suit la paire exacte et l'époque du lecteur. Une coupe, une carte tardive ou un grade coupé
+laissent le grade suivre sa règle habituelle. Le guide reste disponible quand la case des éclats
+par classe de la carte de scène est décochée.
+
+En 1080p vers 4K HDR, SPAN Balanced et RIFE 4.25 ×8, le rendu reçoit 10 cartes sur 223 sources
+gradées dans chacun des deux passages avec le guide sur les quatre effets Re:Zero. Les médianes
+des trois étapes GPU sont d'environ 69 µs pour les agrégats, 11 µs pour les couronnes et 8 µs pour
+le rapprochement. En ABBA, Wayland confirme toutes les images nouvelles des segments mesurés.
+Les cadences sont de 140,58–142,81 i/s sans le guide et de 140,72–141,55 i/s avec le guide. Le
+test Vulkan du masque vérifie le renfort local, la stabilité sur les zones témoins et le retrait
+du guide en cours de rendu.
+
 ## A2 : décisions par plan
 La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
 relèvement fixe (1,15) dans tous les plans : l'exposition par plan est retirée (C41-01).

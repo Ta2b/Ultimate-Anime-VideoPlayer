@@ -193,7 +193,8 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   // La carte de (frame, after), comme look_ahead : là quand after sera l'image en cours, avant son SPAN.
   // Jamais d'une époque à l'autre.
   if (after->epoch == frame.epoch)
-    scene_.start(ops, rgb_[current_]->tensor(), drba_.after->tensor(), frame.id, after->id, frame.epoch);
+    scene_.start(ops, rgb_[current_]->tensor(), drba_.after->tensor(), frame.id, after->id, frame.epoch,
+                 wants_source_glow(frame) && wants_source_glow(*after));
   drba_.left_pts_us = frame.pts_us;
   drba_.right_pts_us = after->pts_us;
   if (!measure) return {};

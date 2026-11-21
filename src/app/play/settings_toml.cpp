@@ -320,6 +320,7 @@ void read_experimental(const toml::table& root, ExperimentalSettings& t,
   reads.push_back(read(table, "experimental", "span_fp8_native_blocks", t.span_fp8_native_blocks));
   reads.push_back(read(table, "experimental", "effect_glow", t.effect_glow));
   reads.push_back(read(table, "experimental", "map_effects", t.map_effects));
+  reads.push_back(read(table, "experimental", "guided_glows", t.guided_glows));
 }
 
 // La table [image] : l'agrandissement et la stabilisation temporelle.

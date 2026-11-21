@@ -163,6 +163,10 @@ constexpr std::array kSettingsPages{
     Entry{"Limit rapid flashes", "Limiter les flashs rapides"},
     Entry{"Skin from faces (test)", "Peau des visages (essai)"},
     Entry{"Enhance local glows", "Renforcer les lueurs locales"},
+    Entry{"Guide moving glows (test)", "Guider les lueurs mobiles (essai)"},
+    Entry{"Confirms moving glows using NVIDIA optical flow when HDR is graded before interpolation.",
+          "Confirme les lueurs mobiles avec le flux optique NVIDIA quand le grade HDR précède "
+          "l’interpolation."},
     Entry{"Gives more room to glows that stand out from their surroundings. Applies to playback "
           "and export.",
           "Donne plus de marge aux lueurs qui ressortent de leur voisinage. S’applique en lecture et à "

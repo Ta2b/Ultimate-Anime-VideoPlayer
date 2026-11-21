@@ -21,6 +21,15 @@
 
 namespace kirari::render {
 
+// Grille de confirmations de lueurs de la source courante, lue pendant l'appel.
+struct EffectGuide {
+  int cols = 0;
+  int rows = 0;
+  std::span<const float> scores;
+  double cover_x = 1.0;
+  double cover_y = 1.0;
+};
+
 class Grade {
  public:
   // VendorCallFailed : un hook ne se lit pas ; FieldMissing : un //!PARAM attendu manque.
@@ -78,7 +87,7 @@ class Grade {
   // Éclats sur les seuls effets (render/effect_mask.h) : le masque de la paire montrée. nullptr ou neutre :
   // la passe du masque s'ôte et fx_on retombe à 0, le grade d'aujourd'hui image pour image. Vrai si le masque
   // s'applique ; faux aussi quand le GPU a refusé la passe, refus que garde effect_mask_refusal.
-  bool set_effect_mask(const EffectMask* mask);
+  bool set_effect_mask(const EffectMask* mask, EffectGuide guide = {});
   // Le refus de la passe du masque (créée au premier masque non neutre, jamais retentée), à journaliser par
   // l'appelant.
   const std::optional<Refusal>& effect_mask_refusal() const;

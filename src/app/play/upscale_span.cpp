@@ -386,7 +386,8 @@ std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf, cons
   const GradedSource source{
       .epoch = at.epoch,
       .pts_us = at.pts_us,
-      .effects = setup_.live ? setup_.live->effect_book().for_source(at.epoch, at.pts_us) : std::nullopt};
+      .effects = setup_.live ? setup_.live->effect_book().for_source(at.epoch, at.pts_us) : std::nullopt,
+      .glow = take_source_glow(*setup_.backend->kernels(), at)};
   auto graded = setup_.grader->grade(*setup_.backend->kernels(), spanned_[buf]->tensor(), debanded, source);
   if (!graded) {
     log_channel("gpu")->warn("grade avant le warp : {} {} ; l'écran reprend le grade",

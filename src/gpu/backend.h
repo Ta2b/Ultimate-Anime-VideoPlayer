@@ -128,7 +128,8 @@ namespace kirari::gpu {
 // 61 : warp et calques fusionnés, reprise du côté gauche de GMFSS et splats pour le GridNet.
 // 62 : SpanTileGrid porte le pas vertical du Winograd par paires de lignes.
 // 63 : le module TensorRT applique les trois replis des réglages expérimentaux.
-inline constexpr int kBackendAbi = 63;
+// 64 : le flux accepte une demande de guidage HDR et rend sa carte par ticket.
+inline constexpr int kBackendAbi = 64;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -187,6 +188,7 @@ inline constexpr std::uint32_t kTrialGmfssFeatureReuse = 1U << 11U;
 inline constexpr std::uint32_t kDisableSharp1Winograd = 1U << 13U;
 inline constexpr std::uint32_t kDisableDrbaNativeTail = 1U << 14U;
 inline constexpr std::uint32_t kDisableGmfssFoldedTail = 1U << 15U;
+inline constexpr std::uint32_t kTrialNvofGlow = 1U << 17U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le

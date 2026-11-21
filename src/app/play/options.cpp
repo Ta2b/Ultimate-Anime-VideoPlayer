@@ -196,6 +196,8 @@ constexpr Flag kFlags[]{
     // Le relèvement fixe, la lumière de la scène mesurée en direct.
     {"--no-anime-shots", &PlayOptions::anime_shots, false},
     {"--effect-highlights", &PlayOptions::map_effects, true},
+    {"--guided-glows", &PlayOptions::guided_glows, true},
+    {"--no-guided-glows", &PlayOptions::guided_glows, false},
     {"--no-effect-highlights", &PlayOptions::effect_highlights, false},
     {"--effect-mask-view", &PlayOptions::effect_mask_view, true},
     {"--no-vrr", &PlayOptions::no_vrr, true},

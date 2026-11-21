@@ -164,6 +164,7 @@ struct PlayOptions {
   // NVIDIA). Éteints par défaut pour la première release : la marge des éclats reste alors sur toute
   // lumière hors des lueurs, comme sans carte.
   bool map_effects = false;
+  bool guided_glows = false;
   // --effect-mask-view (essai) : le grade peint le masque au lieu de l'image (lumières en rouge, effets sûrs
   // en vert, marge retenue en bleu), pour le voir sur un instantané.
   bool effect_mask_view = false;

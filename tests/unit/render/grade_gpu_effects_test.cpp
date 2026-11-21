@@ -227,6 +227,41 @@ TEST_CASE("Éclats des effets : sur un effet sûr, la lumière monte plus haut, 
   gpu.grade->set_effect_mask(nullptr);
 }
 
+TEST_CASE("Lueurs guidées : le masque précédent garde sa valeur ailleurs et revient au retrait du guide",
+          "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const auto source = halo_and_glow();
+  GradeParams p = params();
+  p.fx_view = 1.0;
+  const EffectMask legacy = sure_on({0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 0.0F, 0.0F});
+  REQUIRE(gpu.grade->set_effect_mask(&legacy));
+  const auto before = graded_rgb(gpu, source, p);
+  std::array<float, 16> scores{};
+  const render::EffectGuide guide{.cols = 8, .rows = 2, .scores = scores};
+  scores[7] = scores[15] = 0.35F;
+  REQUIRE(gpu.grade->set_effect_mask(&legacy, guide));
+  const auto together = graded_rgb(gpu, source, p);
+  CHECK(together[240][1] > before[240][1] + 0.01);
+  CHECK(together[128][1] == Catch::Approx(before[128][1]).epsilon(1e-3));
+  CHECK(together[16][1] == Catch::Approx(before[16][1]).epsilon(1e-3));
+  REQUIRE(gpu.grade->set_effect_mask(&legacy));
+  const auto after = graded_rgb(gpu, source, p);
+  CHECK(after[240][1] == Catch::Approx(before[240][1]).epsilon(1e-3));
+  // L'autre case du menu est éteinte par défaut : la grille doit agir seule, avec l'alpha neutre de base.
+  REQUIRE_FALSE(gpu.grade->set_effect_mask(nullptr));
+  const auto bare = graded_rgb(gpu, source, p);
+  REQUIRE(gpu.grade->set_effect_mask(nullptr, guide));
+  const auto guide_only = graded_rgb(gpu, source, p);
+  CHECK(guide_only[240][1] > bare[240][1] + 0.01);
+  CHECK(guide_only[128][1] == Catch::Approx(bare[128][1]).epsilon(1e-3));
+  CHECK(guide_only[16][1] == Catch::Approx(bare[16][1]).epsilon(1e-3));
+  REQUIRE_FALSE(gpu.grade->set_effect_mask(nullptr));
+  const auto bare_again = graded_rgb(gpu, source, p);
+  CHECK(bare_again[240][1] == Catch::Approx(bare[240][1]).epsilon(1e-3));
+}
+
 TEST_CASE("Éclats des effets : la vue du masque, lumières rouges, effets sûrs verts, marge retenue bleue",
           "[render][gpu]") {
   Gpu gpu;

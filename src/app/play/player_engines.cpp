@@ -23,6 +23,7 @@
 #include "app/play/drba_fused_choice.h"
 #include "app/play/engine_build.h"
 #include "app/play/home_screen.h"
+#include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/loop_wait.h"
@@ -535,6 +536,8 @@ PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const st
 gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
   const ExperimentalSettings& trials = settings.experimental;
   const bool nvof_roundtrip = p.options.nvof_roundtrip || (settings.layers && trials.nvof_layer_guard);
+  const bool glow = trials.glow_guidance() && p.options.scene_map && settings.rife_factor >= 2 &&
+                    hdr_wanted(settings.hdr_mode, p.options.sdr, content_peak_nits(p.screen.window()));
   return {.render = &p.screen.device(),
           .cache_dir = p.paths.engines,
           .log = backend_log(),
@@ -551,7 +554,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
                     (trials.gmflow_fast ? gpu::kTrialGmflowFast : 0U) |
                     (trials.gmfss_direct_splats ? gpu::kTrialGmfssDirectSplats : 0U) |
                     (p.options.tfix_native ? gpu::kTrialTfixNative : 0U) |
-                    (nvof_roundtrip ? gpu::kTrialNvofRoundtrip : 0U) |
+                    (nvof_roundtrip ? gpu::kTrialNvofRoundtrip : 0U) | (glow ? gpu::kTrialNvofGlow : 0U) |
                     (trials.sharp1_winograd ? 0U : gpu::kDisableSharp1Winograd) |
                     (trials.drba_native_tail ? 0U : gpu::kDisableDrbaNativeTail) |
                     (trials.gmfss_folded_tail ? 0U : gpu::kDisableGmfssFoldedTail) |

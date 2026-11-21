@@ -227,7 +227,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .pair_triage = pair_triage && (rife_motion || gmfss_use != GmfssUse::Off),
       .slots = std::move(slots),
       .scene_map = scene_map,
-      .nvof_roundtrip = nvof_roundtrip};
+      .nvof_roundtrip = nvof_roundtrip,
+      .guided_glows = guided_glows};
 }
 
 namespace {
@@ -384,11 +385,14 @@ void take_trials(ChainEngines& c, const PlayOptions& o, const PlaySettings& sett
   c.pair_triage = o.pair_triage;
 }
 
-bool scene_map_needed(const ChainEngines& c, const PlayOptions& options, const PlaySettings& settings) {
-  return c.scene_map &&
-         (c.plate || (c.layers && c.rife_motion) ||
-          (c.pair_triage && (c.rife_motion || c.gmfss_use != GmfssUse::Off)) ||
-          settings.experimental.map_highlights() || c.nvof_roundtrip || options.was_given("--scene-map"));
+void settle_scene_map(ChainEngines& c, const PlayOptions& options, const PlaySettings& settings,
+                      const gpu::BackendInit& init) {
+  c.guided_glows = c.backend_name == "tensorrt" && (c.rife_motion || c.drba_motion) &&
+                   (init.trials & gpu::kTrialNvofGlow) != 0;
+  c.scene_map = c.scene_map && (c.plate || (c.layers && c.rife_motion) ||
+                                (c.pair_triage && (c.rife_motion || c.gmfss_use != GmfssUse::Off)) ||
+                                settings.experimental.map_highlights() || c.guided_glows ||
+                                c.nvof_roundtrip || options.was_given("--scene-map"));
 }
 
 // Un refus de l'étage qui le rend : la chaîne peut se préparer sans lui (stage_fallback.h).
@@ -774,7 +778,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     return stage_refused(
         Refusal{RefusalCode::FieldMissing, "GMFSS seul : aucun moteur GMFSS ni RIFE de repli chargé"},
         ChainStage::Motion);
-  c.scene_map = scene_map_needed(c, p.options, settings);
+  settle_scene_map(c, p.options, settings, init);
   settle_shot_plan(c);
   return std::optional<ChainEngines>(std::move(c));
 }

@@ -120,7 +120,8 @@ std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
   // La carte de (frame, after), relue quand after sera l'image en cours (scene_map.h) ; jamais d'une époque à
   // l'autre.
   if (after->epoch == frame.epoch)
-    scene_.start(ops, rgb_[current_]->tensor(), ahead_.rgb->tensor(), frame.id, after->id, frame.epoch);
+    scene_.start(ops, rgb_[current_]->tensor(), ahead_.rgb->tensor(), frame.id, after->id, frame.epoch,
+                 wants_source_glow(frame) && wants_source_glow(*after));
   if (!ahead_scores_ || !(always_scores || reuse_.measures_pairs() || next_pair_measured())) return {};
   const gpu::Tensor& next_source = ahead_.small ? ahead_.small->tensor() : ahead_.rgb->tensor();
   auto ticket = ops.scores_start(rife_source(current_), next_source);
@@ -287,12 +288,17 @@ void note_effects(LiveSettings& live, const SceneMap& map, SourceId left, std::i
 // previous_ dans les trois cas (next_source, take_ahead, drba_arrive). D'une époque à l'autre : ni carte ni
 // lancement.
 PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts) {
+  glow_destination_.reset();
   if (!scene_.on() || !previous_ || !facts.same_epoch) return facts;
   gpu::KernelOps& ops = *setup_.backend->kernels();
   // La paire enjambe une coupe : sa carte ne dit rien, la suivante repart sans indices.
   const bool cut = pair_cut(facts);
   if (cut) scene_.cut(previous_->id, frame.id, frame.epoch);
   facts.scene = scene_.for_pair(ops, previous_->id, frame.id, frame.epoch);
+  if (wants_source_glow(frame) && !cut && facts.scene && !facts.scene->cut_likely && !facts.scene->fade &&
+      previous_->pts_us != kNoPts && frame.pts_us != kNoPts && previous_->pts_us < frame.pts_us) {
+    glow_destination_ = GlowDestination{previous_->id, Previous{frame.pts_us, frame.id, frame.epoch}};
+  }
   if (setup_.live != nullptr) {
     note_effects(*setup_.live, scene_, previous_->id, previous_->pts_us, frame, facts,
                  setup_.work_width > 0 ? setup_.work_width : setup_.source_width,
@@ -309,6 +315,20 @@ PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts)
                  frame.epoch);
   }
   return facts;
+}
+
+bool UpscaleStage::wants_source_glow(const DecodedFrame& frame) const {
+  return setup_.guided_glows && setup_.grader && !setup_.yuv_slots && warps_spanned() &&
+         frame.color.primaries == Primaries::Bt709 && frame.color.transfer == Transfer::Bt1886 &&
+         frame.pts_us != kNoPts && setup_.grader->available();
+}
+
+std::optional<kernels::SceneGlowTiles> UpscaleStage::take_source_glow(gpu::KernelOps& ops,
+                                                                      const Previous& source) {
+  if (!glow_destination_ || source.id != glow_destination_->right.id ||
+      source.epoch != glow_destination_->right.epoch || source.pts_us != glow_destination_->right.pts_us)
+    return std::nullopt;
+  return scene_.glow_for_pair(ops, glow_destination_->left, source.id, source.epoch);
 }
 
 }  // namespace kirari::app::play

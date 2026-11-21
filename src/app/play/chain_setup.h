@@ -147,6 +147,7 @@ struct ChainEngines {
   bool span_b_ahead = false;      // --span-b-ahead (UpscaleSetup::span_b_ahead)
   bool scene_map = false;         // --scene-map (UpscaleSetup::scene_map)
   bool nvof_roundtrip = false;
+  bool guided_glows = false;
   bool smooth_drawings = false;     // --smooth-drawings (UpscaleSetup::smooth_drawings)
   bool temporal_fix_whole = false;  // --no-tfix-cache (chain_temporal.cpp)
   bool pair_triage = false;         // --pair-triage (UpscaleSetup::pair_triage)

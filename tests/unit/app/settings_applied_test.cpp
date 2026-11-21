@@ -22,16 +22,25 @@ TEST_CASE("Les essais se relisent et se rechargent sans rendre les drapeaux de b
   CHECK_FALSE(saved.experimental.gmflow_fast);
   CHECK_FALSE(saved.experimental.gmfss_direct_splats);
   CHECK_FALSE(saved.experimental.map_effects);
+  CHECK_FALSE(saved.experimental.guided_glows);
+  PlaySettings only_glow = saved;
+  only_glow.experimental.guided_glows = true;
+  CHECK(only_glow.experimental.glow_guidance());
+  CHECK(change_between(saved, only_glow, true).cost == ChangeCost::Reopen);
+  CHECK(live_part(saved, only_glow, true).experimental == saved.experimental);
   PlayOptions flags;
   flags.gmflow_fast = true;
   flags.gmfss_direct_splats = true;
   flags.nvof_layer_guard = true;
+  flags.guided_glows = true;
   flags.effect_highlights = false;
   const auto started = settings_for(saved, flags);
   CHECK(started.experimental.gmflow_fast);
   CHECK(started.experimental.gmfss_direct_splats);
   CHECK(started.experimental.nvof_layer_guard);
   CHECK_FALSE(started.experimental.effect_glow);
+  CHECK(started.experimental.guided_glows);
+  CHECK_FALSE(started.experimental.glow_guidance());
   CHECK(settings_to_save(started, saved, started, flags) == saved);
 
   PlaySettings wanted = started;
@@ -48,6 +57,7 @@ TEST_CASE("Les essais se relisent et se rechargent sans rendre les drapeaux de b
   CHECK_FALSE(reparsed->experimental.map_highlights());
   wanted.experimental.effect_glow = true;
   CHECK(wanted.experimental.map_highlights());
+  CHECK(wanted.experimental.glow_guidance());
 }
 
 // A22-01, A22-15 : chaque réglage que le menu change est appliqué en direct, ou annoncé par « Appliquer »

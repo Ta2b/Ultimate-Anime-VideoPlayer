@@ -25,6 +25,7 @@
 #include "core/types.h"
 #include "gpu/cuda/backend/gpu_timing.h"
 #include "gpu/cuda/backend/nvof_session.h"
+#include "gpu/cuda/backend/scene_glow.h"
 #include "gpu/cuda/backend/scene_roundtrip.h"
 #include "gpu/kernel_ops.h"
 #include "kernels/spec/scene_camera.h"
@@ -36,7 +37,8 @@ struct SceneRefineState;  // scene_camera_kernels.h
 
 class SceneFlow {
  public:
-  explicit SceneFlow(bool roundtrip = false) : roundtrip_wanted_(roundtrip) {}
+  explicit SceneFlow(bool roundtrip = false, bool glow = false)
+      : roundtrip_wanted_(roundtrip), glow_wanted_(glow) {}
   ~SceneFlow();
   SceneFlow(const SceneFlow&) = delete;
   SceneFlow& operator=(const SceneFlow&) = delete;
@@ -64,9 +66,11 @@ class SceneFlow {
   // Après : le flux, la réduction et la copie sur la file de NVOF ; rend le ticket. Deux mesures : le flux
   // (le bloc NVOFA, à côté des SM : une latence, pas un coût par image) et la réduction (sur les SM).
   std::expected<std::uint64_t, Refusal> run(cudaStream_t lane, const Lumas& lumas, bool restart,
-                                            GpuTiming& flow_timing, GpuTiming& tiles_timing);
+                                            GpuTiming& flow_timing, GpuTiming& tiles_timing, GlowSource a,
+                                            GlowSource b, const GlowProfile& profile);
   // La grille d'un ticket si sa copie est passée, sans attendre ; nullopt sinon. Périmé : SequenceOrder.
   std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> take(std::uint64_t ticket);
+  std::optional<kernels::SceneGlowTiles> take_glow(std::uint64_t ticket);
   std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> take_roundtrip(std::uint64_t ticket);
 
   // L'affinage de la caméra d'une paire lancée (KernelOps::scene_camera_start, scene_camera.cpp) : sur la
@@ -86,6 +90,7 @@ class SceneFlow {
   };
   std::expected<void, Refusal> allocate_grid();  // la grille de cols_ × rows_ tuiles et ses relectures
   void release_grid();                           // la file de NVOF déjà vide
+  std::expected<void, Refusal> record_lumas_released(cudaStream_t stream, const Lumas& lumas);
   // Ce qu'il faut à l'affinage (scene_camera.cpp) : lumas floutées, état, tuiles, relectures épinglées.
   std::expected<void, Refusal> allocate_refine();
   void release_refine();
@@ -119,6 +124,8 @@ class SceneFlow {
   std::unique_ptr<NvofSession> session_;
   bool roundtrip_wanted_ = false;
   std::unique_ptr<SceneRoundtrip> roundtrip_;
+  bool glow_wanted_ = false;
+  std::unique_ptr<SceneGlow> glow_;
   std::string roundtrip_notice_;
   int divisor_ = 1;
   int cols_ = 0;

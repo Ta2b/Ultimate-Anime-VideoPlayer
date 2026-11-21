@@ -55,6 +55,7 @@ std::expected<bool, Refusal> SceneFlow::prepare(int flow_width, int flow_height,
   roundtrip_notice_ = finish_roundtrip();
   session_.reset();
   roundtrip_.reset();
+  glow_.reset();
   released_posted_ = {};
   last_.reset();
   launched_ = {};
@@ -152,8 +153,20 @@ std::expected<void, Refusal> SceneFlow::before_lumas(cudaStream_t lane, const Lu
   return {};
 }
 
+std::expected<void, Refusal> SceneFlow::record_lumas_released(cudaStream_t stream, const Lumas& lumas) {
+  for (const int slot : {lumas.a, lumas.b}) {
+    if (auto ok =
+            cuda_check(cudaEventRecord(released_[static_cast<std::size_t>(slot)], stream), "cudaEventRecord");
+        !ok)
+      return ok;
+  }
+  return {};
+}
+
 std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lumas& lumas, bool restart,
-                                                     GpuTiming& flow_timing, GpuTiming& tiles_timing) {
+                                                     GpuTiming& flow_timing, GpuTiming& tiles_timing,
+                                                     GlowSource a_source, GlowSource b_source,
+                                                     const GlowProfile& profile) {
   cudaStream_t own = session_->stream();
   if (auto ok = cuda_check(cudaEventRecord(lumas_ready_, lane), "cudaEventRecord"); !ok)
     return std::unexpected(std::move(ok.error()));
@@ -185,10 +198,7 @@ std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lu
   }
   tiles_timing.end(own);
   // Les deux lumas sont lues (flux et réduction) : la voie peut réécrire leurs tampons.
-  for (const int slot : {lumas.a, lumas.b}) {
-    if (ready)
-      ready = cuda_check(cudaEventRecord(released_[static_cast<std::size_t>(slot)], own), "cudaEventRecord");
-  }
+  if (ready) ready = record_lumas_released(own, lumas);
   if (!ready) return std::unexpected(std::move(ready.error()));
   released_posted_[static_cast<std::size_t>(lumas.a)] = true;
   released_posted_[static_cast<std::size_t>(lumas.b)] = true;
@@ -205,15 +215,26 @@ std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lu
       cuda_check(cudaMemcpyAsync(read.host, device_, bytes, cudaMemcpyDeviceToHost, own), "cudaMemcpyAsync");
   if (ready) ready = cuda_check(cudaEventRecord(read.done, own), "cudaEventRecord");
   if (!ready) return std::unexpected(std::move(ready.error()));
-  if (roundtrip_ && roundtrip_->start(*session_, lumas.a, lumas.b, ticket)) {
-    // L'aller est déjà publiable. Le retour n'emprunte ses lumas que pour les copier. Le prochain plan
-    // voit les deux événements relâchés après ces copies, y compris si un appel a refusé la suite.
-    for (const int slot : {lumas.a, lumas.b}) {
-      if (auto ok =
-              cuda_check(cudaEventRecord(released_[static_cast<std::size_t>(slot)], own), "cudaEventRecord");
-          !ok)
-        return std::unexpected(std::move(ok.error()));
+  // La forme historique de la carte est déjà publiable. L'extraction sur la voie du producteur
+  // peut se recouvrir avec le flux NVOFA. La lecture du guide a son propre événement.
+  bool guide_staged = false;
+  if (glow_wanted_ && b_source.rgb) {
+    if (!glow_) glow_ = SceneGlow::open(b_source.width, b_source.height);
+    if (!glow_) {
+      glow_wanted_ = false;
+    } else if (glow_->shape(b_source.width, b_source.height)) {
+      guide_staged = glow_->stage(lane, lumas.a, lumas.b, lumas.keep_a, a_source, b_source, profile);
+      if (!guide_staged) glow_wanted_ = false;
     }
+  }
+  if (!guide_staged && glow_) glow_->forget(lumas.a, lumas.b, lumas.keep_a);
+  if (guide_staged && !glow_->match(*session_, divisor_, lumas.a, lumas.b, ticket, profile.match))
+    glow_wanted_ = false;
+  const bool roundtrip_staged = roundtrip_ && roundtrip_->start(*session_, lumas.a, lumas.b, ticket);
+  // L'aller est déjà publiable. La remise protège encore le noyau du guide et la copie du retour,
+  // y compris si le rapprochement du guide a été refusé après son lancement.
+  if (guide_staged || roundtrip_staged) {
+    if (auto ok = record_lumas_released(own, lumas); !ok) return std::unexpected(std::move(ok.error()));
   }
 #ifdef _WIN32
   // WDDM garde les lancements dans un lot logiciel : la file de NVOF est poussée tout de suite, comme la voie
@@ -243,6 +264,10 @@ std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> SceneFlow::take(s
   tiles.tiles.resize(tile_count(cols_, rows_));
   std::memcpy(tiles.tiles.data(), read.host, tiles.tiles.size() * sizeof(kernels::SceneTileSums));
   return std::optional(std::move(tiles));
+}
+
+std::optional<kernels::SceneGlowTiles> SceneFlow::take_glow(std::uint64_t ticket) {
+  return glow_ ? glow_->take(ticket) : std::nullopt;
 }
 
 std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> SceneFlow::take_roundtrip(

@@ -135,10 +135,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                                           kernels::FrameTransfer transfer) override;
   std::expected<std::optional<kernels::FrameStats>, Refusal> frame_stats_take(std::uint64_t ticket) override;
   // La carte de la scène par NVOF (tensorrt_scene_flow.cpp, scene_flow.h), relue sans attente.
-  std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& a, const Tensor& b,
-                                                         bool restart) override;
+  std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& a, const Tensor& b, bool restart,
+                                                         bool guide = false) override;
   std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
       std::uint64_t ticket) override;
+  std::optional<kernels::SceneGlowTiles> scene_glow_take(std::uint64_t ticket) override;
   std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> scene_roundtrip_take(
       std::uint64_t ticket) override;
   // L'affinage de la caméra de la carte (tensorrt_scene_flow.cpp, scene_camera.cpp), relu sans attente.
@@ -564,6 +565,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // La session NVOF de la carte de la scène, créée au premier scene_flow_start ; détruite avant les voies.
   std::unique_ptr<SceneFlow> scene_flow_;
   bool nvof_roundtrip_ = false;
+  bool nvof_glow_ = false;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   // Sommes FP32 ou index du softmax splatting, ordonnés entre les voies par la même clé.

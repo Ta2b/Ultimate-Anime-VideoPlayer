@@ -33,6 +33,7 @@
 #include "kernels/spec/layers.h"
 #include "kernels/spec/scene_camera.h"
 #include "kernels/spec/scene_flow.h"
+#include "kernels/spec/scene_glow.h"
 
 namespace kirari::gpu {
 
@@ -366,13 +367,15 @@ class KernelOps {
   // appelle les deux. Refus : backend sans NVOF (AMD, Intel, pilote sans la bibliothèque), GPU sans carte de
   // coût (Turing), taille refusée.
   virtual std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& /*a*/, const Tensor& /*b*/,
-                                                                 bool /*restart*/) {
+                                                                 bool /*restart*/, bool /*guide*/ = false) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_flow : absent de ce backend"});
   }
   virtual std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
       std::uint64_t /*ticket*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_flow : absent de ce backend"});
   }
+  // Le guide de lueurs de la source droite, lu sans attendre par ticket de flux.
+  virtual std::optional<kernels::SceneGlowTiles> scene_glow_take(std::uint64_t /*ticket*/) { return {}; }
   // La grille compacte de l'aller-retour expérimental, relue sans attente par ticket de l'aller.
   // SequenceOrder si ce retour a été sauté, consommé ou remplacé ; nullopt s'il est encore en vol.
   virtual std::expected<std::optional<kernels::SceneRoundtripTiles>, Refusal> scene_roundtrip_take(

@@ -60,6 +60,10 @@ class SourceGradeShare {
     const std::scoped_lock lock(mutex_);
     return state_;
   }
+  bool available() const {
+    const std::scoped_lock lock(mutex_);
+    return state_.params.has_value();
+  }
   // L'autre sens : le masque des effets des dernières sources gradées, pour le journal d'un instantané. Le
   // grade avant le warp travaille en avance sur l'écran : l'image montrée retrouve le sien par son pts.
   void note_effects(const EffectSummary& seen) {
@@ -90,6 +94,7 @@ struct GradedSource {
   std::uint32_t epoch = 0;
   std::int64_t pts_us = kNoPts;
   std::optional<EffectNote> effects;
+  std::optional<kernels::SceneGlowTiles> glow;
 };
 
 class SourceGrader {
@@ -100,6 +105,7 @@ class SourceGrader {
   SourceGrader(SourceGrader&&) = delete;
   SourceGrader& operator=(SourceGrader&&) = delete;
   virtual ~SourceGrader() = default;
+  virtual bool available() const { return false; }
   // rgb (RGB planaire de la taille des slots du ring, la sortie de SPAN) gradé sur place, sur la voie
   // courante du backend. Vrai : gradé ; faux : rien à grader maintenant, l'image reste telle quelle et
   // l'écran la gradera. Refus : le backend sans read_ring, une image ou un rendu refusés ; l'étage cesse

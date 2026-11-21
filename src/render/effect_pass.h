@@ -32,6 +32,7 @@ class EffectPass {
   // Les valeurs de 0 à 1, cols × rows, ligne par ligne ; cover : EffectTiles::cover_x et cover_y. Envoyées au
   // GPU au rendu suivant.
   void set(int cols, int rows, std::span<const float> values, double cover_x, double cover_y);
+  void set_guide(int cols, int rows, std::span<const float> values, double cover_x, double cover_y);
   const pl_hook* hook() const;
 
  private:

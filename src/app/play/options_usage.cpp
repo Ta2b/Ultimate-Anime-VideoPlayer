@@ -154,6 +154,7 @@ std::string trial_usage() {
          "  --no-scene-map         trial: no NVIDIA optical flow map of each pair (camera, tiles that\n"
          "                         move, cuts), so no layers nor background plate\n"
          "  --effect-highlights    trial: higher highlights also on the effects of the scene map\n"
+         "  --guided-glows        trial: confirm moving glows with NVIDIA optical flow before the HDR warp\n"
          "  --no-effect-highlights no higher highlights on glows seen in the picture nor on effects\n"
          "  --effect-mask-view     with --effect-highlights: the grade paints the effects mask, not the\n"
          "                         picture (lights red, sure effects green, held margin blue)\n"

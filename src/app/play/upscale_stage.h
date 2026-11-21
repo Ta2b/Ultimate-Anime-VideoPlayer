@@ -150,6 +150,7 @@ struct UpscaleSetup {
   std::shared_ptr<const YuvSlots> yuv_slots;
   bool scene_map = false;  // --scene-map : la carte de la scène par NVOF (scene_map.h), PairFacts::scene
   bool nvof_roundtrip = false;
+  bool guided_glows = false;
 };
 
 class UpscaleStage final : public RingStage {
@@ -435,6 +436,13 @@ class UpscaleStage final : public RingStage {
     std::uint32_t epoch = 0;
   };
   std::optional<Previous> previous_;
+  struct GlowDestination {
+    SourceId left;
+    Previous right;
+  };
+  std::optional<GlowDestination> glow_destination_;
+  bool wants_source_glow(const DecodedFrame& frame) const;
+  std::optional<kernels::SceneGlowTiles> take_source_glow(gpu::KernelOps& ops, const Previous& source);
   // Les sorties de l'image en cours, dans l'ordre : instants de la grille, t = 1 pour l'image.
   struct Instant {
     float t = 1.0F;

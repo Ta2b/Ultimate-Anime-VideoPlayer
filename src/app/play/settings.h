@@ -218,6 +218,8 @@ struct ExperimentalSettings {
   bool span_fp8_native_blocks = false;
   bool effect_glow = true;
   bool map_effects = false;
+  bool guided_glows = false;
+  bool glow_guidance() const { return effect_glow && guided_glows; }
 
   bool map_highlights() const { return effect_glow && map_effects; }
   bool operator==(const ExperimentalSettings&) const = default;

@@ -52,10 +52,12 @@ class SceneMap {
   // Lance la paire (left, right) des images de travail a et b, d'époque epoch. Les indices temporels de
   // NVOF repartent si la paire ne suit pas la précédente (début, saut, nouvelle époque) ou après une coupe.
   void start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tensor& b, SourceId left, SourceId right,
-             std::uint32_t epoch);
+             std::uint32_t epoch, bool guide = false);
   // La carte de la paire (left, right) si elle est relue ; sinon rien. Relit sans attente ce qui est fini.
   std::optional<kernels::SceneMotion> for_pair(gpu::KernelOps& ops, SourceId left, SourceId right,
                                                std::uint32_t epoch = 0);
+  std::optional<kernels::SceneGlowTiles> glow_for_pair(gpu::KernelOps& ops, SourceId left, SourceId right,
+                                                       std::uint32_t epoch) const;
   // La paire (left, right) a-t-elle été lancée (la dernière lancée) ?
   bool started(SourceId left, SourceId right, std::uint32_t epoch) const {
     return last_epoch_ == epoch && last_left_ && *last_left_ == left && last_right_ && *last_right_ == right;

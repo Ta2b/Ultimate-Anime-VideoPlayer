@@ -200,6 +200,12 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
                i18n::tr("Uses the NVIDIA optical-flow scene map to reserve more highlight range for effects "
                         "during playback. Applies when a scene map is available."),
                panel::Apply::Reload);
+    if (grid) panel::cell();
+    ImGui::Checkbox(i18n::tr("Guide moving glows (test)"), &d.experimental.guided_glows);
+    panel::tip(
+        i18n::tr("Guide moving glows (test)"),
+        i18n::tr("Confirms moving glows using NVIDIA optical flow when HDR is graded before interpolation."),
+        panel::Apply::Reload);
     ImGui::EndDisabled();
   }
   if (grid) panel::end_grid();
@@ -212,6 +218,7 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
     d.face_skin = defaults.face_skin;
     d.experimental.effect_glow = defaults.experimental.effect_glow;
     d.experimental.map_effects = defaults.experimental.map_effects;
+    d.experimental.guided_glows = defaults.experimental.guided_glows;
   }
 }
 

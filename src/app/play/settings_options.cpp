@@ -21,6 +21,7 @@ constexpr std::array kExperimentalFlags{
     ExperimentalFlag{&PlayOptions::span_fp8_native_blocks, &ExperimentalSettings::span_fp8_native_blocks},
     ExperimentalFlag{&PlayOptions::effect_highlights, &ExperimentalSettings::effect_glow, false},
     ExperimentalFlag{&PlayOptions::map_effects, &ExperimentalSettings::map_effects},
+    ExperimentalFlag{&PlayOptions::guided_glows, &ExperimentalSettings::guided_glows},
 };
 
 }  // namespace
