@@ -170,7 +170,15 @@ de 81,54 à 54,36 GFLOP hors transformées. En K32 avec halo partagé, deux scè
 630–664 µs contre 666–742 µs pour le direct K64/R2 au banc ABBA. Rejouer le reste de
 GridNet sur CPU avec les sorties GPU donne 90,41 et 90,70 dB RGB face à la tête directe
 à sommes FP32, contre 89,40 et 89,81 dB avec le direct FP16. Les noyaux K64 sont plus
-lents. La variante K32 reste à qualifier dans le lecteur.
+lents. Le F(2×2) complet améliore encore la fidélité de la couche, à 57,3–58,1 dB sur les
+activations contre 54,0–54,9 dB pour le vertical. Il prend 0,769–0,796 ms contre 0,627–0,687 ms.
+
+Le test du Winograd vertical dans le lecteur écarte la variante quand sa fusion complète
+passe de 18,506 à 18,597 ms. Il la retient dans un autre réglage de la fusion, de 19,368 à
+19,079 ms. Les deux passages à ×2 confirment 47,99 i/s après composition. Avec une source
+recadencée à 48 i/s, un passage dépasse le pic d'erreur RGB autorisé et garde la tête dense.
+Le passage qui retient Winograd confirme 35,74 i/s, dans la plage des témoins denses de
+34,63 à 36,06 i/s. Cette variante reste au banc.
 
 ### Projections directes dans GridNet
 
