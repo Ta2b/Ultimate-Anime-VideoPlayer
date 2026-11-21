@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "backend_fixture.h"
 #include "gpu/cuda/backend/drba_fused_kernels.h"
@@ -92,8 +93,8 @@ std::uint16_t mean2x2(const std::uint16_t* plane, int w, int y0, int x0) {
 TEST_CASE("DistilDRBA fusionné : les noyaux de réduction sont exacts",
           "[backend_tensorrt][cuda][drba_fused]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  constexpr int h = 128;
-  constexpr int w = 256;
+  // La seconde taille exerce les grilles de réduction à limites partielles après l'encodeur ×4.
+  const auto [h, w] = GENERATE((std::array{128, 256}), (std::array{512, 1024}));
   for (const int tail : {4, 8}) {
     INFO("réduction " << tail);
     const kernels::DrbaFusedPlan plan{.tail = tail};

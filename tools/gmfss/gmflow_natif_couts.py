@@ -164,6 +164,15 @@ def temps_us(op, recette, *, plancher=False, winograd=False):
     return op.fois * (max(calcul, scalaire, memoire) + (0.0 if plancher else LANCEMENT_US))
 
 
+def temps_us_rapide(op, *, plancher=False, winograd=False):
+    """QKV et cinq MLP du quart en sommes FP16, le reste selon le modèle FP32."""
+    fp32 = temps_us(op, "fp16", plancher=plancher, winograd=winograd)
+    if not op.bloc.startswith("1/4 transformeur") or op.sorte != "gemm":
+        return fp32
+    fp16 = temps_us(op, "fp16-acc16", plancher=plancher, winograd=winograd)
+    return (5 * fp16 + fp32) / 6 if "MLP" in op.nom else fp16
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--width", type=int, default=1280, help="largeur de la paire (plans remplis)")
@@ -174,6 +183,8 @@ def main():
     parser.add_argument("--reprise", action="store_true", help="calcul du CNN pour la nouvelle image seulement")
     parser.add_argument("--winograd", action="store_true",
                         help="F(2×2, 3×3) dans les convolutions de pas 1, transformations en cache")
+    parser.add_argument("--rapide", action="store_true",
+                        help="affiche aussi le modèle des sommes mixtes de l'option GMFlow rapide")
     args = parser.parse_args()
     w, h = int(args.width // 2 * args.scale), int(args.height // 2 * args.scale)
     ops = operations(w, h, decime=args.plancher or args.reprise, reprise=args.reprise)
@@ -206,6 +217,11 @@ def main():
     print("\n| Bloc | GFLOP | Mo natif | ms fp16 | ms acc16 | ms fp8 |\n|---|---|---|---|---|---|")
     for bloc, v in par_bloc.items():
         print(f"| {bloc} | {v[0] / 1e9:.1f} | {v[1] / 1e6:.0f} | " + " | ".join(f"{x / 1e3:.2f}" for x in v[2:]) + " |")
+    if args.rapide:
+        total = sum(temps_us_rapide(op, plancher=args.plancher, winograd=args.winograd) for op in ops) / 1000
+        print(f"\nGMFlow rapide · {total:.3f} ms")
+        if args.plancher:
+            print(f"À 90 % de ce plancher · {total / .90:.3f} ms")
 
 
 if __name__ == "__main__":
