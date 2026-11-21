@@ -24,14 +24,13 @@ import collections
 
 import numpy as np
 import onnx
-from onnxruntime.tools.symbolic_shape_infer import SymbolicShapeInference
 
 # Débits de la RTX 4070 Ti (60 multiprocesseurs à 2,61 GHz, cœurs tensoriels sans creux) et sa bande passante.
 PEAK = {"f16": 160.4e12, "f32": 80.2e12, "fp8": 320.8e12}  # sommes f16, sommes f32, FP8 à sommes f16
 BANDWIDTH = 504e9
 
 
-def inferred(path, height, width):
+def inferred(path, height, width, *, symbolic=True):
     model = onnx.load(path)
     dims = {"H": height, "W": width}
     for k in (2, 4, 8):
@@ -40,6 +39,10 @@ def inferred(path, height, width):
         for d in value.type.tensor_type.shape.dim:
             if d.dim_param in dims:
                 d.dim_value = dims[d.dim_param]
+    if not symbolic:
+        return onnx.shape_inference.infer_shapes(model)
+    from onnxruntime.tools.symbolic_shape_infer import SymbolicShapeInference
+
     return SymbolicShapeInference.infer_shapes(model, auto_merge=True)
 
 

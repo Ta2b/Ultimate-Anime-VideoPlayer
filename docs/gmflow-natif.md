@@ -69,6 +69,14 @@ TensorRT et 0,003662 en CUDA avec sommes FP16. Pour la 3×3, on obtient respecti
 0,007288 et 0,007568. Le prétraitement donne les mêmes codes que TensorRT. Ce résultat concerne
 les convolutions isolées. Le contrôle du flot complet à l'ouverture reste requis.
 
+Le même suffixe MetricNet, splats et GridNet a rendu deux autres comparaisons avec le GMFlow
+PyTorch FP32 et ses poids d'origine. À 960,40 s, le rendu natif atteint 53,135 dB face à cet
+oracle, contre 51,956 pour le matcher qui imite les arrondis locaux de TensorRT et 49,394 pour
+TensorRT. À 965,70 s, on mesure 85,250, 75,338 et 67,086 dB. Le rejeu de l'ONNX en FP32,
+avec les 124 poids d'origine rétablis, confirme le classement sur le premier cas. Sur deux
+triplets distincts, les trois rendus restent à moins de 0,004 dB d'écart de PSNR face aux
+vraies images centrales omises. L'échantillon reste trop petit pour modifier la garde du lecteur.
+
 Un autre essai calcule une seule fois la corrélation des deux sens, puis fusionne des sommes
 partielles. L'étape gagne environ 0,055 ms. L'écart du flot est inférieur à 0,000031 px à cet endroit,
 mais atteint presque un pixel après les raffinements sur un triplet difficile. Les masques

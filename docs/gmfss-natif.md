@@ -228,6 +228,14 @@ accumulés en FP32 et les bords gardent leurs filtres et biais propres. L'essai 
 et à TensorRT, borne le pic d'écart et mesure le temps en direct puis sous graphe. L'anneau PixelShuffle
 sert de repli.
 
+Le calculateur `tools/gmfss/plafond_leviers.py FUSION.onnx --modele-actuel` compte les canaux
+complétés des MMA, les deux groupes de la queue composée en sommes FP32 et leur épilogue des bords.
+À 1920×1152 sur la RTX 4070 Ti, la somme des bornes calcul/octets par couche donne 11,65 ms en direct,
+10,33 ms avec la queue composée et 7,915 ms en ajoutant un Winograd F(2×2, 3×3) sur les couches éligibles.
+Le palier de 90 % de ce dernier modèle correspond à 8,79 ms pour GridNet seul. La fusion entière ajoute
+l'IFNet et la sortie prend ensuite le chemin de présentation. Le modèle compte un passage en mémoire
+des entrées, des sorties et des poids par couche.
+
 **Ce que le réglage peut gagner.** Le plafond du GridNet pour des plans de la paire à 1920 × 1152 (la fusion
 à 960 × 576), couche par couche le plus lent du calcul (tensor cores f16 de la RTX 4070 Ti, 160 Tflop/s) et des
 octets (chaque tenseur lu et écrit une fois, 504 Go/s) : 1 690 Gflop, 11,7 ms (calcul 10,8 ms, octets 8,6 ms ;

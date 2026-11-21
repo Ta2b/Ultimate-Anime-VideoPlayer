@@ -21,6 +21,8 @@ Variantes, chacune sur les seules couches qu'elle touche :
   chaque tenseur écrit et relu en E4M3 (les octets des activations divisés par deux).
 
     python3 -I tools/gmfss/plafond_leviers.py FUSION.onnx --height 1152 --width 1920
+
+    --modele-actuel calcule aussi la borne avec les canaux des MMA, la queue composée sur Ada et F(2×2,3×3).
 """
 import argparse
 import collections
@@ -47,7 +49,7 @@ CUDA_RATE = 60 * 128 * 2.61e9  # instructions f32 par seconde
 WINO = {"wino23": (2, 8, 6), "wino43": (4, 22, 18)}  # m, nnz(Bᵀ 4×4 ou 6×6), nnz(Aᵀ)
 
 
-def conv_layers(model):
+def conv_layers(model, full_size=None):
     """(morceau, nom, FLOP, octets d'entrée et de sortie, octets des poids, 3 × 3 de pas 1, tuiles par forme)."""
     values = list(model.graph.value_info) + list(model.graph.input) + list(model.graph.output)
     shapes = {v.name: [d.dim_value for d in v.type.tensor_type.shape.dim] for v in values}
@@ -59,6 +61,9 @@ def conv_layers(model):
             continue
         piece = 3 if parts[1] == "residual_model_tail" else BLOCK_LINE[parts[1]]
         inp, weight, out = shapes[node.input[0]], shapes[node.input[1]], shapes[node.output[0]]
+        if full_size is not None and parts[2] == "conv_last":
+            # La taille de sortie du PixelShuffle peut rester symbolique après l'inférence ONNX.
+            inp, out = [1, weight[1], *full_size], [1, weight[0], *full_size]
         attrs = {a.name: list(a.ints) for a in node.attribute}
         if node.op_type == "Conv":
             flop = 2 * np.prod(out) * weight[1] * np.prod(weight[2:])
@@ -90,12 +95,67 @@ def layer_time(row, variant):
     return flop / PEAK["fp8"], (acts / 2 + weights / 2) / BANDWIDTH  # fp8, octets FP8
 
 
+def native_cost(row, winograd):
+    _, name, flop, acts, weights, eligible, (cin, cout, h, w) = row
+    pin, pout = ((c + 15) // 16 * 16 for c in (cin, cout))
+    padding = pin * pout / (cin * cout)
+    packed_weights = weights * padding
+    if winograd and eligible:
+        tiles = ((h + 1) // 2) * ((w + 1) // 2)
+        # Bᵀ : 4 additions par passage 1D. Aᵀ : 4 additions par passage, sur 4 puis 2 points.
+        transforms = tiles * (32 * cin + 24 * cout)
+        math = tiles * 16 * 2 * pin * pout / PEAK["f16"] + transforms / CUDA_RATE
+        return math, (acts + packed_weights * 16 / 9) / BANDWIDTH
+    peak = PEAK["f32"] if "/conv_last/" in name else PEAK["f16"]
+    return flop * padding / peak, (acts + packed_weights) / BANDWIDTH
+
+
+def folded_cost(h, w):
+    # Deux groupes de huit sorties MMA, chacun couvrant une empreinte de 20 positions × 64 canaux.
+    low_pixels = (h // 2) * (w // 2)
+    products = low_pixels * 2 * 8 * 20 * 64
+    boundary = 2 * (h + w) - 4
+    edge_products = boundary * 3 * 16 * 64  # borne de l'épilogue scalaire aux bords
+    math = 2 * products / PEAK["f32"] + 2 * edge_products / (2 * CUDA_RATE)
+    interior_weights = 2 * 8 * 20 * 64 * 2
+    edge_weights = 4 * 4 * 3 * 16 * 64 * 4
+    bandwidth = (2 * (low_pixels * 64 + h * w * 3) + interior_weights + edge_weights) / BANDWIDTH
+    return math, bandwidth
+
+
+def report_current(rows, h, w):
+    last = [r for r in rows if "/conv_last/" in r[1] or "/upsample/upsample.0/" in r[1]]
+    expected = {(64, 3, h, w), (64, 256, h // 2, w // 2)}
+    if len(rows) != 45 or len(last) != 2 or {r[-1] for r in last} != expected:
+        raise ValueError("formes inattendues pour la queue GridNet composée")
+    print(f"GridNet à {h} × {w}, {len(rows)} convolutions, RTX 4070 Ti")
+    print("Calcul et durée calcul/octets couche par couche, pour le GridNet seul")
+    print(f"  {'voie':35s} {'calcul (ms)':>12s} {'borne (ms)':>12s} {'cible 90 % (ms)':>16s}")
+    for label, folded, winograd in (
+            ("direct avec canaux MMA", False, False),
+            ("queue composée", True, False),
+            ("queue composée + Winograd F(2×2)", True, True)):
+        costs = [native_cost(r, winograd) for r in rows if not folded or r not in last]
+        if folded:
+            costs.append(folded_cost(h, w))
+        compute = 1000 * sum(c[0] for c in costs)
+        bound = 1000 * sum(max(c) for c in costs)
+        print(f"  {label:35s} {compute:12.3f} {bound:12.3f} {bound / .9:16.3f}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("model", help="la fusion d'export_gmfss.py")
     parser.add_argument("--height", type=int, default=1152)
     parser.add_argument("--width", type=int, default=1920)
+    parser.add_argument("--modele-actuel", action="store_true", help="avec le calcul de la queue composée Ada")
     args = parser.parse_args()
+    if args.modele_actuel:
+        if (args.height, args.width) != (1152, 1920):
+            parser.error("la queue composée actuelle est qualifiée uniquement à 1152 × 1920")
+        model = inferred(args.model, args.height, args.width, symbolic=False)
+        report_current(conv_layers(model, (args.height, args.width)), args.height, args.width)
+        return
     rows = conv_layers(inferred(args.model, args.height, args.width))
     variants = ["direct", "wino23", "wino43", "fp8", "fp8, octets FP8"]
     total = collections.defaultdict(lambda: np.zeros(2))

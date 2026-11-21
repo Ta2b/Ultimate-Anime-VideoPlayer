@@ -287,6 +287,9 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   note de son époque qui se termine le plus près de la source, sans la dépasser
   (`EffectBook::for_source`, au plus 250 ms avant elle : au-delà, le masque revient au neutre). Une paire
   calculée en avance ne peut donc pas prêter sa lueur à une image antérieure. L'export ne lit pas le masque.
+  Pour le fondu à l'écran sans carte, une image dont le PTS est inconnu fait avancer le masque d'un pas
+  nominal. Le premier PTS connu après elle reprend sur un pas nominal également. Une nouvelle présentation
+  du même PTS connu ne fait pas avancer le masque.
 - **Le journal de fin** dit ce que le masque a fait, à l'écran et au grade avant le warp, dès qu'une image
   a eu la carte : « éclats sur les effets (grade avant le warp) : N images gradées, … avec la carte de la
   scène, … avec le masque (… %), marge des éclats retenue hors effet … % en moyenne ; à voir : 1:23 (effet
@@ -393,9 +396,6 @@ retire toutes les ancres malgré un déplacement exact. Les grilles 2×2, 1×1 p
 région retrouvent les mêmes ancres. Sur ces témoins, 4×4 suffit pour confirmer le trajet. Une
 couronne présente et compatible dans l'image courante reste nécessaire pour autoriser un éclat.
 
-Sans carte de scène, l'éclat revient progressivement au neutre. Une image dont le PTS est inconnu
-fait avancer ce fondu d'un pas nominal. Le premier PTS connu après elle reprend sur un pas nominal
-également. Une nouvelle présentation du même PTS connu ne fait pas avancer le masque.
 L'activation dans le lecteur attend des effets mobiles annotés en scène réelle.
 
 ## A2 : décisions par plan
