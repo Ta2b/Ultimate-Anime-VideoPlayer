@@ -542,8 +542,15 @@ confirme 165,00 puis 160,08 i/s avec F2 et 165,00 i/s dans les deux passages F4.
 Sur une image de banc et 76 lancements du corps jusqu'au RVB, la capture Nsight Compute passe
 de 262,04 à 207,98 GFLOP Tensor exécutés et de 1,282 à 1,117 Go DDR. Le trafic L2 passe de
 6,253 à 6,965 Go. La somme des bornes par lancement, avec les mêmes débits que le tableau
-ci-dessus, passe de 2,969 à 3,070 ms. La capture exclut l'entrée conv_1 et la composition. À ce stade,
-le candidat reste en essai et le réemploi de tuiles demande une validation dédiée.
+ci-dessus, passe de 2,969 à 3,070 ms. La capture exclut l'entrée conv_1 et la composition.
+
+Avec réemploi, le chemin tuilé F4 garde les 24 883 200 codes du F4 dense sur chacune des six
+images rejouées, y compris des translations et des bords de régions. En lecture, les quatre
+passages alternés sur la source à 180 i/s atteignent 165,00 i/s confirmées par Wayland.
+Le halo vertical augmente de quatre à huit rangs de tuiles. Le lecteur recalcule par tuiles
+66,2–66,3 % des images avec F2 et 56,4 % avec F4. Le temps médian du moteur passe de
+3,085–3,529 à 3,635–3,695 ms, et le p95 reste dans la même plage de 4,873–5,165 ms.
+Le F4 reste au banc.
 
 ## Mesurer
 

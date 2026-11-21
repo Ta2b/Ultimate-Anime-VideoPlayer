@@ -190,6 +190,15 @@ Quatre passages sans trace tiennent 165,00 i/s confirmées, avec un p95 moteur e
 plus haut sur les deux passages avec la tête directe. Un A/B sous trace montre un écart plus
 prononcé. La tête directe reste au banc.
 
+Sur les ResConv C32 de D1, le Winograd vertical F(3,3) calcule trois lignes en cinq points et
+réduit les produits de convolution de 44 % avant les transformées. Avec les points ±0,625,
+±1,5 et l'infini, l'erreur RMS face au direct à sommes FP32 passe de 0,000191 à 0,000145
+sur l'activation réelle de 4.25, et de 0,000172 à 0,000122 sur celle de Lite. La permutation
+des banques partagées garde les 4 177 920 codes sur chacun des deux modèles. Elle ramène
+l'empreinte du F3 de 126 à 96 registres et de 19 744 à 17 024 octets partagés par bloc.
+Même ainsi, le noyau prend 23,82 contre 22,97 µs sur 4.25 et 24,09 contre 23,23 µs sur Lite,
+en médiane ABBA. Le F3 reste au banc.
+
 ## Comparaison avec le RIFE natif d'AnimeJaNai
 
 Lu dans the-database/animejanai-inference (`src/native/gconv.cuh`, `gconv.cu`, `rife.cpp`), rien recopié. Même

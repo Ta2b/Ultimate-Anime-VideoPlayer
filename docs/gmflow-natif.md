@@ -215,6 +215,15 @@ Les sorties au quart, les permutations K/V et les deux tailles impaires gardent 
 Les douze projections passent de 0,528 à 0,561 ms au banc isolé, et le lecteur garde la tuile
 de 64 jetons.
 
+En sommes FP16, borner directement les deux valeurs Half2 après chaque projection du quart
+évite la conversion intermédiaire en FP32. Les 196 608 couples testés couvrent toutes les
+représentations FP16, et les projections de vraies scènes et de tailles impaires restent
+identiques au bit près. Sur la trace de lecture après la chauffe, le noyau passe d'une
+médiane de 44,98 à 42,19 µs. Dans l'ABBA sans trace avec la source à 48 i/s, le témoin
+donne 35,63–37,65 i/s confirmées et le candidat 36,90–40,32. Les médianes du rôle
+d'interpolation se recouvrent à 13,59–13,68 ms. Le p95 passe de 19,27–19,29 à
+19,23–21,37 ms. L'épilogue reste au banc en attendant un gain composé répétable.
+
 ```sh
 python3 tools/gmfss/gmflow_natif_couts.py --width 1920 --height 1152 --scale 0.5 \
   --plancher --reprise --winograd --rapide
