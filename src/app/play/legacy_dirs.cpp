@@ -64,12 +64,13 @@ std::vector<std::string>& adopted_lines() {
 
 }  // namespace
 
-fs::path prefs_dir() {
+fs::path prefs_dir(bool migrate_previous) {
   char* pref = SDL_GetPrefPath("", std::string(kDataName).c_str());
   const fs::path data = pref != nullptr ? core::path_from_utf8(pref) : fs::path();
   SDL_free(pref);
-  adopt_legacy_dir(legacy_pref_dir(data), data,
-                   [](const std::string& line) { adopted_lines().push_back(line); });
+  if (migrate_previous)
+    adopt_legacy_dir(legacy_pref_dir(data), data,
+                     [](const std::string& line) { adopted_lines().push_back(line); });
   return data;
 }
 

@@ -338,7 +338,7 @@ int run_compare_command(const std::vector<std::string_view>& args) {
   std::error_code error;
   const auto work = std::filesystem::temp_directory_path(error) / "kirari-compare";
   std::filesystem::create_directories(work, error);
-  const auto compare_data = kirari::app::play::prefs_dir();
+  const auto compare_data = kirari::app::play::prefs_dir(false);
   const play::BenchPlan plan{.executable = sdl_path(SDL_GetBasePath()) / std::string(kExecutable),
                              .video = options->file,
                              .work_dir = work,
@@ -372,7 +372,7 @@ int run_bench_command(const std::vector<std::string_view>& args) {
     return 0;
   }
   const auto base = sdl_path(SDL_GetBasePath());
-  const auto data = kirari::app::play::prefs_dir();
+  const auto data = kirari::app::play::prefs_dir(false);
   std::error_code error;
   const auto work = std::filesystem::temp_directory_path(error) / "kirari-bench";
   std::filesystem::create_directories(work, error);
@@ -615,7 +615,8 @@ int run_player(int argc, char** argv) {
   }
   quiet_failures() = scripted_trial(*options);
   const auto base = sdl_path(SDL_GetBasePath());
-  const auto data = kirari::app::play::prefs_dir();  // avant SDL_Init comme permis : l'inscription s'en sert
+  const bool normal_launch = !options->data_dir && !options->bench_out;
+  const auto data = kirari::app::play::prefs_dir(normal_launch);  // avant SDL_Init : l'inscription s'en sert
   if (data.empty())  // A18-07 : sans dossier de données, play.toml et engines/ iraient dans le dossier
                      // courant
     return fail_shown(
@@ -690,8 +691,7 @@ int run_player(int argc, char** argv) {
   if (const auto took = std::chrono::steady_clock::now() - audio_from; took > std::chrono::milliseconds(100))
     kirari::log_channel("app")->info("audio prêt en {} ms",
                                      std::chrono::duration_cast<std::chrono::milliseconds>(took).count());
-  const kirari::app::play::DataPlaces places =
-      kirari::app::play::settle_data(data, place, !options->data_dir && !options->bench_out);
+  const kirari::app::play::DataPlaces places = kirari::app::play::settle_data(data, place, normal_launch);
   const std::filesystem::path& heavy = places.heavy;
   const std::filesystem::path& cache = places.cache;
   bool engines_updated = false;  // un moteur mis à jour ou le GPU perdu : le lecteur se relance (play())

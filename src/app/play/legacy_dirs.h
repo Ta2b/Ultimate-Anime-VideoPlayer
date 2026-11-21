@@ -29,8 +29,8 @@ bool adopt_legacy_dir(const std::filesystem::path& legacy, const std::filesystem
                       const std::function<void(const std::string&)>& said = {});
 
 // Le dossier des réglages : <données>/kirari/ (SDL_GetPrefPath("", "kirari")), un seul niveau ; celui d'ajp
-// y est repris au premier appel. Vide si SDL n'en donne pas.
-std::filesystem::path prefs_dir();
+// y est repris au premier lancement normal. Un essai désactive cette reprise. Vide si SDL n'en donne pas.
+std::filesystem::path prefs_dir(bool migrate_previous = true);
 // Ce que la reprise a fait, à dire au journal une fois ouvert.
 const std::vector<std::string>& adopted_dir_lines();
 

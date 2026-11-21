@@ -7,6 +7,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/launch_data.h"
+
 namespace fs = std::filesystem;
 using kirari::app::play::adopt_legacy_dir;
 using kirari::app::play::legacy_pref_dir;
@@ -65,3 +67,34 @@ TEST_CASE("Dossiers d'ajp : un seul niveau pour les caches (~/.cache/ajp)", "[ap
   CHECK(fs::exists(root));  // le parent (~/.cache) ne s'appelle pas ajp : il reste
   fs::remove_all(root);
 }
+
+#if defined(__linux__)
+TEST_CASE("Le banc à XDG isolé laisse la migration des caches à la prochaine lecture normale",
+          "[app][legacy_dirs][migration_xdg]") {
+  const fs::path root = fs::temp_directory_path() / "kirari-xdg-cache-migration";
+  fs::remove_all(root);
+  const auto home = root / "utilisateur";
+  const auto data = home / ".local/share/kirari";
+  const auto legacy = home / ".cache/ajp";
+  const auto xdg = root / "autre-cache";
+  fs::create_directories(legacy / "engines");
+  fs::create_directories(data / "modeles");
+  fs::create_directories(xdg / "ajp/plans");
+  std::ofstream(legacy / "engines/rife.plan") << "moteur";
+  const auto isolated = kirari::app::play::locate_launch_data(data, home, xdg, false);
+  CHECK(isolated.cache == xdg / "kirari");
+  CHECK_FALSE(fs::exists(isolated.cache));
+  CHECK(fs::is_regular_file(legacy / "engines/rife.plan"));
+  CHECK(fs::is_directory(data / "modeles"));
+  CHECK(fs::is_directory(xdg / "ajp/plans"));
+
+  const auto normal = kirari::app::play::locate_launch_data(data, home, xdg, true);
+  CHECK(fs::is_regular_file(normal.cache / "engines/rife.plan"));
+  CHECK(fs::is_directory(normal.cache / "modeles"));
+  CHECK(fs::is_directory(normal.cache / "plans"));
+  CHECK_FALSE(fs::exists(legacy / "engines"));
+  CHECK_FALSE(fs::exists(data / "modeles"));
+  CHECK_FALSE(fs::exists(xdg / "ajp"));
+  fs::remove_all(root);
+}
+#endif

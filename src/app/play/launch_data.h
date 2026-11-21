@@ -14,7 +14,9 @@ struct DataPlaces {
   std::filesystem::path cache;
 };
 
-// purge_updates : le dossier de l'utilisateur est rangé (faux pour --data-dir et le banc).
-DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& place, bool purge_updates);
+// Détermine les deux emplacements et, en lecture normale, y reprend les données d'une version antérieure.
+DataPlaces locate_launch_data(const std::filesystem::path& data, const std::filesystem::path& home,
+                              const std::filesystem::path& xdg_cache, bool normal_launch);
+DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& place, bool normal_launch);
 
 }  // namespace kirari::app::play
