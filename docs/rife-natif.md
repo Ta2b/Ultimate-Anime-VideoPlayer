@@ -54,7 +54,12 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   Les encodeurs TensorRT restent planaires. Sur les deux RIFE livrés, la comparaison des deux rangements
   retrouve les mêmes codes RGB jusque dans la chaîne mixte à 640 × 384. À 1080p, la passe CUDA de 4.25
   gagne 0,04 à 0,05 ms dans deux alternances sous composition HDR. La cadence composée varie entre passages ;
-- **première couche de l'encodeur** lue dans les trois plans de l'image d'entrée, sans copie ;
+- **première couche de l'encodeur** lue dans les trois plans de l'image d'entrée, sans copie. Sur Ada, sa
+  variante compacte à sommes FP32 utilise K8 par prise. Les trois produits RGB gardent leur emplacement
+  et les neuf prises gardent leur ordre. À 1920 × 1088 sur RTX 4070 Ti, le banc isolé donne environ
+  35,6–35,8 → 27,3–27,4 µs contre la variante compacte K16, avec les mêmes codes FP16 pour les poids
+  RIFE 4.25 et RIFE 4.22 lite. L'identité est aussi vérifiée sur des images de l'extrait et sur des
+  tuiles partielles.
 - **entrée du dernier bloc à la volée** (`rife_native_glue.cu`). En pleine résolution (d = 1), X du dernier bloc
   pèse 64 octets par pixel, soit 134 Mo en 1920 × 1088 : la colle l'écrivait, sa première couche le relisait
   (0,363 ms à elle seule sur la 4070 Ti, à 75 % de la bande passante). Cette couche, une 3 × 3 de pas 2 de 32
@@ -78,7 +83,14 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   est vérifiée sur 11 millions de tuiles (tailles de 32 à 2176 lignes, échelles 1 à 32) et atteinte sans être
   dépassée. La colle de TensorRT appelle les mêmes fonctions : sa SASS ne change que par l'arithmétique d'adresses,
   avec les mêmes opérations flottantes. Il existe 12 noyaux (sommes × 3 ou 4 blocs d'avant × tuile 16 ou 32), à 160
-  registres au plus (sm_120), sans débordement pour d = 1 ;
+  registres au plus (sm_120), sans débordement pour d = 1.
+
+  Un essai met en mémoire partagée les encodages HWC4 dans deux fenêtres centrées sur le flot RIFE
+  de la tuile D1, avec une marge de deux pixels et un repli en mémoire globale hors fenêtre. Les
+  sorties et le flot compact sont identiques octet pour octet. Sur RTX 4070 Ti, les trois champs
+  960 × 544 issus d'une émulation RIFE sur des paires de luma donnent environ 78 → 111 µs, hors
+  premiers rejeux plus lents. Le cache réclame 7 696 octets partagés de plus par bloc CUDA. Le
+  candidat reste hors du lecteur.
 - **colle à demi-taille pour l'avant-dernier bloc**. L'essai du réseau compare aussi les deux chemins
   quand d = 2. Il garde un choix indépendant et l'inscrit dans le verdict en cache avec celui du
   dernier bloc. Sur RTX 4070 Ti avec RIFE 4.25 à 1920 × 1088, l'essai FP16 de ce bloc a donné
@@ -97,6 +109,11 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   et de 433–468 à 261–262 µs pour RIFE 4.22 lite (8, 4). Les sorties sont identiques octet pour octet
   à 1920 × 1088 ainsi que sur des tuiles partielles à 208 × 144, y compris avec des échelles dynamiques
   et le chemin de repli en plans. Le banc mesure le noyau sans présentation ni composition de fenêtre.
+
+  Un essai Winograd F(2 × 2, 3 × 3) sur un ResConv D2 de 64 canaux réduit d'environ 26 à 27 % l'erreur
+  RMS face à la convolution directe à sommes FP32. En revanche, sur RTX 4070 Ti et à 240 × 136,
+  sa médiane passe à 33,8–34,0 µs contre 25,5–25,8 µs pour le meilleur des deux réglages directs
+  à sommes FP16. Le noyau Winograd reste hors du lecteur.
 - **fin dans la dernière couche** (`rife_native_finish.cu`). La transposée du dernier bloc écrivait Y (52 canaux,
   56 rangés, à la moitié de la pleine résolution : 58 Mo en 1920 × 1088), dont fused_finish ne relisait que les
   20 premiers (le flot du bloc et le masque, en quatre parités). Quand la forme réglée de cette couche n'a pas de

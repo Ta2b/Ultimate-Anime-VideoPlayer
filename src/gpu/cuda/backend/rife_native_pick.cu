@@ -23,6 +23,17 @@ void launch_one(dim3 grid, int smem, cudaStream_t stream, const Params& p) {
       <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p);
 }
 
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 890
+// Sur Ada, chaque prise RGB tient dans le premier demi-fragment de K. Les poids restent rangés comme
+// avant et les neuf prises alimentent leurs accumulateurs FP32 dans le même ordre.
+__device__ __forceinline__ void mma_rgb_k8(Frag<Acc::kF32>& acc, std::uint32_t left, std::uint32_t right,
+                                           std::uint32_t weight) {
+  asm("mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32 {%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};\n"
+      : "+f"(acc.r[0]), "+f"(acc.r[1]), "+f"(acc.r[2]), "+f"(acc.r[3])
+      : "r"(left), "r"(right), "r"(weight));
+}
+#endif
+
 // L'entrée RGB ne remplit que deux mots du fragment A, et une prise de la transposée ne contribue à
 // l'accumulateur que pour les deux lignes de sa parité. Les produits non nuls restent dans leur ordre.
 template <int Rows, bool Image>
@@ -78,6 +89,13 @@ __global__ void __launch_bounds__(kThreads, 2) compact_encoder_kernel(Params p) 
         const int at = ((y + dy) * G::kIC + x + dx + (lane & 15)) * kLds + (lane / 16) * 8;
         ldmatrix4(a, smem_u32(s) + static_cast<std::uint32_t>(2 * at));
       }
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 890
+      if constexpr (Image) {
+        mma_rgb_k8(acc[f][0], a[0], a[1], w.x);
+        mma_rgb_k8(acc[f][1], a[0], a[1], w.z);
+        continue;
+      }
+#endif
       if (Image || dy < 2) acc[f][0].mma(a, w.x, w.y);
       if (Image || dy > 0) acc[f][1].mma(a, w.z, w.w);
     }
