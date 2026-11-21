@@ -610,6 +610,11 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
                i18n::tr("Tries the faster motion estimator for GMFSS. Motion can differ slightly. "
                         "Turning it off restores the stricter quality check."),
                panel::Apply::Reload);
+    ImGui::Checkbox(i18n::tr("Direct GMFSS splats (test)"), &d.experimental.gmfss_direct_splats);
+    panel::tip(i18n::tr("Direct GMFSS splats (test)"),
+               i18n::tr("Writes the warped features directly into GridNet on compatible NVIDIA RTX 40 "
+                        "cards at 1080p. Turning it off restores the separate layout conversion."),
+               panel::Apply::Reload);
     panel::end_group();
     ImGui::EndDisabled();
   }

@@ -216,6 +216,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                 .strong_px = gmfss_px,
                 .floor_px = static_cast<float>(settings.gmfss_key_floor),
                 .compose = settings.gmfss_compose,
+                .direct_splats = settings.experimental.gmfss_direct_splats,
                 .cost_us = gmfss_cost_us,
                 .pair_us = gmfss_pair_us},
       .layers = layer_setup(*this, clock),

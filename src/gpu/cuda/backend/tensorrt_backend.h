@@ -402,6 +402,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool gmfss_native_ = false;  // GridNet de la fusion de GMFSS par les noyaux natifs (kTrialGmfssNative)
   bool gmfss_feature_reuse_ = false;
   bool gmflow_fast_ = false;
+  bool gmfss_direct_splats_ = false;
   bool sharp1_winograd_ = true;
   bool drba_native_tail_ = true;
   bool gmfss_folded_tail_ = true;

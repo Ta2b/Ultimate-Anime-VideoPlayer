@@ -183,6 +183,11 @@ constexpr std::array kSettingsPages{
           "Turning it off restores the stricter quality check.",
           "Essaie l’estimateur de mouvement rapide de GMFSS. Le mouvement peut différer légèrement. "
           "Décocher rétablit le contrôle de qualité strict."},
+    Entry{"Direct GMFSS splats (test)", "Projections GMFSS directes (essai)"},
+    Entry{"Writes the warped features directly into GridNet on compatible NVIDIA RTX 40 "
+          "cards at 1080p. Turning it off restores the separate layout conversion.",
+          "Écrit les caractéristiques déformées directement dans GridNet sur les NVIDIA RTX 40 "
+          "compatibles en 1080p. Décocher rétablit la conversion séparée de leur disposition."},
     Entry{"Native DistilDRBA final block (test)", "Dernier bloc DistilDRBA natif (essai)"},
     Entry{"Tries the CUDA Winograd final block after a quality and speed check. Turning it off "
           "uses TensorRT for that block.",

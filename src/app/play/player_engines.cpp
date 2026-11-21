@@ -549,6 +549,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
                     (p.options.gmfss_native ? gpu::kTrialGmfssNative : 0U) |
                     (p.options.gmfss_feature_reuse ? gpu::kTrialGmfssFeatureReuse : 0U) |
                     (trials.gmflow_fast ? gpu::kTrialGmflowFast : 0U) |
+                    (trials.gmfss_direct_splats ? gpu::kTrialGmfssDirectSplats : 0U) |
                     (p.options.tfix_native ? gpu::kTrialTfixNative : 0U) |
                     (nvof_roundtrip ? gpu::kTrialNvofRoundtrip : 0U) |
                     (trials.sharp1_winograd ? 0U : gpu::kDisableSharp1Winograd) |

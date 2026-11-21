@@ -35,6 +35,7 @@ toml::table experimental_table(const ExperimentalSettings& s) {
                      {"drba_native_tail", s.drba_native_tail},
                      {"gmfss_folded_tail", s.gmfss_folded_tail},
                      {"gmflow_fast", s.gmflow_fast},
+                     {"gmfss_direct_splats", s.gmfss_direct_splats},
                      {"fused_layers", s.fused_layers},
                      {"nvof_layer_guard", s.nvof_layer_guard},
                      {"span_fp8_native_blocks", s.span_fp8_native_blocks},

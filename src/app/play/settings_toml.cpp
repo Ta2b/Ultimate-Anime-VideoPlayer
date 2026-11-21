@@ -314,6 +314,7 @@ void read_experimental(const toml::table& root, ExperimentalSettings& t,
   reads.push_back(read(table, "experimental", "drba_native_tail", t.drba_native_tail));
   reads.push_back(read(table, "experimental", "gmfss_folded_tail", t.gmfss_folded_tail));
   reads.push_back(read(table, "experimental", "gmflow_fast", t.gmflow_fast));
+  reads.push_back(read(table, "experimental", "gmfss_direct_splats", t.gmfss_direct_splats));
   reads.push_back(read(table, "experimental", "fused_layers", t.fused_layers));
   reads.push_back(read(table, "experimental", "nvof_layer_guard", t.nvof_layer_guard));
   reads.push_back(read(table, "experimental", "span_fp8_native_blocks", t.span_fp8_native_blocks));

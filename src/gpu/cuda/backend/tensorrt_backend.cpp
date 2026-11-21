@@ -160,6 +160,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->gmfss_native_ = (init.trials & kTrialGmfssNative) != 0;
   backend->gmfss_feature_reuse_ = (init.trials & kTrialGmfssFeatureReuse) != 0;
   backend->gmflow_fast_ = (init.trials & kTrialGmflowFast) != 0;
+  backend->gmfss_direct_splats_ = (init.trials & kTrialGmfssDirectSplats) != 0;
   backend->sharp1_winograd_ = (init.trials & kDisableSharp1Winograd) == 0;
   backend->drba_native_tail_ = (init.trials & kDisableDrbaNativeTail) == 0;
   backend->gmfss_folded_tail_ = (init.trials & kDisableGmfssFoldedTail) == 0;

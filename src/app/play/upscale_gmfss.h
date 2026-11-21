@@ -37,6 +37,7 @@ struct GmfssSetup {
   // Le mélange en travail plus grand que RIFE : M composée à la taille de travail (kernels/spec/gmfss.h),
   // au lieu de la sortie de la fusion agrandie.
   bool compose = false;
+  bool direct_splats = false;
   // Le coût d'une paire GMFSS au-delà de RIFE (paire, fusion, splats), en µs de temps réel : le mélange la
   // laisse à RIFE si son premier instant serait alors en retard (upscale_late.cpp).
   std::int64_t cost_us = 0;

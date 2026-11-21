@@ -15,6 +15,7 @@ struct ExperimentalFlag {
 
 constexpr std::array kExperimentalFlags{
     ExperimentalFlag{&PlayOptions::gmflow_fast, &ExperimentalSettings::gmflow_fast},
+    ExperimentalFlag{&PlayOptions::gmfss_direct_splats, &ExperimentalSettings::gmfss_direct_splats},
     ExperimentalFlag{&PlayOptions::fused_layers, &ExperimentalSettings::fused_layers},
     ExperimentalFlag{&PlayOptions::nvof_layer_guard, &ExperimentalSettings::nvof_layer_guard},
     ExperimentalFlag{&PlayOptions::span_fp8_native_blocks, &ExperimentalSettings::span_fp8_native_blocks},

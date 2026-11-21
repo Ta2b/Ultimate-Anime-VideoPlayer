@@ -266,7 +266,7 @@ std::expected<std::string, Refusal> GmfssFusedEngine::try_ifnet(
 
 std::expected<std::vector<std::string>, Refusal> GmfssFusedEngine::try_native(
     const prepare::GmfssGrid& grid, const std::shared_ptr<SharedActivations>& shared, double min_db,
-    const std::array<RifeNativePiece, 4>* ifnet) {
+    const std::array<RifeNativePiece, 4>* ifnet, bool direct_splats) {
   gmfss_trial::Scratch scratch;
   const auto upload = [&](const std::vector<__half>& host) -> std::expected<Tensor, Refusal> {
     void* device = nullptr;
@@ -308,7 +308,9 @@ std::expected<std::vector<std::string>, Refusal> GmfssFusedEngine::try_native(
   const auto started = std::chrono::steady_clock::now();
   std::string error;
   const char* packed = std::getenv("KIRARI_AB_GMFSS_PACKED_SPLATS");  // env: banc
-  features_c8_ = packed != nullptr && std::string_view(packed) == "2";
+  const std::string_view layout = packed != nullptr ? packed : "";
+  features_c8_ = direct_splats || layout == "2";
+  direct_splats_ = features_c8_ || layout == "1";
   std::unique_ptr<GmfssNativeNet> net =
       GmfssNativeNet::create(grid, height_, width_, scratch.stream, error, features_c8_);
   if (!net) {

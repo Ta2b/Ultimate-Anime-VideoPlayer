@@ -208,6 +208,7 @@ struct PlayOptions {
   // le retire du menu.
   bool gmfss_native = true;
   bool gmflow_fast = false;
+  bool gmfss_direct_splats = false;
   bool gmfss_feature_reuse = true;  // reprend FeatureNet quand deux paires partagent la même source
   // --gmfss-budget : coûts mesurés à la taille de l'essai.
   struct GmfssBudget {

@@ -217,6 +217,7 @@ constexpr Flag kFlags[]{
     {"--gmfss-native", &PlayOptions::gmfss_native, true},  // le défaut, gardé pour les anciennes commandes
     {"--no-gmfss-native", &PlayOptions::gmfss_native, false},
     {"--gmflow-fast", &PlayOptions::gmflow_fast, true},
+    {"--gmfss-direct-splats", &PlayOptions::gmfss_direct_splats, true},
     {"--gmfss-feature-reuse", &PlayOptions::gmfss_feature_reuse, true},
     {"--no-gmfss-feature-reuse", &PlayOptions::gmfss_feature_reuse, false},
     {"--tfix-native", &PlayOptions::tfix_native, true},

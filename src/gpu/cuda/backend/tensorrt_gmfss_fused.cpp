@@ -148,9 +148,17 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_fuse
     auto grid = native_grid(artifact.path, gmfss_folded_tail_);
     auto ifnet = native_ifnet(artifact.path);
     if (!ifnet) log(BackendLogLevel::Info, "GMFSS natif, IFNet : " + ifnet.error().detail);
-    auto kept =
-        grid ? (*engine)->try_native(*grid, arena(), kGmfssNativeMinDb, ifnet ? &*ifnet : nullptr)
-             : std::expected<std::vector<std::string>, Refusal>(std::unexpected(std::move(grid.error())));
+    const bool direct_splats = gmfss_direct_splats_ && properties_.major == 8 && properties_.minor == 9 &&
+                               key->height == 576 && key->width == 960;
+    const auto try_layout = [&](bool direct) {
+      if (!grid) return std::expected<std::vector<std::string>, Refusal>(std::unexpected(grid.error()));
+      return (*engine)->try_native(*grid, arena(), kGmfssNativeMinDb, ifnet ? &*ifnet : nullptr, direct);
+    };
+    auto kept = try_layout(direct_splats);
+    if (direct_splats && kept && !(*engine)->native()) {
+      log(BackendLogLevel::Info, "GMFSS natif : projections directes écartées par l'essai de fusion");
+      kept = try_layout(false);
+    }
     // Un noyau fautif pendant l'essai perd le contexte CUDA : le chargement échoue au lieu de rendre une
     // fusion morte. Tout autre refus laisse la fusion à TensorRT, chargée et intacte.
     if (!kept && kept.error().code == RefusalCode::DeviceLost)

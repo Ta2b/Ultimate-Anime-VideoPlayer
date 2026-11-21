@@ -122,7 +122,7 @@ std::expected<void, Refusal> GmfssFusedEngine::enqueue(cudaStream_t stream,
 
 std::optional<std::array<GmfssFusedEngine::SplatTarget, 6>> GmfssFusedEngine::packed_splats(
     std::span<const Tensor> inputs) const {
-  if (!native_on_ || inputs.size() != kInputs) return std::nullopt;
+  if (!native_on_ || !direct_splats_ || inputs.size() != kInputs) return std::nullopt;
   std::array<SplatTarget, 6> targets;
   const auto planes = native_->feature_inputs();
   for (std::size_t s = 0; s < 2; ++s) {

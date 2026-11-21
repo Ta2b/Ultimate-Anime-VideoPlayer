@@ -63,7 +63,7 @@ class GmfssFusedEngine final : public Engine {
   // l'essai n'a pas pu tourner (le moteur entier reste).
   std::expected<std::vector<std::string>, Refusal> try_native(
       const prepare::GmfssGrid& grid, const std::shared_ptr<SharedActivations>& shared, double min_db,
-      const std::array<RifeNativePiece, 4>* ifnet = nullptr);
+      const std::array<RifeNativePiece, 4>* ifnet, bool direct_splats);
   bool native() const { return native_on_; }
 
  private:
@@ -93,6 +93,7 @@ class GmfssFusedEngine final : public Engine {
   std::unique_ptr<GmfssNativeNet> native_;
   bool native_on_ = false;
   bool features_c8_ = false;
+  bool direct_splats_ = false;
   int height_ = 0;
   int width_ = 0;
   std::array<std::size_t, kInputs> at_{};    // la place de chaque entrée dans input_names()

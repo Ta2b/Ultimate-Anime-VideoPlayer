@@ -91,6 +91,23 @@ Les budgets historiques de 3 ms pour les splats et 11,2 ms pour la fusion modél
 rangements précis. Les mesures ci-dessus servent à calculer la marge de l'implémentation actuelle et à choisir
 une autre méthode lorsque le coût modélisé dépend d'un transfert ou d'un calcul qu'on peut supprimer.
 
+### Projections directes dans GridNet
+
+L'option « Projections GMFSS directes (essai) » dans Interpolation > Avancé, ou
+`--debug --gmfss-direct-splats`, demande l'écriture des six projections de caractéristiques
+directement par groupes de huit canaux. Elle est décochée par défaut. La voie se limite à Ada lorsque
+les entrées de la fusion sont à 960×576. Le contrôle de qualité et de temps de la fusion reste actif.
+Si la fusion avec ce rangement est écartée au chargement, le lecteur essaie la disposition normale.
+
+Sur quatre passages en fenêtre Wayland du même extrait 1080p, GMFSS seul et ×2, les deux témoins
+mesurent 19,57 et 20,02 ms en médiane pour la fusion, contre 18,28 et 17,82 ms pour la voie directe.
+En additionnant les médianes de projection et de fusion, les passages vont de 21,08 et 21,53 ms à
+20,12 et 19,42 ms. Le p95 du rôle interpolation passe de 20,67–21,21 à 18,91–19,63 ms, avec une
+médiane qui augmente de 14,46–14,61 à 15,40–15,80 ms. La cadence confirmée reste à 47,91–48,00 i/s
+avec ou sans le rangement direct, pour une source à 23,976 i/s doublée. Le réglage au chargement
+choisit aussi la précision de la tête. Les deux passages ayant retenu le même réglage de précision
+donnent 62,5 dB face à TensorRT.
+
 Sur Re:Zero en 1080p vers 4K, `python tools/bench/gmfss_budget_resume.py lecture.gpu.tsv --key-span --extra-key-ms 2`
 propose `--gmfss-budget=24,43` à partir des durées par étage relevées avec la sortie RGB directe. Le premier
 coût couvre les caractéristiques et les flots d'une paire froide. Le second couvre chaque instant GMFSS,

@@ -524,7 +524,7 @@ std::expected<void, Refusal> UpscaleStage::fuse_gmfss(float t, const gpu::Tensor
     const char* value = std::getenv("KIRARI_AB_GMFSS_PACKED_SPLATS");  // env: banc
     return value != nullptr && (std::string_view(value) == "1" || std::string_view(value) == "2");
   }();
-  if (packed) {
+  if (packed || setup_.gmfss.direct_splats) {
     auto fused = ops.gmfss_fuse_splats(*setup_.gmfss.fusion, gmfss_.jobs, gmfss_.time, t, inputs, results);
     if (fused) {
       ++gmfss_.fusions;
