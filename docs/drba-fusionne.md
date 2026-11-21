@@ -68,6 +68,11 @@ tient dans six noyaux.
   écrits et les zones laissées intactes, avec temps scalaire ou dense, également à 3840×2176.
   En lecture à ×2, les médianes du moteur passent de 2,45–2,64 à 2,43–2,58 ms. Le p95 varie entre
   les passages. Wayland confirme environ 48 i/s dans les quatre essais en fenêtre.
+- Après l'encodeur, les deux réductions de ses 48 plans utilisent elles aussi la ligne et le plan
+  dans la grille CUDA pour les tailles usuelles jusqu'en 1080p. En ABBA, l'encodage de 480×272
+  passe de 25,664 à 13,165 µs, celui de 320×192 de 12,618 à 8,592 µs. Les deux sorties et les
+  sentinelles restent identiques. Les petits encodages et les grandes formes gardent le lancement
+  unique, qui coûte moins au premier cas et reste compétitif au second.
 - Repli sur le DistilDRBA entier : réglage éteint, autre backend, cran Qualité avec son graphe `_fp32` (un cran dont
   le graphe manque garde la chaîne, et Performance la préfère au graphe `_fp8` : `drba_tier`), structure inconnue,
   taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne passe trois fois sur

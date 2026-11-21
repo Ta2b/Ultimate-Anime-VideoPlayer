@@ -209,6 +209,33 @@ __global__ void __launch_bounds__(256) post_kernel(DrbaPostParams p) {
   out[static_cast<std::size_t>(c) * plane + r] = __float2half_rn(v);
 }
 
+// Une grille par réduction évite les divisions par la surface et la largeur.
+template <int Scale>
+__global__ void __launch_bounds__(128) post_planes(DrbaPostParams p, __half* out) {
+  const int w = p.enc_width / Scale, h = p.enc_height / Scale;
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y), c = static_cast<int>(blockIdx.z) + 9;
+  if (x >= w) return;
+  const auto stride = static_cast<std::size_t>(p.enc_width);
+  constexpr int base = Scale / 2 - 1;
+  const auto* src = static_cast<const __half*>(p.x2) +
+                    (static_cast<std::size_t>(c) * p.enc_height + Scale * y + base) * stride + Scale * x +
+                    base;
+  const float avg = (__half2float(src[0]) + __half2float(src[1]) + __half2float(src[stride]) +
+                     __half2float(src[stride + 1])) *
+                    0.25F;
+  out[(static_cast<std::size_t>(c) * h + y) * w + x] = __float2half_rn(avg);
+}
+
+template <int Scale>
+cudaError_t launch_post_planes(const DrbaPostParams& p, void* dst, cudaStream_t stream) {
+  constexpr unsigned threads = 128;
+  const auto w = static_cast<unsigned>(p.enc_width / Scale), h = static_cast<unsigned>(p.enc_height / Scale);
+  const dim3 grid((w + threads - 1) / threads, h, 48);
+  post_planes<Scale><<<grid, threads, 0, stream>>>(p, static_cast<__half*>(dst));
+  return cudaGetLastError();
+}
+
 constexpr int kGlueWidth = 32, kGlueHeight = 4, kGlueThreads = kGlueWidth * kGlueHeight;
 constexpr int kPackedX2 = 112, kFirstDynamicX2 = 56, kPackedGroup = 8;
 constexpr int kSharedStride = kGlueThreads + 1;
@@ -412,6 +439,13 @@ cudaError_t launch_drba_pre(const DrbaPreParams& params, cudaStream_t stream) {
 }
 
 cudaError_t launch_drba_post(const DrbaPostParams& params, cudaStream_t stream) {
+  // Le gain est reproductible autour des formes 720p et 1080p avec réduction ×4.
+  if (params.enc_width >= 256 && params.enc_width <= 480 && params.enc_height >= 128 &&
+      params.enc_height <= 272) {
+    if (const auto error = launch_post_planes<2>(params, params.x1, stream); error != cudaSuccess)
+      return error;
+    return launch_post_planes<4>(params, params.x0, stream);
+  }
   const std::size_t enc =
       static_cast<std::size_t>(params.enc_height) * static_cast<std::size_t>(params.enc_width);
   post_kernel<<<blocks_for(48U * (enc / 4U + enc / 16U)), 256, 0, stream>>>(params);
