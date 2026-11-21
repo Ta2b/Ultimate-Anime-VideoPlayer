@@ -125,6 +125,28 @@ la tuile. Les sorties image, flot et masque gardent tous les codes sur deux scè
 et deux recadrages, à ×4 et ×8. En mode mouvement 1080p, les deux scènes passent d'environ
 29–32 à 36–45 µs au banc. La tuile précédente reste en service.
 
+Dans la colle de X2, huit fils par pixel peuvent relire les canaux fixes rangés en HWC8 et
+écrire les canaux variables au même pas. En gardant la contraction FP32 de la référence, les
+sorties, sentinelles et données d'entrée restent identiques. Le banc synthétique 1080p gagne
+environ 34 %. Avec les vrais tenseurs de deux scènes 1080p, le témoin prend 24,8 à 38,8 µs et
+la variante 93,3 à 107,1 µs. Elle reste au banc.
+
+La lecture de ces mêmes échantillons par texture CUDA, au point et sans filtrage, conserve les
+codes FP16 avec la même contraction. La texture linéaire ralentit de 16 à 25 % sur les deux
+scènes. La texture 2D gagne 38 % sur la mire et ralentit de 7 à 66 % sur les scènes. Le noyau
+du lecteur garde ses lectures globales.
+
+Le banc groupé de la première convolution de X2 conserve les sommes FP32 fixes en registres
+pour deux instants du même trio. Sur deux scènes, 3 133 440 codes par scène restent identiques.
+La variante à tuile de 16 colonnes et poids partagés passe de 204–221 à 182–188 µs pour une
+paire dont le premier instant est froid. Deux instants déjà chauds avec reprise du cache coûtent
+142–148 µs. Le groupement reste au banc.
+
+Avancer les mêmes sommes sur la voie auxiliaire garde toutes les sorties FP16 sur les deux
+scènes. En mode mouvement, le p95 de la chaîne à froid passe de 1,017 à 1,049 ms et de 1,046
+à 1,061 ms. En mode image, les écarts de médiane sont inférieurs à 10 µs. Le lecteur garde le
+calcul des sommes dans la première convolution à froid.
+
 ## Dans le lecteur
 
 `kirari play` (build Debug, le GPU fait le même travail), Re:Zero 18 de 16:00 (`--start=960`, 30 s), 1080p sans agrandissement

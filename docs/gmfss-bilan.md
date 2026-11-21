@@ -165,6 +165,13 @@ Le partage du halo entre trois groupes de sortie a aussi été essayé sur neuf 
 192→192 et deux scènes, avec et sans résiduel. Il garde les mêmes bits et allonge le temps
 médian apparié d'environ 10 % en K32/R1 et 13 % en K64/R1. Cette forme reste au banc.
 
+Le Winograd vertical de la tête C8 256→128 (convolution 06 à 480×288) ramène les produits
+de 81,54 à 54,36 GFLOP hors transformées. En K32 avec halo partagé, deux scènes donnent
+630–664 µs contre 666–742 µs pour le direct K64/R2 au banc ABBA. Rejouer le reste de
+GridNet sur CPU avec les sorties GPU donne 90,41 et 90,70 dB RGB face à la tête directe
+à sommes FP32, contre 89,40 et 89,81 dB avec le direct FP16. Les noyaux K64 sont plus
+lents. La variante K32 reste à qualifier dans le lecteur.
+
 ### Projections directes dans GridNet
 
 L'option « Projections GMFSS directes (essai) » dans Interpolation > Avancé, ou

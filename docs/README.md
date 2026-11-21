@@ -26,9 +26,9 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`rife-natif.md`](rife-natif.md) | RIFE fusionné par nos noyaux, morceau par morceau à côté de TensorRT (`--rife-native`, essai) |
 | [`rife-bilan.md`](rife-bilan.md) | Bilan du RIFE natif et de DistilDRBA : fait et mesuré, plafonds, ce qui reste, point de reprise ; [`rife-plafonds.md`](rife-plafonds.md) (le calcul des plafonds), [`rife-seance-pc.md`](rife-seance-pc.md) (la séance de chronométrage), [`drba-natif.md`](drba-natif.md) (DistilDRBA natif, sur le papier) |
 | [`tfix-natif.md`](tfix-natif.md) | TemporalFix fusionné par nos noyaux, sans TensorRT (`--tfix-native`, essai) |
-| [`gmfss-natif.md`](gmfss-natif.md) | GMFSS union par nos noyaux, GMFlow sous TensorRT : par défaut, gardé par l'essai au chargement (`--no-gmfss-native`) |
-| [`gmfss-bilan.md`](gmfss-bilan.md) | Bilan du chantier GMFSS natif : mesures, pistes essayées, plafonds et leviers au-delà, budget du temps réel, reste à faire, point de reprise ; chantier en pause |
-| [`gmflow-natif.md`](gmflow-natif.md) | GMFlow CUDA branché comme candidat natif. À 1080p sur le banc RTX 4070 Ti, le garde-fou de parité sélectionne encore TensorRT. |
+| [`gmfss-natif.md`](gmfss-natif.md) | GMFSS Union par noyaux CUDA, avec essai au chargement et repli TensorRT (`--no-gmfss-native`) |
+| [`gmfss-bilan.md`](gmfss-bilan.md) | Bilan du chantier GMFSS natif : mesures, pistes essayées, plafonds et budget du temps réel |
+| [`gmflow-natif.md`](gmflow-natif.md) | GMFlow CUDA avec essai rapide facultatif sur Ada en travail 1080p. Sur le banc RTX 4070 Ti, le contrôle de qualité du mode par défaut garde TensorRT. |
 | [`warp-lib.md`](warp-lib.md) | La bibliothèque de warp CUDA (lot E) : briques communes, colle de RIFE réécrite dessus, warp générique pour TemporalFix et les calques |
 | [`rife-candidats.md`](rife-candidats.md) | RIFE 4.25 lite et 4.26 face à 4.22 lite et 4.25 : mesures sur processeur, niveaux choisis, protocole ABAB sur la RTX |
 | [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour ; signature des exécutables Windows et macOS |

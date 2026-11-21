@@ -116,6 +116,12 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   à 1920 × 1088 ainsi que sur des tuiles partielles à 208 × 144, y compris avec des échelles dynamiques
   et le chemin de repli en plans. Le banc mesure le noyau sans présentation ni composition de fenêtre.
 
+  Sur deux vrais tenseurs à 1920 × 1088, deux prises bilinéaires voisines partagent souvent des texels.
+  Une variante réutilise les deux adresses communes et conserve la contraction FMA du témoin. Les
+  sorties de convolution restent identiques au bit. Avec une copie de 16 Mio entre les rejeux pour
+  sonder la pression du cache, le ratio ABBA médian ralentit de 3,5 % pour Lite et de 6,5 % pour 4.25.
+  Le partage reste au banc.
+
   Un essai Winograd F(2 × 2, 3 × 3) sur un ResConv D2 de 64 canaux réduit d'environ 26 à 27 % l'erreur
   RMS face à la convolution directe à sommes FP32. En revanche, sur RTX 4070 Ti et à 240 × 136,
   sa médiane passe à 33,8–34,0 µs contre 25,5–25,8 µs pour le meilleur des deux réglages directs

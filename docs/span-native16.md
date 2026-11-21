@@ -509,6 +509,24 @@ la couche 960×540 et deux recadrages. En C64, elles passent d'environ 0,57–0,
 En C48, elles passent de 0,39–0,42 à 0,72–1,04 ms. Le calendrier C64 double la construction du
 fragment A pour la même sortie et réduit la résidence de trois à deux blocs. L'anneau reste au banc.
 
+Le Winograd vertical F(4,3) emploie six coefficients pour quatre lignes de sortie, au lieu de
+huit coefficients en deux paires. Avec les points ±0,75 et ±1,5, l'erreur RMS baisse face à un
+direct FP64 sur les sorties échantillonnées à 960×540. À C64, elle passe de 7,97 à 7,07 × 10⁻⁵
+et la médiane augmente de 337 à 346 µs. À C48, la forme à six warps passe de 254 à 249 µs et
+l'erreur RMS de 8,01 à 7,05 × 10⁻⁵. Le maximum d'erreur augmente sur un recadrage malgré la
+baisse de la RMS. Le réseau complet et la cadence composée restent à qualifier pour cette forme.
+
+Un banc du Performance complet a depuis comparé le front en deux et quatre lignes, avec la
+dernière porte et la sortie RGB inchangées. Le changement de front seul garde tous les codes.
+Avec les ReLU F4 et le front de quatre lignes, la sortie 4K conserve 73,38 dB face à ONNX Runtime,
+comme la référence verticale F2. Avec les portes F4 aussi, elle atteint 73,64 dB. Les médianes
+respectives sont de 3,964, 4,073 et 3,977 ms pour F2, F4 ReLU et F4 ReLU avec portes. Cette
+géométrie reste au banc. Le passage des portes de N16 à N8 garde les codes du F4 sur les
+24 883 200 valeurs RGB. Quatre passages par forme donnent 3,862 ms de médiane avec les
+portes F4 en N16, 3,902 ms en N8 et 3,950 ms avec le témoin F2. Les plages se recouvrent,
+de 3,824 à 3,927 ms pour F4 N16 et de 3,882 à 4,225 ms pour F2. Le lecteur et les autres
+scènes restent à vérifier avant de retenir cette variation de géométrie.
+
 ## Mesurer
 
 Le PC ne mesure que les temps ; la justesse se juge sur processeur, dans le cloud. Un seul banc, sur CachyOS,
