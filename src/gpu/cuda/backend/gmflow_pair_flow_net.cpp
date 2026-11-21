@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <cuda_runtime_api.h>
 #include <string>
 #include <string_view>
@@ -63,6 +64,20 @@ struct Geometry {
   }
 };
 
+bool prefetch_global_keys(const Geometry& g) {
+  // La grille du demi-flot 1080p gagne au banc Ada. Une grille 72 × 120 perd à l'appariement.
+  if (g.h(3) != 36 || g.w(3) != 60) return false;
+  const char* ab = std::getenv("KIRARI_AB_GMFLOW_GLOBAL_PREFETCH");  // env: banc
+  if (ab != nullptr && std::string_view(ab) == "0") return false;
+  int device = 0;
+  cudaDeviceProp props{};
+  if (cudaGetDevice(&device) != cudaSuccess || cudaGetDeviceProperties(&props, device) != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    return false;
+  }
+  return props.major == 8 && props.minor == 9;
+}
+
 struct Layout {
   std::size_t pictures, features8, features4, input, result, flow0, flow1, pos8, pos4, scratch, size = 0;
 };
@@ -92,7 +107,7 @@ Layout plan(Geometry g, std::size_t pos8, std::size_t pos4, std::size_t scratch)
 
 class Net final : public GmflowPairFlowNet {
  public:
-  Net(Geometry g, bool fast) : g_(g), fast_(fast) {}
+  Net(Geometry g, bool fast) : g_(g), fast_(fast), prefetch_global_(prefetch_global_keys(g)) {}
   ~Net() override {
     if (buffer_ != nullptr) static_cast<void>(cudaFree(buffer_));
   }
@@ -180,14 +195,16 @@ class Net final : public GmflowPairFlowNet {
       return e;
     if (const auto e = eighth_->run(stream, features.eighth, result, at(layout_.scratch)); e != cudaSuccess)
       return e;
-    if (const auto e = launch_gmflow_global_match(stream, result, h, w, at(layout_.flow0)); e != cudaSuccess)
+    if (const auto e = launch_gmflow_global_match(stream, result, h, w, at(layout_.flow0), prefetch_global_);
+        e != cudaSuccess)
       return e;
     const auto qk = projections(3);
     if (const auto e =
             projection_->project(stream, result, static_cast<long>(g_.area(3)), true, qk[0], qk[1]);
         e != cudaSuccess)
       return e;
-    return launch_gmflow_global_propagate(stream, qk[0], qk[1], at(layout_.flow0), h, w, at(layout_.flow1));
+    return launch_gmflow_global_propagate(stream, qk[0], qk[1], at(layout_.flow0), h, w, at(layout_.flow1),
+                                          prefetch_global_);
   }
 
   cudaError_t match_quarter(cudaStream_t stream, const GmflowFeatures& features) const {
@@ -226,6 +243,7 @@ class Net final : public GmflowPairFlowNet {
 
   Geometry g_;
   bool fast_;
+  bool prefetch_global_;
   GmfssImageNormalization normalization_;
   std::array<int, 2> splits_{};
   Layout layout_{};

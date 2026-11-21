@@ -42,6 +42,13 @@ paire pour une séquence comportant deux réemplois après un départ à froid. 
 passe de 13,30–13,34 à 13,03–13,08 ms. Les sorties testées sont identiques bit à bit. Le banc
 `KIRARI_AB_GMFLOW_MLP_PAIRS=0` rétablit la variante de comparaison.
 
+Au huitième, le préchargement des clés suivantes pendant le softmax réduit le temps de l'appariement
+global à 36 × 60 de 0,0837 à 0,0737 ms sur la RTX 4070 Ti. Les meilleurs passages de propagation globale
+passent de 0,0864 à 0,0769 ms. Les sorties sont identiques au bit sur les trois grilles du microbanc
+(36 × 60, 37 × 61 et 72 × 120). Le format 72 × 120 ralentit à l'appariement, donc le lecteur prend le
+préchargement uniquement à 36 × 60 sur Ada. Ces temps isolent les noyaux. Le contrôle de qualité de GMFlow
+au chargement reste actif. `KIRARI_AB_GMFLOW_GLOBAL_PREFETCH=0` rétablit l'ordonnancement précédent.
+
 Un autre essai calcule une seule fois la corrélation des deux sens, puis fusionne des sommes
 partielles. L'étape gagne environ 0,055 ms. L'écart du flot est inférieur à 0,000031 px à cet endroit,
 mais atteint presque un pixel après les raffinements sur un triplet difficile. Les masques

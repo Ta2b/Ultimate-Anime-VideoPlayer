@@ -22,7 +22,7 @@ struct Params {
 constexpr float kScale = ga::kLog2e / 11.313708498984761F;  // 1/√128, en base 2.
 
 // Charge une tuile de jetons, zéros au-delà de la grille. Même pas partagé que scores de l'attention.
-__device__ __forceinline__ void load_tile(__half* shared, const __half* input, int begin, int tokens) {
+__device__ __forceinline__ void issue_tile(__half* shared, const __half* input, int begin, int tokens) {
   const int chunk = static_cast<int>(threadIdx.x) & 15;
   for (int row = static_cast<int>(threadIdx.x) >> 4; row < ga::kRows; row += ga::kThreads / 16) {
     const bool valid = begin + row < tokens;
@@ -31,7 +31,6 @@ __device__ __forceinline__ void load_tile(__half* shared, const __half* input, i
                    valid);
   }
   ga::cp_async_commit();
-  ga::cp_async_wait<0>();
 }
 
 struct Row {
@@ -86,10 +85,10 @@ __device__ __forceinline__ float2 coords(int token, int width) {
   return make_float2(static_cast<float>(token - y * width), static_cast<float>(y));
 }
 
-template <bool kPropagation>
+template <bool kPropagation, bool kPrefetch>
 __global__ void __launch_bounds__(ga::kThreads) global_kernel(Params p) {
   __shared__ __align__(16) __half shared[ga::kRows * ga::kLds];
-  __shared__ float2 values[ga::kRows];
+  __shared__ float2 values[kPrefetch ? 2 : 1][ga::kRows];
   const int tid = static_cast<int>(threadIdx.x);
   const int warp = tid >> 5, lane = tid & 31;
   const int direction = static_cast<int>(blockIdx.y);
@@ -97,7 +96,8 @@ __global__ void __launch_bounds__(ga::kThreads) global_kernel(Params p) {
   const auto plane = static_cast<std::int64_t>(p.tokens) * ga::kD;
   const __half* q = p.query + direction * plane;
   const __half* k = p.keys + (kPropagation ? direction : direction ^ 1) * plane;
-  load_tile(shared, q, first, p.tokens);
+  issue_tile(shared, q, first, p.tokens);
+  ga::cp_async_wait<0>();
   __syncthreads();
   std::uint32_t query[ga::kSteps][4];
   const auto base = rn::smem_u32(shared) +
@@ -108,8 +108,11 @@ __global__ void __launch_bounds__(ga::kThreads) global_kernel(Params p) {
   __syncthreads();
 
   Row row[2];
+  if constexpr (kPrefetch) issue_tile(shared, k, 0, p.tokens);
   for (int from = 0; from < p.tokens; from += ga::kRows) {
-    load_tile(shared, k, from, p.tokens);
+    if constexpr (!kPrefetch) issue_tile(shared, k, from, p.tokens);
+    ga::cp_async_wait<0>();
+    const int slot = kPrefetch ? (from / ga::kRows) % 2 : 0;
     if (tid < ga::kRows) {
       const int key = from + tid;
       float2 v = make_float2(0.F, 0.F);
@@ -119,15 +122,22 @@ __global__ void __launch_bounds__(ga::kThreads) global_kernel(Params p) {
         else
           v = coords(key, p.width);
       }
-      values[tid] = v;
+      values[slot][tid] = v;
     }
     __syncthreads();
     rn::Frag<ga::Acc::kF32> scores[8];
     ga::scores(scores, query, shared, lane);
+    if constexpr (kPrefetch) {
+      // Tous les scores ont quitté les clés partagées. Charger la tuile suivante pendant le softmax.
+      // Ses valeurs iront dans l'autre tampon pour laisser finir les lectures de celui-ci.
+      __syncthreads();
+      const int next = from + ga::kRows;
+      if (next < p.tokens) issue_tile(shared, k, next, p.tokens);
+    }
     const int left = p.tokens - from;
-    accumulate(row[0], scores, values, left, 0, lane);
-    accumulate(row[1], scores, values, left, 1, lane);
-    __syncthreads();
+    accumulate(row[0], scores, values[slot], left, 0, lane);
+    accumulate(row[1], scores, values[slot], left, 1, lane);
+    if constexpr (!kPrefetch) __syncthreads();
   }
 #pragma unroll
   for (int h = 0; h < 2; ++h) {
@@ -152,7 +162,7 @@ bool aligned(const void* p, std::size_t bytes) {
 
 template <bool kPropagation>
 cudaError_t launch(cudaStream_t stream, const void* query, const void* keys, const void* flow, int height,
-                   int width, void* out) {
+                   int width, void* out, bool prefetch) {
   const auto tokens = static_cast<std::int64_t>(height) * width;
   if (height < 1 || width < 1 || tokens > std::numeric_limits<int>::max() - ga::kRows ||
       !aligned(query, 16) || !aligned(keys, 16) || !aligned(out, alignof(float2)) ||
@@ -165,20 +175,24 @@ cudaError_t launch(cudaStream_t stream, const void* query, const void* keys, con
                       .width = width,
                       .tokens = static_cast<int>(tokens)};
   const auto blocks = static_cast<unsigned>((params.tokens + ga::kRows - 1) / ga::kRows);
-  global_kernel<kPropagation><<<dim3(blocks, 2), ga::kThreads, 0, stream>>>(params);
+  if (prefetch)
+    global_kernel<kPropagation, true><<<dim3(blocks, 2), ga::kThreads, 0, stream>>>(params);
+  else
+    global_kernel<kPropagation, false><<<dim3(blocks, 2), ga::kThreads, 0, stream>>>(params);
   return cudaGetLastError();
 }
 
 }  // namespace
 
 cudaError_t launch_gmflow_global_match(cudaStream_t stream, const void* tokens, int height, int width,
-                                       void* flow) {
-  return launch<false>(stream, tokens, tokens, nullptr, height, width, flow);
+                                       void* flow, bool prefetch) {
+  return launch<false>(stream, tokens, tokens, nullptr, height, width, flow, prefetch);
 }
 
 cudaError_t launch_gmflow_global_propagate(cudaStream_t stream, const void* query, const void* keys,
-                                           const void* flow, int height, int width, void* out) {
-  return launch<true>(stream, query, keys, flow, height, width, out);
+                                           const void* flow, int height, int width, void* out,
+                                           bool prefetch) {
+  return launch<true>(stream, query, keys, flow, height, width, out, prefetch);
 }
 
 }  // namespace kirari::gpu::cuda
