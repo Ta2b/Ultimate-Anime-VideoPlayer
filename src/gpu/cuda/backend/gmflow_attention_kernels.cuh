@@ -38,6 +38,11 @@ inline constexpr int kLds = kD + 8;     // pas d'une ligne en mémoire partagée
 inline constexpr int kSteps = kD / 16;  // pas k de 16 sur les canaux
 inline constexpr int kPairs = kD / 16;  // paires de tuiles n8 sur les canaux
 inline constexpr int kTileBytes = kRows * kLds * 2;
+inline constexpr int kFastQueryRows = 48;
+inline constexpr int kFastQueryThreads = 96;
+inline constexpr int kFastQuerySmem = (kFastQueryRows + 32) * kLds * 2 + 32 * 4;
+inline constexpr int kRegionShift = 28;
+inline constexpr std::uint32_t kTokenMask = (1U << kRegionShift) - 1U;
 inline constexpr int kSmemBytes = 2 * kTileBytes + kRows * 4;  // K, V et les régions des clés
 inline constexpr float kLog2e = 1.4426950408889634F;
 
@@ -103,7 +108,7 @@ __device__ __forceinline__ std::uint32_t half2_bits(float lo, float hi) {
 
 // Le jeton t de la fenêtre window : son indice dans l'image et sa région dans l'image décalée (0 hors
 // décalage).
-__device__ __forceinline__ int token_of(const Grid& g, int window, int t, int& region) {
+__host__ __device__ __forceinline__ int token_of(const Grid& g, int window, int t, int& region) {
   const int wy = window / g.splits, wx = window - wy * g.splits;
   const int r = t / g.ww, c = t - r * g.ww;
   const int yr = wy * g.wh + r, xr = wx * g.ww + c;
@@ -182,17 +187,28 @@ __global__ void __launch_bounds__(kThreads) qkv_kernel(QkvParams p) {
   }
 }
 
+template <bool Indexed>
+__device__ __forceinline__ int attention_token(const Grid& g, int window, int t, const std::uint32_t* index,
+                                               int& region) {
+  if constexpr (Indexed) {
+    const std::uint32_t entry = __ldg(index + static_cast<long>(window) * g.length + t);
+    region = static_cast<int>(entry >> kRegionShift);
+    return static_cast<int>(entry & kTokenMask);
+  }
+  return token_of(g, window, t, region);
+}
+
 // 64 lignes de la partie part (0 : q, 1 : k, 2 : v) des jetons first.. de la fenêtre, en mémoire partagée
 // (pas kLds), zéros au-delà de la fenêtre. regions (non nul) : la région de chaque clé, -1 au-delà.
-template <int Rows = kRows>
+template <int Rows, int Threads, bool Indexed>
 __device__ __forceinline__ void load_rows(__half* s, int* regions, const AttnParams& p, const __half* qkv,
-                                          int window, int first, int part) {
+                                          int window, int first, int part, const std::uint32_t* index) {
   const int chunk = static_cast<int>(threadIdx.x) & 15;
-  for (int row = static_cast<int>(threadIdx.x) >> 4; row < Rows; row += kThreads / 16) {
+  for (int row = static_cast<int>(threadIdx.x) >> 4; row < Rows; row += Threads / 16) {
     const int t = first + row;
     const bool ok = t < p.grid.length;
     int region = -1;
-    const int token = ok ? token_of(p.grid, window, t, region) : 0;
+    const int token = ok ? attention_token<Indexed>(p.grid, window, t, index, region) : 0;
     const __half* from = qkv + static_cast<long>(token) * kQkv + part * kD + chunk * 8;
     rn::cp_async16(rn::smem_u32(s + row * kLds + chunk * 8), from, ok);
     if (regions != nullptr && chunk == 0) regions[row] = ok ? region : -1;
@@ -489,18 +505,18 @@ __device__ __forceinline__ void finish(rn::Frag<PV> (&o)[2 * kPairs], const floa
 #define KIRARI_GMFLOW_ATTN_BOUNDS __launch_bounds__(kThreads)
 #endif
 
-// L'attention d'une couche : blockIdx.x les 64 requêtes, blockIdx.y la fenêtre, blockIdx.z le lot. Mémoire
-// partagée dynamique : kSmemBytes.
-template <Acc A, bool Normalized = false>
-__global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
+// blockIdx.x couvre les requêtes de la tuile, blockIdx.y la fenêtre et blockIdx.z le lot.
+template <Acc A, bool Normalized, int QueryRows, int Threads, bool Indexed = false>
+__device__ __forceinline__ void attention(const AttnParams& p, unsigned char* smem_raw,
+                                          const std::uint32_t* index = nullptr) {
+  static_assert(QueryRows == 16 * (Threads / 32));
   constexpr int KeyRows = Normalized ? 32 : kRows;
-  extern __shared__ __align__(16) unsigned char smem_raw[];
   auto* sk = reinterpret_cast<__half*>(smem_raw);
   __half* sv = sk + KeyRows * kLds;
-  int* kreg = reinterpret_cast<int*>(sv + kRows * kLds);
+  int* kreg = reinterpret_cast<int*>(sv + QueryRows * kLds);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
   const int window = static_cast<int>(blockIdx.y), batch = static_cast<int>(blockIdx.z);
-  const int first = static_cast<int>(blockIdx.x) * kRows;
+  const int first = static_cast<int>(blockIdx.x) * QueryRows;
   // Les gains sont mesurés sur Ada. Les autres architectures gardent les tuiles complètes.
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 890
   const bool skip_padding = !Normalized && p.skip_padding;
@@ -508,12 +524,12 @@ __global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
   constexpr bool skip_padding = false;
 #endif
   // Les warps hors de la fenêtre participent toujours aux copies et aux barrières du bloc.
-  const bool active = !skip_padding || first + warp * 16 < p.grid.length;
+  const bool active = (!skip_padding && !Indexed && QueryRows == kRows) || first + warp * 16 < p.grid.length;
   const __half* qkv = p.qkv + static_cast<long>(batch) * p.tokens * kQkv;
   // Q dans le tampon de V, K de la première tuile dans le sien ; Q passe en registres.
-  load_rows(sv, nullptr, p, qkv, window, first, 0);
+  load_rows<QueryRows, Threads, Indexed>(sv, nullptr, p, qkv, window, first, 0, index);
   cp_async_commit();
-  load_rows<KeyRows>(sk, kreg, p, qkv, window, 0, 1);
+  load_rows<KeyRows, Threads, Indexed>(sk, kreg, p, qkv, window, 0, 1, index);
   cp_async_commit();
   cp_async_wait<1>();
   __syncthreads();
@@ -530,10 +546,10 @@ __global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
   for (int h = 0; h < 2; ++h) {
     const int t = first + warp * 16 + (lane >> 2) + 8 * h;
     qreg[h] = 0;
-    tokens[h] = t < p.grid.length ? token_of(p.grid, window, t, qreg[h]) : -1;
+    tokens[h] = t < p.grid.length ? attention_token<Indexed>(p.grid, window, t, index, qreg[h]) : -1;
   }
   __syncthreads();  // Q est en registres : le tampon de V est libre
-  load_rows<KeyRows>(sv, nullptr, p, qkv, window, 0, 2);
+  load_rows<KeyRows, Threads, Indexed>(sv, nullptr, p, qkv, window, 0, 2, index);
   cp_async_commit();
   rn::Frag<Normalized ? Acc::kF16 : Acc::kF32> o[2 * kPairs];
 #pragma unroll
@@ -560,7 +576,7 @@ __global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
     __syncthreads();  // K et les régions de la tuile ne sont plus lus
     const bool more = j + 1 < tiles;
     if (more) {
-      load_rows<KeyRows>(sk, kreg, p, qkv, window, (j + 1) * KeyRows, 1);
+      load_rows<KeyRows, Threads, Indexed>(sk, kreg, p, qkv, window, (j + 1) * KeyRows, 1, index);
       cp_async_commit();
       cp_async_wait<1>();  // V de la tuile j
     } else {
@@ -575,12 +591,12 @@ __global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
     }
     __syncthreads();  // V de la tuile n'est plus lu
     if (more) {
-      load_rows<KeyRows>(sv, nullptr, p, qkv, window, (j + 1) * KeyRows, 2);
+      load_rows<KeyRows, Threads, Indexed>(sv, nullptr, p, qkv, window, (j + 1) * KeyRows, 2, index);
       cp_async_commit();
     }
   }
   if constexpr (Normalized) {
-    finish<A>(o, l, tokens, p, batch, lane);
+    if (active) finish<A>(o, l, tokens, p, batch, lane);
   } else {
     if (short_last) {
       if (tail <= 16)
@@ -590,6 +606,13 @@ __global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
     }
     if (active) finish<A>(o, l, tokens, p, batch, lane);
   }
+}
+
+// Les autres formes gardent les tuiles de 64 requêtes.
+template <Acc A, bool Normalized = false>
+__global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
+  extern __shared__ __align__(16) unsigned char smem_raw[];
+  attention<A, Normalized, kRows, kThreads>(p, smem_raw);
 }
 
 }  // namespace kirari::gpu::cuda::gmflow_attention

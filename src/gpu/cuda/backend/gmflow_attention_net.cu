@@ -1,6 +1,7 @@
 // Les couches d'attention de GMFlow natif (gmflow_attention_net.h) : les poids de chaque couche rangés une
 // fois pour le mma (QKV 384 × 128 en trois parties, fusion 128 × 128), la géométrie des fenêtres de
 // l'échelle, et pour chaque couche deux lancements, la GEMM QKV puis l'attention fondue.
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -79,6 +80,36 @@ void pack(const std::vector<float>& w, int row0, int n, std::vector<std::uint32_
       }
 }
 
+// Au quart du demi-flot, trois blocs de 48 requêtes couvrent les 135 jetons de la fenêtre.
+// Le chemin est choisi sur Ada. Dans le binaire Turing, quatre blocs imposeraient un spill à ptxas.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 750
+constexpr int kIndexedMinBlocks = 2;
+#else
+constexpr int kIndexedMinBlocks = 4;
+#endif
+
+__global__ void __launch_bounds__(ga::kFastQueryThreads, kIndexedMinBlocks)
+    attention_normalized_indexed(ga::AttnParams p, const std::uint32_t* index) {
+  extern __shared__ __align__(16) unsigned char smem_raw[];
+  ga::attention<ga::Acc::kF16, true, ga::kFastQueryRows, ga::kFastQueryThreads, true>(p, smem_raw, index);
+}
+
+std::vector<std::uint32_t> window_indices(ga::Grid g, bool shifted) {
+  g.shifted = shifted;
+  g.sh = shifted ? g.wh / 2 : 0;
+  g.sw = shifted ? g.ww / 2 : 0;
+  std::vector<std::uint32_t> indices(static_cast<std::size_t>(g.height) * g.width);
+  for (int window = 0; window < g.splits * g.splits; ++window) {
+    for (int t = 0; t < g.length; ++t) {
+      int region = 0;
+      const int token = ga::token_of(g, window, t, region);
+      indices[static_cast<std::size_t>(window) * g.length + t] =
+          static_cast<std::uint32_t>(token) | (static_cast<std::uint32_t>(region) << ga::kRegionShift);
+    }
+  }
+  return indices;
+}
+
 struct Layer {
   Buffer qkv, merge, gamma, beta;
   bool shifted = false;
@@ -92,6 +123,15 @@ class Net final : public GmflowAttentionNet {
     const int s = a.splits[static_cast<std::size_t>(scale)];
     grid_ = {.height = height, .width = width, .splits = s, .wh = height / s, .ww = width / s};
     grid_.length = grid_.wh * grid_.ww;
+    if (fast_ && scale == 1 && height == 72 && width == 120 && s == 8) {
+      int device = 0;
+      cudaDeviceProp properties{};
+      if (cudaGetDevice(&device) == cudaSuccess &&
+          cudaGetDeviceProperties(&properties, device) == cudaSuccess)
+        indexed_ = properties.major == 8 && properties.minor == 9;
+      else
+        static_cast<void>(cudaGetLastError());
+    }
     scale_log2_ = a.scale * ga::kLog2e;
     mask_log2_ = a.mask * ga::kLog2e;
     eps_ = a.epsilon;
@@ -113,7 +153,18 @@ class Net final : public GmflowAttentionNet {
           !sent(to.beta.upload(from.beta.data(), from.beta.size() * 4), error))
         return false;
     }
-    return sent(workspace_.allocate(static_cast<std::size_t>(workspace_bytes())), error);
+    if (!sent(workspace_.allocate(static_cast<std::size_t>(workspace_bytes())), error)) return false;
+    if (indexed_) {
+      for (const bool shifted : {false, true}) {
+        const auto indices = window_indices(grid_, shifted);
+        if (indices_[shifted].upload(indices.data(), indices.size() * sizeof(std::uint32_t)) != cudaSuccess) {
+          static_cast<void>(cudaGetLastError());
+          indexed_ = false;
+          break;
+        }
+      }
+    }
+    return true;
   }
 
   std::int64_t workspace_bytes() const override { return std::int64_t{batch_} * tokens_ * ga::kQkv * 2; }
@@ -163,7 +214,15 @@ class Net final : public GmflowAttentionNet {
                     static_cast<unsigned>(grid_.splits * grid_.splits), static_cast<unsigned>(batch_));
     if (fast_) {
       constexpr int smem = (ga::kRows + 32) * ga::kLds * 2 + 32 * 4;
-      ga::attention_kernel<ga::Acc::kF16, true><<<grid, ga::kThreads, smem, stream>>>(p);
+      if (indexed_) {
+        const dim3 short_grid(
+            static_cast<unsigned>((grid_.length + ga::kFastQueryRows - 1) / ga::kFastQueryRows), grid.y,
+            grid.z);
+        attention_normalized_indexed<<<short_grid, ga::kFastQueryThreads, ga::kFastQuerySmem, stream>>>(
+            p, indices_[l.shifted].as<const std::uint32_t>());
+      } else {
+        ga::attention_kernel<ga::Acc::kF16, true><<<grid, ga::kThreads, smem, stream>>>(p);
+      }
     } else {
       ga::attention_kernel<ga::Acc::kF32><<<grid, ga::kThreads, ga::kSmemBytes, stream>>>(p);
     }
@@ -179,6 +238,7 @@ class Net final : public GmflowAttentionNet {
   }
 
   bool fast_;
+  bool indexed_ = false;
   int batch_;
   long tokens_;
   ga::Grid grid_;
@@ -186,6 +246,7 @@ class Net final : public GmflowAttentionNet {
   float mask_log2_ = 0.F;
   float eps_ = 1e-5F;
   std::vector<Layer> layers_;
+  std::array<Buffer, 2> indices_;
   Buffer workspace_;
 };
 

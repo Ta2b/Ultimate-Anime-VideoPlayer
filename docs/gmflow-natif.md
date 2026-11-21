@@ -154,6 +154,29 @@ La mire synthétique donne 59,88 dB contre 59,94 pour TensorRT. Son erreur de po
 de 0,115 à 0,128 sur l'échelle RVB normalisée. L'écart se concentre près d'une occultation où
 le changement du flot déplace les poids photométriques du splatting.
 
+En 1080p sur Ada, l'attention rapide au quart relit les indices de jetons et les régions des fenêtres
+dans deux petites tables calculées au chargement, une par décalage. Trois blocs de 48 requêtes
+couvrent les 135 jetons d'une fenêtre, contre trois blocs de 64 auparavant. Les mêmes produits,
+masques et réductions du softmax s'appliquent aux jetons valides. L'attention au huitième conserve
+son chemin strict. Si la table ne peut pas être chargée, le lecteur reprend les blocs de 64.
+
+Sur trois triplets réels, les neuf sorties du banc GMFlow restent bit à bit identiques.
+La médiane de GMFlow avec réemploi passe de 5,867 à 5,530 ms, et celle du passage à froid de
+6,415 à 5,990 ms. Dans le lecteur, la trace sur 149 paires donne 7,134 → 6,585 ms du premier au
+dernier noyau de la plage GMFlow, préparation comprise. Le 95e centile passe de 8,105 à 7,499 ms.
+Les 1 788 appels du nouveau noyau correspondent aux douze attentions au quart par paire.
+Sur ce passage ×2, les images confirmées par le compositeur Wayland donnent 47,91 → 48,00 i/s
+et 170 confirmations sur 170 dans les deux cas, avec 148 fusions GMFSS et aucune passe RIFE.
+
+Le [modèle du demi-flot mixte](../tools/gmfss/gmflow_natif_couts.py) donne 4,096 ms avec réemploi
+et Winograd, soit 4,551 ms pour le palier de 90 %. Le banc GMFlow avec réemploi atteint environ
+74 % sur cette base. La plage du lecteur inclut les préparations et s'établit à environ 62 %.
+
+```sh
+python3 tools/gmfss/gmflow_natif_couts.py --width 1920 --height 1152 --scale 0.5 \
+  --plancher --reprise --winograd --rapide
+```
+
 ## Ce qui tourne aujourd'hui
 
 - Le graphe paire d'union (`gmfss_fortuna_union_pair.onnx`, ou `_s05_pair` au demi-flot) tourne sous TensorRT **en

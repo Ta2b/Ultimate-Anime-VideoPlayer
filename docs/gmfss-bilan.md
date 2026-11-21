@@ -99,16 +99,18 @@ NVTX, après les essais de chargement. Le réemploi de l'image A est actif sur 1
 | Plage | Passages | Médiane | p95 | Borne modélisée | Rendement sur la médiane |
 |---|---:|---:|---:|---:|---:|
 | GridNet, hors IFNet et projections | 148 | 16,568 ms | 18,812 ms | 7,915 ms avec Winograd et queue composée | 47,8 % |
-| GMFlow, avec réduction et préparation du MetricNet | 149 | 7,148 ms | 8,098 ms | 4,95 ms avec réemploi et Winograd | 69,3 % |
+| GMFlow rapide, avec réduction et préparation du MetricNet | 149 | 7,148 ms | 8,098 ms | 4,096 ms avec réemploi et Winograd | 57,3 % |
 | FeatureNet | 149 | 2,717 ms | 3,229 ms | — | — |
 | MetricNet | 149 | 1,942 ms | 2,364 ms | — | — |
 
 La transposition par tuiles tourne sur les deux premiers niveaux de 151 images au cours de cette lecture.
 Le troisième niveau utilise la conversion précédente. Pour qualifier 90 % avec ces hypothèses, GridNet
-devrait passer sous 8,794 ms et GMFlow sous 5,50 ms. Les bornes supposent des transformations et des
+devrait passer sous 8,794 ms et GMFlow rapide sous 4,551 ms. Les bornes supposent des transformations et des
 fusions supplémentaires dont le coût et le rendu restent à vérifier ensemble. Le modèle GMFlow s'arrête
 au flot sur sa grille, tandis que la plage de lecture comprend aussi sa mise en forme et la préparation
-du MetricNet. Le rapport de 69,3 % porte donc sur la chaîne mesurée avec ces opérations en plus.
+du MetricNet. Le rapport de 57,3 % porte donc sur la chaîne mesurée avec ces opérations en plus.
+Le [rejeu ultérieur de l'attention au quart](gmflow-natif.md#mode-rapide-facultatif) ramène cette
+plage à 6,585 ms.
 
 ### Projections directes dans GridNet
 
