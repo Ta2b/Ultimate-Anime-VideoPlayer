@@ -86,10 +86,29 @@ python3 -I tools/bench/banc_resume.py --visible 979 986 lecture.tsv
 | Tuiles directes GridNet et PReLU | Sur couches réelles C128 et C192, les tuiles de sortie élargies conservent les bits à groupement K égal. Le meilleur direct C128 passe de 0,325 à 0,319 ms. C192 reste à 0,189 ms. Avancer le PReLU à l'écriture de la transposée est aussi exact. Les minima mesurés montent de 0,993 à 1,011 ms (R1) et de 0,965 à 0,968 (R2). Les variantes restent au banc. |
 | Double tampon GridNet avec permutation XOR | La permutation des groupes de huit canaux économise le bourrage et garde les huit banques distinctes. Les deux convolutions sont bit à bit identiques sur C128 et C192, ainsi que sur les tailles de bord. Sur le bloc C128 à 480×288, le direct est à 0,700 ms contre 0,765 ms pour le meilleur double tampon XOR. Sur C192 à 240×144, 0,404 contre 0,428 ms. Le direct reste retenu. |
 | Phases jumelées des transposées C64 | Les deux jonctions apprises 04 et 05 gardent chaque code FP16 pour les quatre couples K32/K64 et R1/R2 à 960×576 et 250×158. Dans le lecteur, la médiane de fusion passe de 22,23 à 19,82 ms en GMFSS seul, avec un p95 de 24,37 à 21,93 ms. En hybride, 20,06–20,19 à 19,65 ms. Jumelage en service par défaut sur les jonctions compatibles Ada, sous la garde bit à bit au chargement. Le déplacement du PReLU et le chargement PReLU en FP16x2 restent archivés après leurs essais. |
+| Sorties du FeatureNet | Transposition par tuiles sur Ada. Le niveau C64 à 960×576 passe de 559 à 375 µs en médiane, le C128 à 480×288 de 215 à 176 µs. Les 53 084 160 codes FP16 des deux niveaux sont identiques au banc. Le C192 et les autres tailles ou architectures gardent la conversion par groupes de huit. |
 
 Les budgets historiques de 3 ms pour les splats et 11,2 ms pour la fusion modélisent des algorithmes et des
 rangements précis. Les mesures ci-dessus servent à calculer la marge de l'implémentation actuelle et à choisir
 une autre méthode lorsque le coût modélisé dépend d'un transfert ou d'un calcul qu'on peut supprimer.
+
+Trace Nsight Systems du 21 novembre sur le lecteur, GMFSS seul en ×2, 1080p, projections directes et
+`--gmflow-fast` actifs. Les durées vont du premier noyau au dernier noyau CUDA soumis dans chaque plage
+NVTX, après les essais de chargement. Le réemploi de l'image A est actif sur 145 paires.
+
+| Plage | Passages | Médiane | p95 | Borne modélisée | Rendement sur la médiane |
+|---|---:|---:|---:|---:|---:|
+| GridNet, hors IFNet et projections | 148 | 16,568 ms | 18,812 ms | 7,915 ms avec Winograd et queue composée | 47,8 % |
+| GMFlow, avec réduction et préparation du MetricNet | 149 | 7,148 ms | 8,098 ms | 4,95 ms avec réemploi et Winograd | 69,3 % |
+| FeatureNet | 149 | 2,717 ms | 3,229 ms | — | — |
+| MetricNet | 149 | 1,942 ms | 2,364 ms | — | — |
+
+La transposition par tuiles tourne sur les deux premiers niveaux de 151 images au cours de cette lecture.
+Le troisième niveau utilise la conversion précédente. Pour qualifier 90 % avec ces hypothèses, GridNet
+devrait passer sous 8,794 ms et GMFlow sous 5,50 ms. Les bornes supposent des transformations et des
+fusions supplémentaires dont le coût et le rendu restent à vérifier ensemble. Le modèle GMFlow s'arrête
+au flot sur sa grille, tandis que la plage de lecture comprend aussi sa mise en forme et la préparation
+du MetricNet. Le rapport de 69,3 % porte donc sur la chaîne mesurée avec ces opérations en plus.
 
 ### Projections directes dans GridNet
 

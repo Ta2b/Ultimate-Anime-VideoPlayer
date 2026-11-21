@@ -68,10 +68,48 @@ __global__ void unpack_planes(const __half* in, int ld, long plane, int count, _
   }
 }
 
+// Transposer une tuile rend les lectures NHWC et les écritures planaires contiguës.
+constexpr int kUnpackSide = 32, kUnpackThreads = 256;
+
+__global__ void unpack_tiles(const __half* in, int ld, int plane, int count, __half* out) {
+  __shared__ __half transposed[kUnpackSide][kUnpackSide + 2];
+  const int left = static_cast<int>(blockIdx.x) * kUnpackSide;
+  const int first = static_cast<int>(blockIdx.y) * kUnpackSide;
+  const int thread = static_cast<int>(threadIdx.x);
+#pragma unroll
+  for (int i = thread; i < kUnpackSide * kUnpackSide; i += kUnpackThreads) {
+    const int x = i / kUnpackSide, c = i % kUnpackSide;
+    if (left + x < plane && first + c < count)
+      transposed[x][c] = in[static_cast<std::size_t>(left + x) * ld + first + c];
+  }
+  __syncthreads();
+#pragma unroll
+  for (int i = thread; i < kUnpackSide * kUnpackSide; i += kUnpackThreads) {
+    const int x = i % kUnpackSide, c = i / kUnpackSide;
+    if (left + x < plane && first + c < count)
+      out[static_cast<std::size_t>(first + c) * plane + left + x] = transposed[x][c];
+  }
+}
+
+bool tiled_unpack_for(int height, int width) {
+  if (height != 576 || width != 960) return false;
+  int device = 0;
+  cudaDeviceProp properties{};
+  if (cudaGetDevice(&device) != cudaSuccess || cudaGetDeviceProperties(&properties, device) != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    return false;
+  }
+  return properties.major == 8 && properties.minor == 9;
+}
+
 class Net final : public GmfssPairNativeNet {
  public:
   Net(int height, int width)
-      : height_(height), width_(width), features_(height, width), metric_(height, width) {}
+      : height_(height),
+        width_(width),
+        tiled_unpack_(tiled_unpack_for(height, width)),
+        features_(height, width),
+        metric_(height, width) {}
 
   bool plan(const prepare::GmfssPairNets& nets, const gmfss_plan::Tuner& tuner, std::string& error) {
     const Io feature_io{.external = {prepare::kGmfssFeatureImage},
@@ -128,9 +166,17 @@ class Net final : public GmfssPairNativeNet {
     for (int level = 0; level < kGmfssFeatureLevels; ++level) {
       const gmfss_plan::Placed& t = features_.tensor(level + 1);
       const long plane = static_cast<long>(t.height) * t.width;
-      unpack_planes<<<blocks_for(plane * (t.channels / 8)), 256, 0, stream>>>(
-          ConvNet::at(zone_.as<void>(), t), t.channels, plane, t.channels,
-          static_cast<__half*>(out.levels[static_cast<std::size_t>(level)]));
+      const auto* input = ConvNet::at(zone_.as<void>(), t);
+      auto* output = static_cast<__half*>(out.levels[static_cast<std::size_t>(level)]);
+      if (tiled_unpack_ && ((level == 0 && t.channels == 64) || (level == 1 && t.channels == 128))) {
+        const dim3 grid(static_cast<unsigned>((plane + kUnpackSide - 1) / kUnpackSide),
+                        static_cast<unsigned>(t.channels / kUnpackSide));
+        unpack_tiles<<<grid, kUnpackThreads, 0, stream>>>(input, t.channels, static_cast<int>(plane),
+                                                          t.channels, output);
+      } else {
+        unpack_planes<<<blocks_for(plane * (t.channels / 8)), 256, 0, stream>>>(input, t.channels, plane,
+                                                                                t.channels, output);
+      }
     }
     return cudaGetLastError();
   }
@@ -173,6 +219,7 @@ class Net final : public GmfssPairNativeNet {
 
   int height_;
   int width_;
+  bool tiled_unpack_;
   ConvNet features_;
   ConvNet metric_;
   GmfssTuning tuning_;
