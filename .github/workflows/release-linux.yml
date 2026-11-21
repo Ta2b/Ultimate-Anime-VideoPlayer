@@ -188,12 +188,12 @@ jobs:
           cmake --preset linux-release -DKIRARI_RIFE_MODEL_DIR="$models" -DKIRARI_DRBA_MODEL_DIR="$models" \
             -DKIRARI_TFIX_MODEL_DIR="$tfix"
           cmake --build --preset linux-release --target kirari_prepare_tests
-          ctest --test-dir build/linux-release -R 'du catalogue se coupent|GMFSS natif : .* exportée se lit|GMFSS natif : les quatre blocs' \
+          ctest --test-dir build/linux-release -R 'du catalogue se coupent|GMFSS natif : (la paire exportée se lit|le GridNet et les quatre blocs)' \
             --no-tests=error --output-on-failure \
             --output-junit "$RUNNER_TEMP/models-junit.xml"
           ran="$(grep -c '<testcase' "$RUNNER_TEMP/models-junit.xml" || true)"
           skipped="$(grep -c '<skipped' "$RUNNER_TEMP/models-junit.xml" || true)"
-          [ "$ran" -ge 5 ] && [ "$skipped" -eq 0 ] || { echo "::error::tests de découpe sautés ($skipped sur $ran)"; exit 1; }
+          [ "$ran" -ge 5 ] && [ "$skipped" -eq 0 ] || { echo "::error::tests de découpe incomplets ($ran sélectionnés, $skipped sautés, au moins 5 attendus)"; exit 1; }
       # Le même lecteur en un seul fichier (tools/release/appimage.sh) : à rendre exécutable et à lancer.
       - name: AppImage
         id: appimage

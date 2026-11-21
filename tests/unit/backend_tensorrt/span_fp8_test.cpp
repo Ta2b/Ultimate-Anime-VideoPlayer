@@ -15,6 +15,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -32,9 +33,13 @@ namespace {
 namespace fs = std::filesystem;
 
 struct Scratch {
-  Scratch() : root(fs::temp_directory_path() / "kirari-span-fp8-backend-test") {
-    fs::remove_all(root);
-    fs::create_directories(root);
+  Scratch() {
+    const auto parent = fs::temp_directory_path();
+    std::random_device random;
+    do {
+      root =
+          parent / ("kirari-span-fp8-backend-" + std::to_string(random()) + "-" + std::to_string(random()));
+    } while (!fs::create_directory(root));
   }
   ~Scratch() {
     std::error_code ignored;

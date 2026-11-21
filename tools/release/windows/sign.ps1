@@ -13,11 +13,13 @@ if (-not $env:AJP_TS_ENDPOINT) {
   exit 0
 }
 
-$files = foreach ($p in $Paths) {
-  if (Test-Path $p -PathType Container) {
-    Get-ChildItem $p -Recurse -File -Include *.exe, *.dll | ForEach-Object { $_.FullName }
-  } else { (Resolve-Path $p).Path }
-}
+$files = @(
+  foreach ($p in $Paths) {
+    if (Test-Path $p -PathType Container) {
+      Get-ChildItem $p -Recurse -File -Include *.exe, *.dll | ForEach-Object { $_.FullName }
+    } else { (Resolve-Path $p).Path }
+  }
+)
 if (-not $files) { throw "signature : aucun fichier dans $($Paths -join ', ')" }
 
 # Le client de Trusted Signing (la bibliothèque que signtool charge) vient de NuGet, à version épinglée.
@@ -42,7 +44,7 @@ for ($i = 0; $i -lt $files.Count; $i += 50) {
   & $signtool.FullName sign /fd SHA256 /tr "http://timestamp.acs.microsoft.com" /td SHA256 `
     /dlib $dlib /dmdf $metadata @batch
   if ($LASTEXITCODE -ne 0) { throw "signature : signtool a échoué" }
+  & $signtool.FullName verify /pa /q @batch
+  if ($LASTEXITCODE -ne 0) { throw "signature : vérification échouée" }
 }
-& $signtool.FullName verify /pa /q @files
-if ($LASTEXITCODE -ne 0) { throw "signature : vérification échouée" }
 Write-Host "signature : $($files.Count) fichiers signés"
