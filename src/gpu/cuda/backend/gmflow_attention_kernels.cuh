@@ -505,6 +505,18 @@ __device__ __forceinline__ void finish(rn::Frag<PV> (&o)[2 * kPairs], const floa
 #define KIRARI_GMFLOW_ATTN_BOUNDS __launch_bounds__(kThreads)
 #endif
 
+__device__ __forceinline__ void short_attention_tail(int tail, bool active,
+                                                     const std::uint32_t (&q)[kSteps][4],
+                                                     rn::Frag<Acc::kF32> (&o)[2 * kPairs], float (&m)[2],
+                                                     float (&l)[2], const int (&qreg)[2], const int* kreg,
+                                                     const AttnParams& p, const __half* sk, const __half* sv,
+                                                     int lane) {
+  if (tail <= 16)
+    short_tile<16>(active, q, o, m, l, qreg, kreg, p, sk, sv, lane);
+  else
+    short_tile<32>(active, q, o, m, l, qreg, kreg, p, sk, sv, lane);
+}
+
 // blockIdx.x couvre les requêtes de la tuile, blockIdx.y la fenêtre et blockIdx.z le lot.
 template <Acc A, bool Normalized, int QueryRows, int Threads, bool Indexed = false>
 __device__ __forceinline__ void attention(const AttnParams& p, unsigned char* smem_raw,
@@ -595,17 +607,10 @@ __device__ __forceinline__ void attention(const AttnParams& p, unsigned char* sm
       cp_async_commit();
     }
   }
-  if constexpr (Normalized) {
-    if (active) finish<A>(o, l, tokens, p, batch, lane);
-  } else {
-    if (short_last) {
-      if (tail <= 16)
-        short_tile<16>(active, q, o, m, l, qreg, kreg, p, sk, sv, lane);
-      else
-        short_tile<32>(active, q, o, m, l, qreg, kreg, p, sk, sv, lane);
-    }
-    if (active) finish<A>(o, l, tokens, p, batch, lane);
+  if constexpr (!Normalized) {
+    if (short_last) short_attention_tail(tail, active, q, o, m, l, qreg, kreg, p, sk, sv, lane);
   }
+  if (active) finish<A>(o, l, tokens, p, batch, lane);
 }
 
 // Les autres formes gardent les tuiles de 64 requêtes.
