@@ -1,4 +1,5 @@
 // Noyaux de DistilDRBA fusionné (voir drba_fused_kernels.h et kernels/spec/drba_fused.h).
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cuda_fp16.h>
@@ -126,79 +127,51 @@ __device__ __forceinline__ const __half* image_plane(const DrbaPreParams& p, int
   return pair12 + static_cast<std::size_t>(3 + k) * plane;
 }
 
-// Une section de pre : 9 plans d'images moyennés par s, puis un plan du temps.
-struct Section {
-  int s;
-  int oh, ow;
-  std::size_t images;  // éléments
-  std::size_t plane;   // éléments d'un plan réduit
-  __half* x;
-  int time_channel;
-};
+// Une grille par résolution. Chaque bloc connaît la ligne et le plan de sortie,
+// sans diviser un indice par la surface ou la largeur à chaque fil.
+template <bool ScalarTime, bool TimesOnly>
+__global__ void __launch_bounds__(128)
+    pre_kernel(DrbaPreParams p, __half* out, int s, int ow, int oh, int time_channel) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y);
+  const int c = TimesOnly ? 9 : static_cast<int>(blockIdx.z);
+  if (x >= ow) return;
+  const auto width = static_cast<std::size_t>(p.width);
+  const auto plane = static_cast<std::size_t>(oh) * static_cast<std::size_t>(ow);
+  const auto pixel = static_cast<std::size_t>(y) * static_cast<std::size_t>(ow) + static_cast<std::size_t>(x);
+  if (c == 9) {
+    const auto* u = static_cast<const __half*>(p.pair01) + 6U * static_cast<std::size_t>(p.height) * width;
+    const auto at =
+        ScalarTime ? 0U : static_cast<std::size_t>(s * y) * width + static_cast<std::size_t>(s * x);
+    out[static_cast<std::size_t>(time_channel) * plane + pixel] = __float2half_rn(2.F * __half2float(u[at]));
+    return;
+  }
+  // Resize à demi-pixel : les quatre centres restent pondérés en FP32 dans le même ordre.
+  const int base = s / 2 - 1;
+  const auto* src = image_plane(p, c) + static_cast<std::size_t>(s * y + base) * width + s * x + base;
+  const float v = (__half2float(src[0]) + __half2float(src[1]) + __half2float(src[width]) +
+                   __half2float(src[width + 1])) *
+                  .25F;
+  out[static_cast<std::size_t>(c) * plane + pixel] = __float2half_rn(v);
+}
 
-template <bool ScalarTime>
-__global__ void __launch_bounds__(256) pre_kernel(DrbaPreParams p) {
-  const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  const std::size_t full_plane = static_cast<std::size_t>(p.height) * static_cast<std::size_t>(p.width);
-  Section sections[3];                                   // NOLINT(modernize-avoid-c-arrays)
-  const int reduce[3]{p.reduce2, p.reduce1, p.reduce0};  // NOLINT(modernize-avoid-c-arrays)
-  __half* targets[3]{static_cast<__half*>(p.x2), static_cast<__half*>(p.x1), static_cast<__half*>(p.x0)};
-  const int time_channels[3]{p.compact_x2 ? kFirstTimeChannel : kTimeChannel, kTimeChannel,
-                             kFirstTimeChannel};  // NOLINT(modernize-avoid-c-arrays)
-#pragma unroll
-  for (int k = 0; k < 3; ++k) {
-    sections[k].s = reduce[k];
-    sections[k].oh = p.height / reduce[k];
-    sections[k].ow = p.width / reduce[k];
-    sections[k].plane = static_cast<std::size_t>(sections[k].oh) * static_cast<std::size_t>(sections[k].ow);
-    sections[k].images = 9U * sections[k].plane;
-    sections[k].x = targets[k];
-    sections[k].time_channel = time_channels[k];
+template <bool ScalarTime, bool TimesOnly>
+cudaError_t launch_pre(const DrbaPreParams& p, cudaStream_t stream) {
+  constexpr unsigned kThreads = 128;
+  const std::array reductions{p.reduce2, p.reduce1, p.reduce0};
+  const std::array targets{p.x2, p.x1, p.x0};
+  const std::array time_channels{p.compact_x2 ? kFirstTimeChannel : kTimeChannel, kTimeChannel,
+                                 kFirstTimeChannel};
+  for (std::size_t level = 0; level < reductions.size(); ++level) {
+    const int s = reductions[level], w = p.width / s, h = p.height / s;
+    const unsigned planes = (TimesOnly ? 0U : 9U) + (!ScalarTime || level == 2 ? 1U : 0U);
+    if (planes == 0 || w == 0 || h == 0) continue;
+    const dim3 grid((static_cast<unsigned>(w) + kThreads - 1) / kThreads, static_cast<unsigned>(h), planes);
+    pre_kernel<ScalarTime, TimesOnly><<<grid, kThreads, 0, stream>>>(p, static_cast<__half*>(targets[level]),
+                                                                     s, w, h, time_channels[level]);
+    if (const auto error = cudaGetLastError(); error != cudaSuccess) return error;
   }
-  std::size_t j = i;
-#pragma unroll
-  for (int k = 0; k < 3; ++k) {
-    if (p.times_only) break;
-    if (j < sections[k].images) {
-      const Section& sec = sections[k];
-      const int c = static_cast<int>(j / sec.plane);
-      const std::size_t r = j % sec.plane;
-      const int oy = static_cast<int>(r / static_cast<std::size_t>(sec.ow));
-      const int ox = static_cast<int>(r % static_cast<std::size_t>(sec.ow));
-      // Resize d'échelle 1/s (demi-pixel, linéaire) = moyenne 2 × 2 des pixels s o + s/2 - 1 et s o + s/2.
-      const int base = sec.s / 2 - 1;
-      const __half* src = image_plane(p, c);
-      const std::size_t i00 =
-          static_cast<std::size_t>(sec.s * oy + base) * static_cast<std::size_t>(p.width) +
-          static_cast<std::size_t>(sec.s * ox + base);
-      const float v = (__half2float(src[i00]) + __half2float(src[i00 + 1]) +
-                       __half2float(src[i00 + static_cast<std::size_t>(p.width)]) +
-                       __half2float(src[i00 + static_cast<std::size_t>(p.width) + 1])) *
-                      0.25F;
-      sec.x[static_cast<std::size_t>(c) * sec.plane + r] = __float2half_rn(v);
-      return;
-    }
-    j -= sections[k].images;
-  }
-  // Plans du temps : u × 2, un pixel sur s de pair01[6].
-  const auto* u = static_cast<const __half*>(p.pair01) + 6 * full_plane;
-#pragma unroll
-  for (int k = ScalarTime ? 2 : 0; k < 3; ++k) {
-    if (j < sections[k].plane) {
-      const Section& sec = sections[k];
-      std::size_t at = 0;
-      if constexpr (!ScalarTime) {
-        const int oy = static_cast<int>(j / static_cast<std::size_t>(sec.ow));
-        const int ox = static_cast<int>(j % static_cast<std::size_t>(sec.ow));
-        at = static_cast<std::size_t>(sec.s * oy) * static_cast<std::size_t>(p.width) +
-             static_cast<std::size_t>(sec.s * ox);
-      }
-      sec.x[static_cast<std::size_t>(sec.time_channel) * sec.plane + j] =
-          __float2half_rn(2.0F * __half2float(u[at]));
-      return;
-    }
-    j -= sections[k].plane;
-  }
+  return cudaSuccess;
 }
 
 __global__ void __launch_bounds__(256) post_kernel(DrbaPostParams p) {
@@ -431,20 +404,11 @@ unsigned blocks_for(std::size_t elements) {
 }  // namespace
 
 cudaError_t launch_drba_pre(const DrbaPreParams& params, cudaStream_t stream) {
-  std::size_t elements = 0;
-  const int reduces[]{params.reduce0, params.reduce1, params.reduce2};  // NOLINT(modernize-avoid-c-arrays)
-  for (int k = 0; k < 3; ++k) {
-    const int s = reduces[k];
-    const std::size_t plane =
-        static_cast<std::size_t>(params.height / s) * static_cast<std::size_t>(params.width / s);
-    elements += ((params.times_only ? 0U : 9U) + (k == 0 || !params.scalar_time ? 1U : 0U)) * plane;
-  }
-  const auto blocks = blocks_for(elements);
   if (params.scalar_time)
-    pre_kernel<true><<<blocks, 256, 0, stream>>>(params);
-  else
-    pre_kernel<false><<<blocks, 256, 0, stream>>>(params);
-  return cudaGetLastError();
+    return params.times_only ? launch_pre<true, true>(params, stream)
+                             : launch_pre<true, false>(params, stream);
+  return params.times_only ? launch_pre<false, true>(params, stream)
+                           : launch_pre<false, false>(params, stream);
 }
 
 cudaError_t launch_drba_post(const DrbaPostParams& params, cudaStream_t stream) {

@@ -62,6 +62,12 @@ tient dans six noyaux.
   médian entre la durée du graphe et celle de ses noyaux. La colle d'entrée (0,158 ms) et le rangement
   de X2 (0,098 ms) comptent encore dans le coût de la passe de cette version de travail. La capture
   comprend l'essai de regroupement de X2.
+- La préparation des entrées prend désormais une grille CUDA par résolution, avec la ligne et le plan
+  dans les axes de la grille. À 1920×1088, les réductions et les plans du temps passent de 128,24 à
+  15,68 µs en ABBA, ou de 13,63 à 3,20 µs pour les plans du temps seuls. Le banc vérifie les codes FP16
+  écrits et les zones laissées intactes, avec temps scalaire ou dense, également à 3840×2176.
+  En lecture à ×2, les médianes du moteur passent de 2,45–2,64 à 2,43–2,58 ms. Le p95 varie entre
+  les passages. Wayland confirme environ 48 i/s dans les quatre essais en fenêtre.
 - Repli sur le DistilDRBA entier : réglage éteint, autre backend, cran Qualité avec son graphe `_fp32` (un cran dont
   le graphe manque garde la chaîne, et Performance la préfère au graphe `_fp8` : `drba_tier`), structure inconnue,
   taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne passe trois fois sur
