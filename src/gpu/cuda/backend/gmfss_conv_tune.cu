@@ -20,6 +20,7 @@
 #include "gpu/cuda/backend/conv_stream.h"
 #include "gpu/cuda/backend/gmfss_conv_plan.cuh"
 #include "gpu/cuda/backend/gmfss_shuffle_reuse.cuh"
+#include "gpu/cuda/backend/gmfss_up192_grouped.cuh"
 
 namespace kirari::gpu::cuda::gmfss_plan {
 namespace {
@@ -243,6 +244,84 @@ bool tune_shuffle(const Tuner& tuner, const Layer& layer, Rows band, Shape& best
   return true;
 }
 
+bool up192_device() {
+  int device = 0;
+  cudaDeviceProp properties{};
+  if (cudaGetDevice(&device) != cudaSuccess || cudaGetDeviceProperties(&properties, device) != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    return false;
+  }
+  return properties.major == 8 && properties.minor == 9;
+}
+
+bool up192_shape(const Layer& layer) {
+  namespace up = gmfss_up192_grouped;
+  return layer.kind == Kind::kPhase && layer.phases == 4 && !layer.blocked8 && layer.skip < 0 &&
+         !layer.activation && layer.cin == up::kInput && layer.in_ld == up::kInput &&
+         layer.cout == up::kOutput && layer.out_ld == up::kOutput && layer.ih == 144 && layer.oh == 144 &&
+         layer.iw == 240 && layer.ow == 240;
+}
+
+bool tune_up192(const Tuner& tuner, const Layer& layer, Rows band, Shape& best, std::string& error) {
+  namespace up = gmfss_up192_grouped;
+  constexpr auto f16 = RifeNativeSums::kF16;
+  if (!up192_shape(layer) || !up192_device()) return true;
+  const char* choice = std::getenv("KIRARI_AB_GMFSS_UP192_GROUPED");  // env: banc
+  if (choice != nullptr && std::string_view(choice) == "0") {
+    best.stream = "transposée groupée désactivée pour le banc";
+    return true;
+  }
+  const auto& cfg = best.cfg;
+  if (cfg.kc != up::kKc || cfg.ct != up::kCT || cfg.rows != up::kRows || cfg.ksplit != 1 || cfg.ahead ||
+      cfg.bands != 0 || best.launch != rn::pick_for(f16, Kind::kPhase, up::kKc, up::kCT, up::kRows)) {
+    best.stream = "transposée groupée non essayée, forme dense " + ring_shape_name(best);
+    return true;
+  }
+  const Shape direct = shape_for(layer, f16, cfg, band.oh);
+  Shape grouped = direct;
+  const auto tiles_y = [](int rows) { return static_cast<unsigned>((rows + up::kHeight - 1) / up::kHeight); };
+  grouped.launch = up::launch;
+  grouped.grid.y = tiles_y(band.oh);
+  grouped.grid.z = static_cast<unsigned>(layer.phases);
+  grouped.smem = up::kSmem;
+  const auto* weights = layer.packs[pack_index(up::kCT)].as<const void>();
+  const auto shot = [&](const Shape& shape) { return shot_of(layer, band, shape, f16, weights, true); };
+  if (!tuner.bench.reference(shot(direct), error)) return false;
+  const auto dense = tuner.bench.time(shot(direct), error);
+  if (!dense) return false;
+  ++tuner.tuning.measured;
+  if (dense->differs || !std::isfinite(dense->ms)) {
+    best.stream = "transposée groupée non essayée, témoin dense instable";
+    return true;
+  }
+  const auto timed = tuner.bench.time(shot(grouped), error);
+  if (!timed) return false;
+  ++tuner.tuning.measured;
+  if (timed->differs) {
+    ++best.rejected;
+    ++tuner.tuning.rejected;
+    best.stream = "transposée groupée écartée : sortie FP16 différente";
+    return true;
+  }
+  if (!std::isfinite(timed->ms)) {
+    best.stream = "transposée groupée écartée : noyau indisponible";
+    return true;
+  }
+  const float baseline = std::min(best.ms, dense->ms);
+  const bool keep = timed->ms < 0.98F * baseline;
+  const auto us = [](float ms) { return std::to_string(static_cast<long>(ms * 1000.F + 0.5F)); };
+  best.stream = std::string("transposée groupée ") + (keep ? "retenue" : "écartée") + ", " + us(timed->ms) +
+                " µs contre " + us(baseline) + " µs (sortie exacte)";
+  if (keep) {
+    grouped.grid.y = tiles_y(layer.oh);
+    grouped.ms = timed->ms;
+    grouped.rejected = best.rejected;
+    grouped.stream = std::move(best.stream);
+    best = std::move(grouped);
+  }
+  return true;
+}
+
 }  // namespace
 
 // La forme de la convolution pour les sommes kSums[s] : la seule possible, sinon la plus rapide au banc (sur
@@ -302,7 +381,8 @@ bool ConvNet::tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string&
     error = std::string("aucune forme ne se lance en sommes ") + rn::sums_name(sums);
     return false;
   }
-  return sums != RifeNativeSums::kF16 || tune_shuffle(tuner, layer, band, best, error);
+  return sums != RifeNativeSums::kF16 ||
+         (tune_shuffle(tuner, layer, band, best, error) && tune_up192(tuner, layer, band, best, error));
 }
 
 std::string ConvNet::planar_ring_report() const {

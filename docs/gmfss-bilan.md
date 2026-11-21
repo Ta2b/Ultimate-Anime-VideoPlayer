@@ -152,6 +152,19 @@ Le même principe appliqué entre 00 et 01 garde les bits avec un producteur C8 
 K32 côté résiduel. Les bandes qui réduisent le trafic ne gagnent pas en durée sur ces scènes.
 Ce second anneau reste au banc.
 
+La transposée 192→128 à 240×144 peut partager son halo entre deux groupes CT64 d'une même phase.
+Le réglage Ada l'essaie uniquement si le noyau dense a déjà choisi K64/R2. Il compare les mêmes
+codes FP16 et exige un gain d'au moins 2 % avant de la retenir. Sur la convolution 28, il mesure
+237 µs contre 244 µs. Dans la trace du lecteur, les transposées correspondantes passent de 264,1
+à 238,5 µs sur la file d'interpolation. Wayland confirme toutes les images nouvelles du segment,
+à 47,95 et 47,91 i/s. D'autres choix de réglage diffèrent dans ces passages. La plage complète
+d'interpolation est plus longue dans le second passage. `KIRARI_AB_GMFSS_UP192_GROUPED=0` garde
+le noyau dense pour le banc.
+
+Le partage du halo entre trois groupes de sortie a aussi été essayé sur neuf convolutions
+192→192 et deux scènes, avec et sans résiduel. Il garde les mêmes bits et allonge le temps
+médian apparié d'environ 10 % en K32/R1 et 13 % en K64/R1. Cette forme reste au banc.
+
 ### Projections directes dans GridNet
 
 L'option « Projections GMFSS directes (essai) » dans Interpolation > Avancé, ou
