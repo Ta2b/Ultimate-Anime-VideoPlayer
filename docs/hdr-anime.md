@@ -442,6 +442,15 @@ Les cadences sont de 140,58–142,81 i/s sans le guide et de 140,72–141,55 i/s
 test Vulkan du masque vérifie le renfort local, la stabilité sur les zones témoins et le retrait
 du guide en cours de rendu.
 
+Un banc de flux 2×2 limite la recherche à deux rectangles alignés au plus, choisis à partir des
+ancres de la source A. Il conserve les confirmations fixes et celles du flux 4×4. Sur 58 paires,
+56 ont au moins une zone. Hors première exécution, le flux zoné prend 0,343 ms de médiane et
+0,437 ms au p95, contre 0,920 ms de médiane pour le 2×2 complet dans la série précédente.
+Il retrouve quatre des cinq grands déplacements que seul le 2×2 complet confirmait dans les
+régions d'effet. Les régions témoins restent sans ajout. Dans ce banc, les régions sont prêtes
+avant la soumission au pilote. Le raccord au lecteur doit conserver la carte 4×4 si la zone est
+indisponible ou tardive. [Gestion des régions dans le SDK NVIDIA](https://docs.nvidia.com/video-technologies/optical-flow-sdk/nvofa-programming-guide/index.html#region-of-interest-roi)
+
 ## A2 : décisions par plan
 La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
 relèvement fixe (1,15) dans tous les plans : l'exposition par plan est retirée (C41-01).

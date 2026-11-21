@@ -527,6 +527,24 @@ portes F4 en N16, 3,902 ms en N8 et 3,950 ms avec le témoin F2. Les plages se r
 de 3,824 à 3,927 ms pour F4 N16 et de 3,882 à 4,225 ms pour F2. Le lecteur et les autres
 scènes restent à vérifier avant de retenir cette variation de géométrie.
 
+Quatre warps N24 sur les deux ReLU de chaque bloc réutilisent la prise A entre trois groupes
+de huit sorties. Sur six images de trois scènes, le corps jusqu'au RVB passe de 3,980 ms en F2
+à 3,856 ms, contre 3,971 ms pour le F4 à six warps. Les deux F4 donnent les mêmes bits sur les
+six images. Face à ONNX Runtime FP32, la PSNR et la SSIM moyenne progressent sur les six images.
+Le pire écart couleur passe de 0,003917 à 0,004027 sur [0, 1], et celui de la variation entre deux
+images de 0,005180 à 0,005697. La RMS de cette variation diminue sur les trois paires.
+
+Avec une source recadencée à 180 i/s, sans réemploi ni masques, le moteur du lecteur passe de
+5,038–5,051 à 4,635–4,670 ms en médiane, et de 5,686–5,772 à 5,254–5,477 ms au p95. Wayland
+confirme 165,00 puis 160,08 i/s avec F2 et 165,00 i/s dans les deux passages F4. Sur la source
+à 120 i/s, les quatre passages se maintiennent autour de 120 i/s après composition.
+
+Sur une image de banc et 76 lancements du corps jusqu'au RVB, la capture Nsight Compute passe
+de 262,04 à 207,98 GFLOP Tensor exécutés et de 1,282 à 1,117 Go DDR. Le trafic L2 passe de
+6,253 à 6,965 Go. La somme des bornes par lancement, avec les mêmes débits que le tableau
+ci-dessus, passe de 2,969 à 3,070 ms. La capture exclut l'entrée conv_1 et la composition. À ce stade,
+le candidat reste en essai et le réemploi de tuiles demande une validation dédiée.
+
 ## Mesurer
 
 Le PC ne mesure que les temps ; la justesse se juge sur processeur, dans le cloud. Un seul banc, sur CachyOS,

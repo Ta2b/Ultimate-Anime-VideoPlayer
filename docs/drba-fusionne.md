@@ -147,6 +147,11 @@ scènes. En mode mouvement, le p95 de la chaîne à froid passe de 1,017 à 1,04
 à 1,061 ms. En mode image, les écarts de médiane sont inférieurs à 10 µs. Le lecteur garde le
 calcul des sommes dans la première convolution à froid.
 
+Sur un seul instant chaud, une tuile N24 lit directement le cache FP32 du noyau W32. Le cache
+et les sorties restent exacts sur les deux scènes. Le meilleur candidat passe de 39,94–39,96 à
+41,90–42,04 µs. À deux instants chauds, partager la lecture du cache donne 141,8–142,3 µs contre
+135,5–137,2 µs pour deux reprises. Les deux variantes restent au banc.
+
 ## Dans le lecteur
 
 `kirari play` (build Debug, le GPU fait le même travail), Re:Zero 18 de 16:00 (`--start=960`, 30 s), 1080p sans agrandissement

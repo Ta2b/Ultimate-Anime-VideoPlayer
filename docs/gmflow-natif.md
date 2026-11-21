@@ -209,6 +209,12 @@ au quart passe de 164,3 à 169,9 µs pour les deux projections, et au huitième 
 Le regroupement réduit les lectures logiques mais limite le nombre de blocs résidents. Il reste
 au banc.
 
+Une autre tuile des Q/K/V traite 32 jetons et répartit 128 sorties entre deux warps par groupe
+de jetons. Sur Ada, elle divise la mémoire partagée par deux et passe de 98 à 48 registres.
+Les sorties au quart, les permutations K/V et les deux tailles impaires gardent les mêmes bits.
+Les douze projections passent de 0,528 à 0,561 ms au banc isolé, et le lecteur garde la tuile
+de 64 jetons.
+
 ```sh
 python3 tools/gmfss/gmflow_natif_couts.py --width 1920 --height 1152 --scale 0.5 \
   --plancher --reprise --winograd --rapide
