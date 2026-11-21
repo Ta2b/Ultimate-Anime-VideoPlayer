@@ -59,7 +59,9 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   et les neuf prises gardent leur ordre. À 1920 × 1088 sur RTX 4070 Ti, le banc isolé donne environ
   35,6–35,8 → 27,3–27,4 µs contre la variante compacte K16, avec les mêmes codes FP16 pour les poids
   RIFE 4.25 et RIFE 4.22 lite. L'identité est aussi vérifiée sur des images de l'extrait et sur des
-  tuiles partielles.
+  tuiles partielles. Une fusion des deux premières couches sur une tuile avec halo conserve leurs
+  codes. À 1920 × 1088, ce candidat donne 88,8 µs contre 68,6 µs pour les deux lancements de
+  référence du Lite. Il reste au banc.
 - **entrée du dernier bloc à la volée** (`rife_native_glue.cu`). En pleine résolution (d = 1), X du dernier bloc
   pèse 64 octets par pixel, soit 134 Mo en 1920 × 1088 : la colle l'écrivait, sa première couche le relisait
   (0,363 ms à elle seule sur la 4070 Ti, à 75 % de la bande passante). Cette couche, une 3 × 3 de pas 2 de 32
@@ -90,7 +92,11 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   sorties et le flot compact sont identiques octet pour octet. Sur RTX 4070 Ti, les trois champs
   960 × 544 issus d'une émulation RIFE sur des paires de luma donnent environ 78 → 111 µs, hors
   premiers rejeux plus lents. Le cache réclame 7 696 octets partagés de plus par bloc CUDA. Le
-  candidat reste hors du lecteur.
+  candidat reste hors du lecteur. La prélecture L1 guidée par le NVOF 4 × 4, testée sur les mêmes
+  champs, conserve aussi tous les codes FP16. Les minima mesurés augmentent de 1,6 à 6,0 µs
+  selon la paire. Le précalcul des axes bilinéaires, rangés dans le rembourrage de la tuile,
+  conserve également les codes. Ses temps varient entre les rejeux à pleine taille et augmentent
+  sur les panoramiques. Ces deux candidats restent au banc.
 - **colle à demi-taille pour l'avant-dernier bloc**. L'essai du réseau compare aussi les deux chemins
   quand d = 2. Il garde un choix indépendant et l'inscrit dans le verdict en cache avec celui du
   dernier bloc. Sur RTX 4070 Ti avec RIFE 4.25 à 1920 × 1088, l'essai FP16 de ce bloc a donné
@@ -114,6 +120,13 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   RMS face à la convolution directe à sommes FP32. En revanche, sur RTX 4070 Ti et à 240 × 136,
   sa médiane passe à 33,8–34,0 µs contre 25,5–25,8 µs pour le meilleur des deux réglages directs
   à sommes FP16. Le noyau Winograd reste hors du lecteur.
+
+  Le préfixe de flot FP16 calculé par D2 couvre déjà tous les pixels pleine résolution. Un banc
+  le stocke en HWC4 (16,7 Mo à 1920 × 1088) pour que D1 ajoute seulement le dernier flot. Les
+  deux sorties de convolution et le flot compact sont identiques octet pour octet. Sur les entrées
+  synthétiques à 1920 × 1088, le temps combiné des deux noyaux passe de 831 à 849 µs en 4.25 et
+  de 726 à 748 µs en Lite. Une copie de 16 Mio intercalée pour sonder la pression du L2 creuse
+  l'écart. Cet essai reste hors du lecteur.
 - **fin dans la dernière couche** (`rife_native_finish.cu`). La transposée du dernier bloc écrivait Y (52 canaux,
   56 rangés, à la moitié de la pleine résolution : 58 Mo en 1920 × 1088), dont fused_finish ne relisait que les
   20 premiers (le flot du bloc et le masque, en quatre parités). Quand la forme réglée de cette couche n'a pas de

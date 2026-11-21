@@ -58,7 +58,11 @@ __global__ void __launch_bounds__(kThreads) local_kernel(Params p) {
 #pragma unroll 1
   for (int dy = -kRadius; dy <= kRadius; ++dy) {
     const int ny = y + dy;
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 890
+#pragma unroll
+#else
 #pragma unroll 1
+#endif
     for (int dx = -kRadius; dx <= kRadius; ++dx) {
       const int nx = x + dx;
       const bool valid = ny >= 0 && ny < p.height && nx >= 0 && nx < p.width;
@@ -98,6 +102,11 @@ __global__ void __launch_bounds__(kThreads) local_kernel(Params p) {
 // coordonnées absolues, donc un poids arrondi ne se simplifie plus en déplacement.
 constexpr int kMatchWidth = 9;
 constexpr int kMatchTaps = kMatchWidth * kMatchWidth;
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 890
+constexpr int kMatchColumnsPerStep = kMatchWidth;
+#else
+constexpr int kMatchColumnsPerStep = 1;
+#endif
 // sqrt(128) est d’abord arrondie en Half, puis le noyau divise en FP32.
 constexpr float kScoreScale = 1.F / 11.3125F;
 
@@ -134,19 +143,25 @@ __global__ void __launch_bounds__(kThreads) local_reference_match(Params p) {
   const auto* keys = reinterpret_cast<const uint2*>(p.keys + base * kD);
   const auto q = reinterpret_cast<const uint2*>(p.query)[(base + point) * kWarp + lane];
   float peak = -INFINITY;
+  // Sur Ada, dérouler une ligne garde le parcours et les arrondis du graphe ONNX.
 #pragma unroll 1
-  for (int tap = 0; tap < kMatchTaps; ++tap) {
-    const int nx = x + tap % kMatchWidth - kMatchWidth / 2;
-    const int ny = y + tap / kMatchWidth - kMatchWidth / 2;
-    const bool valid = nx >= 0 && nx < p.width && ny >= 0 && ny < p.height;
-    float value = -INFINITY;
-    if (valid) {
-      const auto k = keys[(static_cast<std::int64_t>(ny) * p.width + nx) * kWarp + lane];
-      value = round_to_half(__fmul_rn(round_to_half(product_half_dot(q, k)), kScoreScale));
-    }
-    if (lane == 0) {
-      logits[warp][tap] = value;
-      peak = fmaxf(peak, value);
+  for (int step = 0; step < kMatchTaps / kMatchColumnsPerStep; ++step) {
+    const int row = kMatchColumnsPerStep == kMatchWidth ? step : step / kMatchWidth;
+    const int first_col = kMatchColumnsPerStep == kMatchWidth ? 0 : step % kMatchWidth;
+    const int ny = y + row - kMatchWidth / 2;
+#pragma unroll
+    for (int col = 0; col < kMatchColumnsPerStep; ++col) {
+      const int nx = x + first_col + col - kMatchWidth / 2;
+      const bool valid = nx >= 0 && nx < p.width && ny >= 0 && ny < p.height;
+      float value = -INFINITY;
+      if (valid) {
+        const auto k = keys[(static_cast<std::int64_t>(ny) * p.width + nx) * kWarp + lane];
+        value = round_to_half(__fmul_rn(round_to_half(product_half_dot(q, k)), kScoreScale));
+      }
+      if (lane == 0) {
+        logits[warp][step * kMatchColumnsPerStep + col] = value;
+        peak = fmaxf(peak, value);
+      }
     }
   }
   __syncwarp();

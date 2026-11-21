@@ -45,6 +45,23 @@ tient dans six noyaux.
   trio, les sommes FP32 des 48 canaux fixes de la première convolution sont reprises dans le même ordre. Le
   chargement compare flot et masque à TensorRT, vérifie au bit près la reprise du cache et chronomètre les deux
   voies sous graphe CUDA. Un échec de ces contrôles garde le bloc TensorRT.
+- Un essai sur la même forme groupe le rangement de X2 en HWC8 et les deux réductions dans une tuile
+  partagée. Les trois sorties sont identiques au bit près. Le premier ABBA passe de 52,08 à 48,75 µs, puis
+  le banc qui ordonne aussi les sentinelles sur le même flux CUDA mesure 63,66 à 64,20 µs. Le lecteur
+  garde les deux opérations séparées.
+- Le bloc 1 natif avec entrée et sortie planaires évite deux transpositions. Le banc 1088p donne
+  186,42 µs contre 174,12 µs pour le même bloc CUDA avec deux transpositions et 123,69 µs sous TensorRT.
+  Les deux voies CUDA donnent les mêmes codes FP16. Face à TensorRT, le SNR du masque varie de
+  43,37 à 51,13 dB sur les trois mires. Le bloc reste au banc.
+- Sur ce même bloc natif, les lectures planaires vectorisées gardent les codes FP16 et abaissent
+  la colle de 41,83 à 31,93 µs et le bloc de 174,71 à 164,49 µs. Une géométrie réutilisant les
+  fragments de poids sur deux groupes de pixels réduit aussi le corps natif de 117,72 à 100,01 µs
+  dans son essai apparié. Le bloc TensorRT reste plus rapide que ces deux candidats.
+- En lecture Wayland 1080p, une capture Nsight Systems à ×2 mesure 70 relectures du même graphe de
+  51 nœuds, à 1,029 ms de médiane. La somme des durées des noyaux atteint 1,028 ms, avec 1,3 µs d'écart
+  médian entre la durée du graphe et celle de ses noyaux. La colle d'entrée (0,158 ms) et le rangement
+  de X2 (0,098 ms) comptent encore dans le coût de la passe de cette version de travail. La capture
+  comprend l'essai de regroupement de X2.
 - Repli sur le DistilDRBA entier : réglage éteint, autre backend, cran Qualité avec son graphe `_fp32` (un cran dont
   le graphe manque garde la chaîne, et Performance la préfère au graphe `_fp8` : `drba_tier`), structure inconnue,
   taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne passe trois fois sur

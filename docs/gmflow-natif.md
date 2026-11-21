@@ -49,6 +49,26 @@ passent de 0,0864 à 0,0769 ms. Les sorties sont identiques au bit sur les trois
 préchargement uniquement à 36 × 60 sur Ada. Ces temps isolent les noyaux. Le contrôle de qualité de GMFlow
 au chargement reste actif. `KIRARI_AB_GMFLOW_GLOBAL_PREFETCH=0` rétablit l'ordonnancement précédent.
 
+Au quart, un essai charge le halo de 9×12 jetons une fois en mémoire partagée pour quatre requêtes
+adjacentes. Les valeurs et l'ordre des produits et du softmax restent identiques. Sur la grille 120×72,
+l'appariement passe de 144 à 318 µs et la voie à arrondis FP16 explicites de 163 à 345 µs. Le gain sur la
+petite grille 28×11 ne se reproduit à aucune des deux tailles du lecteur. Le noyau garde ses lectures directes.
+
+Sur Ada, le noyau déroule les colonnes du voisinage local. Les produits et le softmax conservent
+leur ordre. En ABBA, la voie à arrondis FP16 explicites passe de 197 à 138 µs sur 120×72 et de
+703 à 548 µs sur 240×144. La propagation passe respectivement de 24,8 à 22,8 µs et de 94,9 à
+87,5 µs. L'appariement en ligne passe de 167 à 141 µs et de 617 à 543 µs. Les trois voies
+gardent les mêmes bits sur ces tailles et sur deux petites grilles, dont une largeur impaire.
+Les autres architectures gardent une colonne par tour. Compilation vérifiée sur sm_75, sm_86,
+sm_89 et sm_120, sans spill. Ces durées isolent les noyaux.
+
+Avec des entrées de couches capturées dans TensorRT à 960,40 s, un calcul indépendant CPU en
+double précision a jugé 262 144 sorties du stem et autant de la première 3×3 résiduelle. Pour
+le stem, l'écart RMS vaut 0,000067 en CUDA natif avec sommes FP32, 0,004287 pour la tactique
+TensorRT et 0,003662 en CUDA avec sommes FP16. Pour la 3×3, on obtient respectivement 0,000162,
+0,007288 et 0,007568. Le prétraitement donne les mêmes codes que TensorRT. Ce résultat concerne
+les convolutions isolées. Le contrôle du flot complet à l'ouverture reste requis.
+
 Un autre essai calcule une seule fois la corrélation des deux sens, puis fusionne des sommes
 partielles. L'étape gagne environ 0,055 ms. L'écart du flot est inférieur à 0,000031 px à cet endroit,
 mais atteint presque un pixel après les raffinements sur un triplet difficile. Les masques

@@ -337,6 +337,76 @@ la convolution directe disparaît à cet endroit. Avec la même entrée, en band
 de 70 relectures de graphe, on mesure 13,24–13,72 ms contre 13,89–14,46 ms auparavant. Les quatre sorties
 sont identiques à l'octet. Le direct garde l'avantage sur le modèle Balanced.
 
+## 21 novembre 2026 — Tuiles du Winograd vertical
+
+Sur deux images en 1080p du Balanced C64, le banc rejoue 80 graphes par passage en ABBA. Le calcul
+partagé des transformées verticales coûte 9,93–10,23 ms, contre 9,11–9,62 ms sur les références appariées.
+Les sorties sont identiques. Les premières captures Nsight diffaient par la grille de lancement
+(30×32 contre 30×63), donc leurs compteurs bruts ne départagent pas les deux codes.
+
+La tuile de 16×4 conserve les arrondis mais double le nombre de blocs. Elle coûte 9,87 et 9,91 ms sur les
+deux images, contre 8,86 et 9,16 ms en 32×4. La tuile de 16×8 conserve le nombre de blocs et réduit de
+12 % le halo partagé. Elle gagne sur la première image (9,23 → 8,74 ms) et perd sur la seconde
+(8,85 → 9,20 ms). Écrire la transformée inverse directement en mémoire globale donne un résultat
+variable et un minimum plus lent sur les deux images. Toutes ces variantes donnent les mêmes octets
+que la référence et restent hors du lecteur.
+
+La tuile 16×8 à huit warps donne également les mêmes octets. Elle passe de 8,87 à 9,37 ms et de
+9,25 à 9,36 ms sur les deux images. Même les minima reculent. Elle est écartée.
+
+Sur les mêmes images, les déroulages de 1, 2 et 4 pas ne gagnent pas de façon répétable sur les 3 pas
+du lecteur. La sortie reste identique. Dérouler 6 pas déverse des registres sur Ada. Sur les quatre ONNX,
+aucun groupe contigu de quatre poids d'une 3×3 de bloc n'a deux zéros FP16. La sparsité matérielle 2:4
+demanderait de modifier les poids.
+
+Sur la première convolution ReLU d'un bloc, les seize produits séparés en GEMM groupées cuBLAS
+avec Winograd F(2×2, 3×3) prennent 1,050 ms en bandes de 32 lignes, contre 0,341 ms pour le noyau
+Winograd vertical. Les poids sont ceux du modèle Balanced et les activations du premier filtre
+proviennent d'une image réelle. Les transformées et la réécriture des résultats coûtent au moins
+30 Mio de temporaires par bande dans ce banc. Le test de 8 192 sorties face à la convolution directe
+en double donne une erreur RMS de 0,000064 contre 0,000077 pour le Winograd vertical. L'essai porte
+sur une couche et la variante reste hors du lecteur.
+
+Dans le noyau F(2×2, 3×3) qui garde les transformées sur la tuile, éliminer les contributions
+structurellement nulles de la reconstruction réduit la médiane de cette couche de 428,7 à 415,1 µs.
+Les 33 177 600 codes FP16 sont égaux sur la même image. Le temps reste supérieur à la référence
+verticale mesurée à 341,4 µs dans le banc précédent.
+
+Pour une entrée 1920×1080, le décompte sur les convolutions des ONNX officiels, à 160 TFLOP/s en
+accumulation FP16, donne les bornes arithmétiques suivantes. Il compte le premier filtre avec un K
+rembourré de 12 à 16 canaux, les portes 1×1 et les autres convolutions à leur taille réelle. Le calcul
+des deux Winograd sur les deux axes porte sur les 3×3 des blocs. Ces bornes excluent les transformées,
+le trafic entre couches et la présentation.
+
+| Modèle | Direct | Vertical F(2,3) | F(2×2,3×3) | F(4×4,3×3) |
+| --- | ---: | ---: | ---: | ---: |
+| Balanced C64, avec ou sans Sharp1 | 6,290 ms | 4,379 ms | 3,105 ms | 1,991 ms |
+| Performance C48, avec ou sans Sharp1 | 2,329 ms | 1,657 ms | 1,209 ms | 0,817 ms |
+
+La voie Performance Sharp1 qui garde la seconde 3×3 de chaque bloc en direct a une borne de 1,881 ms.
+Les 90 % du débit de calcul du Balanced vertical correspondent à une passe en 4,866 ms.
+
+À 165 Hz, une lecture de 5 s à partir d'une source 1080p à 23,976 i/s demande environ 192 i/s avec
+RIFE 4.25 à ×8. Le Balanced FP16 natif produit le 3840×2160. Wayland confirme 693 images successives en
+fenêtre SDR, puis 694 en plein écran HDR10, à 165,00 i/s dans les deux cas. Les intervalles confirmés
+couvrent environ 4,2 s par passage. Les journaux ne signalent aucune perte GPU. Le plein écran HDR
+mesure 6,612 ms de médiane pour le SPAN et 2,062 ms pour RIFE. Le profil isolé utilise le grade sans LUT
+personnelle. Le plafond de l'écran et les temps d'exécution des deux réseaux se mesurent séparément.
+
+Sur une seconde lecture en fenêtre SDR, le lecteur met à l'échelle une source 1920×1080 à 120 i/s
+vers 3840×2160 avec chacun des quatre modèles et l'interpolation coupée. Les intervalles confirmés
+couvrent environ trois secondes, après le démarrage. Le lecteur signale huit pertes GPU sur chaque
+Balanced et aucune sur les Performance. La réutilisation par tuiles s'applique à 58,2 % des images
+calculées du Balanced, à 59,3 % de celles du Balanced Sharp1 et à 66,2 % pour chaque Performance.
+Les temps associent donc des passes entières et partielles.
+
+| Modèle FP16 | Cadence Wayland | Passes SPAN, médiane | Passes SPAN, p95 |
+| --- | ---: | ---: | ---: |
+| Balanced | 118,72 i/s | 7,298 ms | 10,819 ms |
+| Balanced Sharp1 | 118,33 i/s | 7,282 ms | 10,855 ms |
+| Performance | 120,03 i/s | 3,625 ms | 5,165 ms |
+| Performance Sharp1 | 119,94 i/s | 3,590 ms | 6,219 ms |
+
 ## Mesurer
 
 Le PC ne mesure que les temps ; la justesse se juge sur processeur, dans le cloud. Un seul banc, sur CachyOS,
