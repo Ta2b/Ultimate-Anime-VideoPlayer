@@ -2,9 +2,8 @@
 // scene, kernels/spec/scene_flow.h), réduite par gpu à ce que le masque lit, notée ici avec l'intervalle de
 // pts de la paire, puis lue par main à la présentation de chaque image (Session::show_request), comme les
 // notes de pair_marks.h ; avec le grade avant le warp (source_grade.h), lue aussi par gpu pour chaque
-// source gradée (EffectBook::for_source). Rien ne s'écrit sans carte (cartes autres que NVIDIA, NVOF refusé)
-// ou avec
-// --no-effect-highlights : l'écran garde alors le grade d'aujourd'hui.
+// source gradée (EffectBook::for_source). Une coupe connue remet le masque au neutre même si la carte
+// tarde. Avec --no-effect-highlights, l'écran applique son grade habituel.
 #pragma once
 
 #include <array>

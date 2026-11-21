@@ -258,20 +258,16 @@ void UpscaleStage::mark_pair(const DecodedFrame& frame, const PairFacts& facts) 
 
 namespace {
 
-// Rien sans carte (pas encore relue, refusée) ni sans paire de la même époque : l'écran revient alors au
-// grade d'aujourd'hui. Sans interpolation, la carte de la paire d'avant (celle qui finit sur left) sert à la
-// paire en cours : une paire de retard, que le lissage du masque couvre ; sur une coupe, elle décrirait le
-// plan d'avant et le masque revient au neutre.
+// Une coupe remet le masque au neutre même si le flux n'est pas prêt. Sans coupe ni carte pour la paire,
+// celle qui finit sur left peut servir pendant une image, le temps que le flux suivant arrive.
 void note_effects(LiveSettings& live, const SceneMap& map, SourceId left, std::int64_t from_us,
                   const DecodedFrame& b, const PairFacts& facts, int width, int height, bool cut) {
   if (!live.effect_highlights() || !facts.same_epoch || from_us == kNoPts || b.pts_us == kNoPts) return;
   const kernels::SceneMotion* scene = facts.scene ? &*facts.scene : nullptr;
   if (scene == nullptr && map.latest() && map.latest()->right == left) scene = &map.latest()->motion;
-  if (scene == nullptr) return;
+  if (!cut && scene == nullptr) return;
   render::EffectTiles tiles;
-  if (cut && !facts.scene) {
-    // Sur une coupe, la carte de la paire d'avant décrit le plan d'avant : une note sans tuiles remet le
-    // masque au neutre plutôt que de poser l'ancien plan sur le nouveau.
+  if (cut) {
     tiles.cut = true;
     tiles.span_us = facts.gap_us;
   } else {
@@ -294,13 +290,13 @@ PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts)
   if (!scene_.on() || !previous_ || !facts.same_epoch) return facts;
   gpu::KernelOps& ops = *setup_.backend->kernels();
   // La paire enjambe une coupe : sa carte ne dit rien, la suivante repart sans indices.
-  if (facts.scores && pair_cut(facts)) scene_.cut(previous_->id, frame.id, frame.epoch);
+  const bool cut = pair_cut(facts);
+  if (cut) scene_.cut(previous_->id, frame.id, frame.epoch);
   facts.scene = scene_.for_pair(ops, previous_->id, frame.id, frame.epoch);
   if (setup_.live != nullptr) {
     note_effects(*setup_.live, scene_, previous_->id, previous_->pts_us, frame, facts,
                  setup_.work_width > 0 ? setup_.work_width : setup_.source_width,
-                 setup_.work_height > 0 ? setup_.work_height : setup_.source_height,
-                 facts.scores && pair_cut(facts));
+                 setup_.work_height > 0 ? setup_.work_height : setup_.source_height, cut);
   }
   // Avec l'image suivante déjà là, look_ahead ou drba_next lance (frame, suivante) plus loin dans cette
   // image : lancer aussi (previous_, frame) en retard, pour latest() seulement, prendrait NVOF à la paire à

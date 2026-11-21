@@ -59,6 +59,27 @@ TEST_CASE("Étage gpu : sous DistilDRBA, la carte de (b, après) part avec l'ima
   CHECK(rig.backend.count("scene_flow_start 3 4") == 1);
 }
 
+TEST_CASE("Étage gpu : une coupe HDR efface le masque quand le flux n'est pas revenu",
+          "[app][stage][effect_cut]") {
+  Rig rig;
+  rig.backend.score(SourceId{1}, SourceId{2}, 1.0, 255);
+  rig.live->set_effect_highlights(true);
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba;
+  s.scene_map = true;
+  rig.start(std::move(s));
+  rig.feed(1, 5);
+  REQUIRE(rig.collect(4));
+  rig.stage.reset();
+
+  const auto note = rig.live->effect_book().at(0, 2 * kPeriodUs);
+  REQUIRE(note);
+  REQUIRE(note->tiles);
+  CHECK(note->tiles->cut);
+  CHECK(note->tiles->effect.empty());
+}
+
 TEST_CASE("Étage gpu : DistilDRBA ×3 reprend le trio déjà ingéré de la paire précédente", "[app][stage]") {
   for (const bool fused : {false, true}) {
     for (const bool reduced : {false, true}) {
