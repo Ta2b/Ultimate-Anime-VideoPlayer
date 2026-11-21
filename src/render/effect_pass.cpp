@@ -118,7 +118,7 @@ pl_hook_res EffectPass::Impl::run(const pl_hook_params& params) {
   const auto sampling = linear ? PL_TEX_SAMPLE_LINEAR : PL_TEX_SAMPLE_NEAREST;
   std::array<pl_shader_desc, 2> descs{};
   std::array<pl_shader_var, 2> vars{};
-  int bound = 0;
+  std::size_t bound = 0;
   if (mask.active()) {
     descs[bound] = sampled("AJG_FX", mask.texture, sampling);
     vars[bound++] = {.var = pl_var_vec2("fx_scale"), .data = mask.scale.data(), .dynamic = true};
@@ -140,9 +140,9 @@ pl_hook_res EffectPass::Impl::run(const pl_hook_params& params) {
   custom.input = PL_SHADER_SIG_COLOR;
   custom.output = PL_SHADER_SIG_COLOR;
   custom.descriptors = descs.data();
-  custom.num_descriptors = bound;
+  custom.num_descriptors = static_cast<int>(bound);
   custom.variables = vars.data();
-  custom.num_variables = bound;
+  custom.num_variables = static_cast<int>(bound);
   custom.vertex_attribs = &corners;
   custom.num_vertex_attribs = 1;
   // Une image lue sans passe de mise à l'échelle (aucune, ou fondue dans la sortie) arrive sans taille, et

@@ -512,8 +512,9 @@ std::span<const pl_hook* const> Grade::hooks() const {
 bool Grade::set_effect_mask(const EffectMask* mask, EffectGuide guide) {
   Impl& s = *impl_;
   const bool mask_wanted = mask != nullptr && !mask->neutral();
-  const bool guide_wanted = guide.cols > 0 && guide.rows > 0 &&
-                            guide.scores.size() == static_cast<std::size_t>(guide.cols) * guide.rows;
+  const bool guide_wanted =
+      guide.cols > 0 && guide.rows > 0 &&
+      guide.scores.size() == static_cast<std::size_t>(guide.cols) * static_cast<std::size_t>(guide.rows);
   const bool wanted = mask_wanted || guide_wanted;
   if (wanted && !s.fx && !s.fx_refused) {
     auto made = EffectPass::create(s.gpu);

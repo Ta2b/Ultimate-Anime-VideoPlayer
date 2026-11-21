@@ -9,7 +9,7 @@ SceneGlow::SceneGlow(int width, int height)
       height_(height),
       cols_(glow_div_up(width, kernels::kGlowGuideBlock)),
       rows_(glow_div_up(height, kernels::kGlowGuideBlock)),
-      cells_(static_cast<std::size_t>(cols_) * rows_) {}
+      cells_(static_cast<std::size_t>(cols_) * static_cast<std::size_t>(rows_)) {}
 
 std::unique_ptr<SceneGlow> SceneGlow::open(int width, int height) {
   if (width <= 0 || height <= 0 || width > 4096 || height > 4096) return {};
@@ -20,7 +20,7 @@ std::unique_ptr<SceneGlow> SceneGlow::open(int width, int height) {
 
 bool SceneGlow::allocate() {
   const auto count = static_cast<std::size_t>(glow_div_up(width_, kernels::kGlowAnchorBlock)) *
-                     glow_div_up(height_, kernels::kGlowAnchorBlock);
+                     static_cast<std::size_t>(glow_div_up(height_, kernels::kGlowAnchorBlock));
   for (Source& image : sources_) {
     if (cudaMalloc(reinterpret_cast<void**>(&image.aggregates), count * sizeof(GlowAggregate)) !=
             cudaSuccess ||
@@ -56,14 +56,14 @@ SceneGlow::~SceneGlow() {
 }
 
 void SceneGlow::forget(int a_slot, int b_slot, bool keep_a) {
-  if (!keep_a) sources_[a_slot].ready = false;
-  sources_[b_slot].ready = false;
+  if (!keep_a) sources_[static_cast<std::size_t>(a_slot)].ready = false;
+  sources_[static_cast<std::size_t>(b_slot)].ready = false;
 }
 
 bool SceneGlow::stage(cudaStream_t lane, int a_slot, int b_slot, bool keep_a, GlowSource a, GlowSource b,
                       const GlowProfile& profile) {
-  Source& from = sources_[a_slot];
-  Source& into = sources_[b_slot];
+  Source& from = sources_[static_cast<std::size_t>(a_slot)];
+  Source& into = sources_[static_cast<std::size_t>(b_slot)];
   // Même durée de vie et mêmes slots que les lumas. Une lecture refuse sa propre sortie seulement.
   const auto extract = [&](Source& out, GlowSource source) {
     if (profile.reduce) profile.reduce->begin(lane);
@@ -93,8 +93,8 @@ bool SceneGlow::match(NvofSession& session, int divisor, int a_slot, int b_slot,
                         .divisor = divisor,
                         .anchor_block = kernels::kGlowAnchorBlock,
                         .guide_block = kernels::kGlowGuideBlock,
-                        .first = sources_[a_slot].anchors,
-                        .second = sources_[b_slot].anchors,
+                        .first = sources_[static_cast<std::size_t>(a_slot)].anchors,
+                        .second = sources_[static_cast<std::size_t>(b_slot)].anchors,
                         .flow = static_cast<const short2*>(flow.data),
                         .flow_pitch = flow.pitch,
                         .cost = static_cast<const std::uint8_t*>(cost.data),
