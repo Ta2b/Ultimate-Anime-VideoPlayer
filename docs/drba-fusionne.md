@@ -114,6 +114,17 @@ Ces chiffres datent d'avant la grille en FP32 de la colle et sont à refaire sur
 
 Dans le lecteur : voir la section suivante.
 
+Une variante termine les huit résidus Winograd du bloc fin en relisant les lignes centrales du
+halo partagé. Au banc, les huit sorties gardent les mêmes bits sur deux scènes réelles et les
+médianes passent d'environ 114–115 à 110–111 µs. En lecture ×8 avec composition, le p95 du
+moteur passe de 0,975–0,984 à 1,009–1,012 ms, et la cadence Wayland reste à 165,00 i/s. Le
+candidat reste au banc.
+
+Un recalage final sépare les deux axes du Resize et partage les sommes horizontales FP32 dans
+la tuile. Les sorties image, flot et masque gardent tous les codes sur deux scènes à 1920×1088
+et deux recadrages, à ×4 et ×8. En mode mouvement 1080p, les deux scènes passent d'environ
+29–32 à 36–45 µs au banc. La tuile précédente reste en service.
+
 ## Dans le lecteur
 
 `kirari play` (build Debug, le GPU fait le même travail), Re:Zero 18 de 16:00 (`--start=960`, 30 s), 1080p sans agrandissement

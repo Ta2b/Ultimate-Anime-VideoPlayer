@@ -457,6 +457,20 @@ supplémentaire. Pour Balanced, les convolutions Winograd comptent pour environ 
 L2. Un regroupement de tuiles qui relit moins de poids peut donc rapprocher le lecteur de la
 borne après fusion. Le scénario Winograd 2D nécessite ses propres compteurs.
 
+La somme des bornes par lancement affine ce calcul. Pour chaque lancement, elle prend le
+maximum entre le temps du trafic DDR, celui du trafic L2 et celui des MMA FP16 exécutées à
+160,4 TFLOP/s. Le quotient rapporte la somme au temps CUDA de la capture dense.
+
+| Modèle | Borne agrégée | Part de la borne atteinte | Temps correspondant à 90 % |
+|---|---:|---:|---:|
+| Balanced | 6,804 ms | 83,3 % | 7,560 ms |
+| Balanced Sharp1 | 6,724 ms | 83,0 % | 7,471 ms |
+| Performance | 3,090 ms | 76,1 % | 3,433 ms |
+| Performance Sharp1 | 3,308 ms | 70,8 % | 3,676 ms |
+
+Ces chiffres dépendent des noyaux et du trafic de cette capture. Une nouvelle fusion change
+la borne. Les ratios de ce tableau portent sur le réseau en calcul dense.
+
 Pour Performance et Performance Sharp1 à 1920×1080 sur Ada, la dernière porte Winograd peut
 enchaîner la concaténation en mémoire partagée. Les six warps de la convolution restent en place.
 Quatre suffisent à la concaténation, un par ligne. L'image complète garde les mêmes codes sur
@@ -489,6 +503,11 @@ médianes des passes. Wayland confirme toutes les images nouvelles dans le segme
 |---|---:|---:|---:|---:|
 | Balanced | 10,414–10,470 ms | 10,099–10,136 ms | 95,18–95,55 i/s | 96,85–96,91 i/s |
 | Balanced Sharp1 | 10,419–10,471 ms | 10,091–10,116 ms | 94,29–94,49 i/s | 97,21–98,27 i/s |
+
+Deux convolutions Winograd ReLU enchaînées dans un anneau partagé gardent tous les codes sur
+la couche 960×540 et deux recadrages. En C64, elles passent d'environ 0,57–0,63 à 1,01–1,33 ms.
+En C48, elles passent de 0,39–0,42 à 0,72–1,04 ms. Le calendrier C64 double la construction du
+fragment A pour la même sortie et réduit la résidence de trois à deux blocs. L'anneau reste au banc.
 
 ## Mesurer
 

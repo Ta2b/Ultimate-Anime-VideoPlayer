@@ -179,7 +179,10 @@ mais les deux essais du lecteur avec C32 et C64 ensemble ralentissaient Lite de 
 Le relevage CRD 4×4 de D2 et la projection finale à phases appariées réduisent les lectures
 et gardent les mêmes codes sur deux modèles et des recadrages. Leurs temps 1080p augmentent
 toutefois de quelques microsecondes au banc. L'écriture CRD directe garde la parité et gagne
-environ 5 µs sur la tête Lite 1080p. Elle reste hors du lecteur en attendant une mesure intégrée.
+environ 5 µs sur la tête Lite 1080p. Dans le lecteur, le noyau passe de 88,8 à 82,8 µs en médiane.
+Quatre passages sans trace tiennent 165,00 i/s confirmées, avec un p95 moteur environ 30 µs
+plus haut sur les deux passages avec la tête directe. Un A/B sous trace montre un écart plus
+prononcé. La tête directe reste au banc.
 
 ## Comparaison avec le RIFE natif d'AnimeJaNai
 
