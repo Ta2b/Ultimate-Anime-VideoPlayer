@@ -184,6 +184,23 @@ Celle des MLP au quart passe de 258,29 à 247,44 µs. La plage complète GMFlow 
 varient entre les deux passages. Le compositeur confirme 170 images sur 170 de chaque côté,
 à 48,00 et 47,99 i/s, sans interpolation RIFE.
 
+Sur Ada en demi-flot 1920×1152, les cinq MLP rapides au quart passent de 64 à 96 jetons par bloc.
+Six warps réutilisent les mêmes poids sur une tuile. Chacun conserve les fragments MMA du message
+dans ses registres. La permutation des paquets du résiduel maintient le bloc à 40 Kio de mémoire
+partagée, avec deux blocs résidents. Le sixième MLP garde ses sommes FP32. Les minima du banc
+avec réemploi gagnent 70 à 118 µs par paire sur trois triplets. Les neuf sorties de chacune des
+trois paires de chaque triplet restent identiques bit à bit.
+
+En lecture ×2, les cinq MLP rapides passent de 251,921 à 230,529 µs en médiane par noyau.
+La plage GMFlow passe de 6,644 à 6,362 ms et son p95 de 7,539 à 7,343 ms. Wayland confirme
+170 images sur 170 dans les deux passages, à 47,91 et 48,00 i/s, sans repli sur RIFE.
+`KIRARI_AB_GMFLOW_MLP_COMPACT96=0` choisit les tuiles précédentes pour un banc.
+
+Des Q/K/V groupés sur de vraies matrices donnent les mêmes codes FP16. Le meilleur minimum
+au quart passe de 164,3 à 169,9 µs pour les deux projections, et au huitième de 19,2 à 21,3 µs.
+Le regroupement réduit les lectures logiques mais limite le nombre de blocs résidents. Il reste
+au banc.
+
 ```sh
 python3 tools/gmfss/gmflow_natif_couts.py --width 1920 --height 1152 --scale 0.5 \
   --plancher --reprise --winograd --rapide

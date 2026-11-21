@@ -15,8 +15,9 @@
 namespace kirari::gpu::cuda {
 
 // Le bloc du noyau : 64 jetons (4 warps, deux blocs par SM, 45 Ko de mémoire partagée, toute carte) ou 128 (8
-// warps, un bloc par SM, 78 Ko : pas sur Turing). Le banc dira lequel garder.
-enum class GmflowMlpBlock : int { k64 = 4, k128 = 8 };
+// warps, un bloc par SM, 78 Ko : pas sur Turing). Le quart rapide du demi-flot sur Ada peut utiliser
+// 96 jetons. Ses dernières sommes FP32 et ses tailles partielles utilisent le bloc de 64 jetons.
+enum class GmflowMlpBlock : int { k64 = 4, k96Fast = 6, k128 = 8 };
 
 class GmflowMlpNet {
  public:

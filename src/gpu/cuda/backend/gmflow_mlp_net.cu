@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "gpu/cuda/backend/gmflow_mlp_kernels.cuh"
+#include "gpu/cuda/backend/gmflow_mlp_compact.cuh"
 #include "gpu/cuda/backend/gmflow_mlp_net.h"
 
 namespace kirari::gpu::cuda {
@@ -139,7 +139,10 @@ struct Layer {
 
 class Net final : public GmflowMlpNet {
  public:
-  Net(GmflowMlpBlock block, long max_tokens) : warps_(static_cast<int>(block)), max_tokens_(max_tokens) {}
+  Net(GmflowMlpBlock block, long max_tokens)
+      : warps_(block == GmflowMlpBlock::k128 ? 8 : 4),
+        max_tokens_(max_tokens),
+        compact_requested_(block == GmflowMlpBlock::k96Fast) {}
 
   bool build(const GmflowMlp& mlp, std::string& error, bool fast) {
     if (!fits(mlp)) {
@@ -173,6 +176,7 @@ class Net final : public GmflowMlpNet {
         paired_ ? prepare_kernel<4, true>() : (warps_ == 8 ? prepare_kernel<8>() : prepare_kernel<4>());
     if (!sent(prepared, error)) return false;
     if (fast_ && !sent(prepare_kernel<4, true, gm::Acc::kF16>(), error)) return false;
+    if (!prepare_compact(error)) return false;
     if (!upload_layers(mlp, error)) return false;
     partial_floats_ = partial_floats();
     return sent(partial_.allocate(static_cast<std::size_t>(partial_floats_) * sizeof(float)), error);
@@ -187,14 +191,16 @@ class Net final : public GmflowMlpNet {
         !aligned16(out))
       return cudaErrorInvalidValue;
     const Layer& l = layers_[static_cast<std::size_t>(layer)];
-    const long blocks = (tokens + tokens_per_block() - 1) / tokens_per_block();
+    const bool fast = fast_ && layer < 5;
+    const bool compact = fast && compact_fast_ && tokens == max_tokens_;
+    const long block_tokens = compact ? gm::CompactBlock::kTokens : tokens_per_block();
+    const long blocks = (tokens + block_tokens - 1) / block_tokens;
     gm::Params p;
     p.x = static_cast<const __half*>(x);
     p.message = static_cast<const __half*>(message);
     p.out = static_cast<__half*>(out);
     p.tokens = tokens;
     p.hidden = hidden_;
-    const bool fast = fast_ && layer < 5;
     p.splits = fast ? 1 : splits_for(blocks);
     p.partial = p.splits > 1 ? partial_.as<float>() : nullptr;
     p.w = l.w.as<const uint4>();
@@ -202,7 +208,9 @@ class Net final : public GmflowMlpNet {
     p.beta = l.beta.as<const float>();
     p.eps = l.eps;
     const dim3 grid(static_cast<unsigned>(blocks), static_cast<unsigned>(p.splits));
-    if (fast) {
+    if (compact) {
+      gm::mlp_compact96<<<grid, gm::CompactBlock::kThreads, gm::kCompactSmem, stream>>>(p);
+    } else if (fast) {
       launch<4, true, gm::Acc::kF16>(grid, stream, p);
     } else if (paired_) {
       launch<4, true>(grid, stream, p);
@@ -216,6 +224,21 @@ class Net final : public GmflowMlpNet {
   }
 
  private:
+  bool prepare_compact(std::string& error) {
+    if (!fast_ || !compact_requested_ || hidden_ != gm::kCompactHidden || max_tokens_ != 4 * 72 * 120)
+      return true;
+    const char* const compact = std::getenv("KIRARI_AB_GMFLOW_MLP_COMPACT96");  // env: banc
+    if (compact != nullptr && std::strcmp(compact, "0") == 0) return true;
+    const auto configured = cudaFuncSetAttribute(
+        gm::mlp_compact96, cudaFuncAttributePreferredSharedMemoryCarveout, cudaSharedmemCarveoutMaxShared);
+    if (configured == cudaErrorNotSupported || configured == cudaErrorInvalidValue) {
+      static_cast<void>(cudaGetLastError());
+      return true;
+    }
+    compact_fast_ = sent(configured, error);
+    return compact_fast_;
+  }
+
   bool upload_layers(const GmflowMlp& mlp, std::string& error) {
     layers_ = std::vector<Layer>(mlp.layers.size());
     for (std::size_t i = 0; i < mlp.layers.size(); ++i) {
@@ -274,6 +297,8 @@ class Net final : public GmflowMlpNet {
   int sms_ = 1;
   bool paired_ = false;
   bool fast_ = false;
+  bool compact_requested_ = false;
+  bool compact_fast_ = false;
   std::vector<Layer> layers_;
   std::int64_t partial_floats_ = 0;
   Buffer partial_;

@@ -351,9 +351,16 @@ __device__ __forceinline__ float quad_sum(float v) {
   return v + __shfl_xor_sync(0xffffffffU, v, 2);
 }
 
+// Dans la tuile compacte, huit lignes consécutives prennent chacune un paquet dans des banques différentes.
+template <bool Compact>
+__device__ __forceinline__ __half* residual_at(__half* tile, int row, int channel) {
+  if constexpr (Compact) return tile + row * kChannels + (channel ^ ((row & 7) * 8));
+  return tile + row * kLdx + channel;
+}
+
 // LayerNorm et résiduel des 16 lignes du warp, en place dans la tuile x (mémoire partagée), puis l'écriture
 // des lignes entières. Moyenne, puis variance des écarts (deux passages sur les registres), en f32.
-template <Acc A>
+template <Acc A, bool Compact = false>
 __device__ __forceinline__ void finish_rows(const rn::Frag<A> (&o)[kTiles], __half* s, const Params& p,
                                             long t0, int warp, int lane) {
   const int g = lane >> 2, t = lane & 3;
@@ -373,14 +380,14 @@ __device__ __forceinline__ void finish_rows(const rn::Frag<A> (&o)[kTiles], __ha
       sq += (v.x - mean) * (v.x - mean) + (v.y - mean) * (v.y - mean);
     }
     const float r = rsqrtf(quad_sum(sq) * (1.F / kChannels) + p.eps);
-    __half* row = s + (warp * kRows + g + 8 * h) * kLdx;
+    const int row = warp * kRows + g + 8 * h;
 #pragma unroll
     for (int nt = 0; nt < kTiles; ++nt) {
       const int ch = nt * 8 + 2 * t;
       const float2 v = o[nt].pair(h);
       const float2 gm = __ldg(reinterpret_cast<const float2*>(p.gamma + ch));
       const float2 bt = __ldg(reinterpret_cast<const float2*>(p.beta + ch));
-      auto* at = reinterpret_cast<__half2*>(row + ch);
+      auto* at = reinterpret_cast<__half2*>(residual_at<Compact>(s, row, ch));
       const float2 x = __half22float2(*at);
       if constexpr (A == Acc::kF16) {
         // La normalisation et l'affine reviennent séparément en Half avant le résiduel.
@@ -399,7 +406,7 @@ __device__ __forceinline__ void finish_rows(const rn::Frag<A> (&o)[kTiles], __ha
     const long token = t0 + warp * kRows + r;
     if (token >= p.tokens) continue;
     *reinterpret_cast<uint4*>(p.out + token * kChannels + c * 8) =
-        *reinterpret_cast<const uint4*>(s + (warp * kRows + r) * kLdx + c * 8);
+        *reinterpret_cast<const uint4*>(residual_at<Compact>(s, warp * kRows + r, c * 8));
   }
 }
 

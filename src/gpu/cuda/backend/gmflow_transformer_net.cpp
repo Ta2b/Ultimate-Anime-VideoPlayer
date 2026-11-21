@@ -77,7 +77,8 @@ std::unique_ptr<GmflowTransformerNet> GmflowTransformerNet::create(const prepare
       GmflowAttentionNet::create(attention, scale, static_cast<int>(batch), height, width, error, fast);
   if (!attn) return nullptr;
   const auto tokens = static_cast<long>(batch * area);
-  auto mlp_net = GmflowMlpNet::create(mlp, tokens, block, error, fast);
+  const bool compact = fast && block == GmflowMlpBlock::k64 && scale == 1 && height == 72 && width == 120;
+  auto mlp_net = GmflowMlpNet::create(mlp, tokens, compact ? GmflowMlpBlock::k96Fast : block, error, fast);
   if (!mlp_net) return nullptr;
   const auto bytes = static_cast<std::size_t>(tokens) * kBytesPerToken;
   return std::unique_ptr<GmflowTransformerNet>(
