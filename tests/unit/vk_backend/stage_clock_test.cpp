@@ -33,14 +33,14 @@ const GpuStageSummary* find_stage(const std::vector<GpuStageSummary>& stages, st
   return found == stages.end() ? nullptr : &*found;
 }
 
-// Une étape de plus, attendue : toute estampille soumise avant elle est finie (un signal de la file couvre ce
-// qui le précède dans l'ordre de soumission), sans attendre l'appareil entier.
+// Les signaux d'un même lot Vulkan ne sont pas ordonnés. Une jointure sur la même file crée un lot distinct,
+// dont le signal vient après les signaux des estampilles, sans attendre l'appareil entier.
 void settle_stamps(vk::VulkanBackend& backend) {
-  auto a = rgb_tensor(backend, 8, 8, TensorType::F32);
-  auto b = rgb_tensor(backend, 4, 4, TensorType::F32);
-  require_ok(backend.kernels()->resample(a->tensor(), k::Filter::Bilinear, b->tensor()));
-  require_ok(backend.queue().flush());
-  require_ok(backend.context().wait_on_host(backend.queue().last()));
+  auto& context = backend.context();
+  auto done = require_value(vk::TimelineSemaphore::create(context, 0));
+  const std::array signals{done.at(1)};
+  require_ok(context.enqueue_join({}, signals, backend.queue().current_file()));
+  require_ok(context.wait_on_host(signals.front()));
 }
 
 void check_measured(const GpuStageSummary& s, std::size_t count) {
