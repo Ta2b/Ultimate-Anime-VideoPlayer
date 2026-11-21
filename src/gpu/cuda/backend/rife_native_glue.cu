@@ -202,63 +202,73 @@ __device__ __forceinline__ QuadAxes d2_axes(const FusedFlowSource& source, int x
   return ((v.x + v.y) + (v.z + v.w)) * 0.25F;
 }
 
-template <int K, int Half, bool Packed, bool Fixed>
-__device__ __forceinline__ void glue_shared_taps(__half* s, const FusedGlueParams& g,
-                                                 const warp::Staged (&src)[K], int y0, int x0) {
-  static_assert(K > 1);
-  for (int q = static_cast<int>(threadIdx.x); q < G::kIR * G::kIC; q += kThreads) {
-    const int r = q / G::kIC, c = q % G::kIC, x = x0 + c, y = y0 + r;
-    auto* slot = s + (r * G::kIC + smem_col<2, G::kIC>(c)) * kLds;
+// Chaque fil conserve ses quatre flots et le masque dans la case qu'il utilisera pour ses warps.
+template <int K, bool Fixed, class Geo>
+__device__ __forceinline__ void d2_stage_motion(__half* s, const FusedGlueParams& g,
+                                                const warp::Staged (&src)[K], int x0, int y0) {
+  for (int q = static_cast<int>(threadIdx.x); q < Geo::kIR * Geo::kIC; q += kThreads) {
+    const int r = q / Geo::kIC, c = q % Geo::kIC, x = x0 + c, y = y0 + r;
+    if (x < 0 || y < 0 || x >= g.out_width || y >= g.out_height) continue;
+    auto* slot = s + (r * Geo::kIC + smem_col<2, Geo::kIC>(c)) * kLds;
+    const auto last = d2_axes<Fixed>(g.source[K - 1], x, y, Fixed ? 4 : g.source[K - 1].scale);
+    float4 flow[4];
+#pragma unroll
+    for (int i = 0; i < K; ++i) {
+      int source_scale = g.source[i].scale;
+      if constexpr (Fixed) source_scale = glue::last_scales<K + 1>(i);
+      const auto axes = i == K - 1 ? last : d2_axes<Fixed>(g.source[i], x, y, source_scale);
+      const auto scale = static_cast<float>(source_scale);
+#pragma unroll
+      for (int ch = 0; ch < 4; ++ch) {
+        const float4 a = d2_sample(src[i], ch, axes);
+        if (i == 0)
+          flow[ch] = {a.x * scale, a.y * scale, a.z * scale, a.w * scale};
+        else
+          flow[ch] = {warp::rounded(flow[ch].x + a.x * scale), warp::rounded(flow[ch].y + a.y * scale),
+                      warp::rounded(flow[ch].z + a.z * scale), warp::rounded(flow[ch].w + a.w * scale)};
+      }
+    }
+    float avg[4];
+#pragma unroll
+    for (int ch = 0; ch < 4; ++ch) {
+      const float4 z = flow[ch];
+      *reinterpret_cast<uint2*>(slot + 4 * ch) = make_uint2(half_bits(z.x, z.y), half_bits(z.z, z.w));
+      avg[ch] = d2_average({warp::rounded(z.x * .5F), warp::rounded(z.y * .5F), warp::rounded(z.z * .5F),
+                            warp::rounded(z.w * .5F)});
+    }
+    *reinterpret_cast<uint2*>(slot + 16) = make_uint2(half_bits(avg[0], avg[1]), half_bits(avg[2], avg[3]));
+    slot[20] = __float2half_rn(d2_average(d2_sample(src[K - 1], 4, last)));
+  }
+}
+
+template <bool Packed>
+__device__ __forceinline__ void d2_warp_point(float (&v)[28], const FusedGlueParams& g, const __half* slot,
+                                              int x, int y, int sample) {
+  float fl[4];
+#pragma unroll
+  for (int ch = 0; ch < 4; ++ch) fl[ch] = __half2float(slot[4 * ch + sample]);
+  glue::warp_images<Packed>(g, x, y, fl, v);
+}
+
+template <bool Packed, class Geo>
+__device__ __forceinline__ void d2_warp_staged(__half* s, const FusedGlueParams& g, int x0, int y0) {
+  for (int q = static_cast<int>(threadIdx.x); q < Geo::kIR * Geo::kIC; q += kThreads) {
+    const int r = q / Geo::kIC, c = q % Geo::kIC, x = x0 + c, y = y0 + r;
+    auto* slot = s + (r * Geo::kIC + smem_col<2, Geo::kIC>(c)) * kLds;
     float v[16]{};
     if (x >= 0 && y >= 0 && x < g.out_width && y < g.out_height) {
-      const auto last = d2_axes<Fixed>(g.source[K - 1], x, y, Fixed ? 4 : g.source[K - 1].scale);
-      if constexpr (Half == 0) {
-        float4 f[4];
+      float top[28], other[28], bottom[28];
+      d2_warp_point<Packed>(top, g, slot, 2 * x, 2 * y, 0);
+      d2_warp_point<Packed>(other, g, slot, 2 * x + 1, 2 * y, 1);
 #pragma unroll
-        for (int i = 0; i < K; ++i) {
-          int source_scale = g.source[i].scale;
-          if constexpr (Fixed) source_scale = glue::last_scales<K + 1>(i);
-          const auto axes = i == K - 1 ? last : d2_axes<Fixed>(g.source[i], x, y, source_scale);
-          const auto scale = static_cast<float>(source_scale);
+      for (int ch = 0; ch < 14; ++ch) top[ch] += other[ch];
+      d2_warp_point<Packed>(bottom, g, slot, 2 * x, 2 * y + 1, 2);
+      d2_warp_point<Packed>(other, g, slot, 2 * x + 1, 2 * y + 1, 3);
 #pragma unroll
-          for (int ch = 0; ch < 4; ++ch) {
-            const float4 a = d2_sample(src[i], ch, axes);
-            if (i == 0)
-              f[ch] = {a.x * scale, a.y * scale, a.z * scale, a.w * scale};
-            else
-              f[ch] = {warp::rounded(f[ch].x + a.x * scale), warp::rounded(f[ch].y + a.y * scale),
-                       warp::rounded(f[ch].z + a.z * scale), warp::rounded(f[ch].w + a.w * scale)};
-          }
-        }
-        const float tl[4]{f[0].x, f[1].x, f[2].x, f[3].x}, tr[4]{f[0].y, f[1].y, f[2].y, f[3].y};
-        const float bl[4]{f[0].z, f[1].z, f[2].z, f[3].z}, br[4]{f[0].w, f[1].w, f[2].w, f[3].w};
-        float top[28], other[28], bottom[28];
-        glue::warp_images<Packed>(g, 2 * x, 2 * y, tl, top);
-        glue::warp_images<Packed>(g, 2 * x + 1, 2 * y, tr, other);
-#pragma unroll
-        for (int ch = 0; ch < 14; ++ch) top[ch] += other[ch];
-        glue::warp_images<Packed>(g, 2 * x, 2 * y + 1, bl, bottom);
-        glue::warp_images<Packed>(g, 2 * x + 1, 2 * y + 1, br, other);
-#pragma unroll
-        for (int ch = 0; ch < 14; ++ch) v[ch] = (top[ch] + (bottom[ch] + other[ch])) * 0.25F;
-        const float t = glue::instant(g);
-        v[14] = ((t + t) + (t + t)) * 0.25F;
-        v[15] = d2_average(d2_sample(src[K - 1], 4, last));
-        float avg[4];
-#pragma unroll
-        for (int ch = 0; ch < 4; ++ch) {
-          const float4 z = f[ch];
-          avg[ch] = d2_average({warp::rounded(z.x * .5F), warp::rounded(z.y * .5F), warp::rounded(z.z * .5F),
-                                warp::rounded(z.w * .5F)});
-        }
-        *reinterpret_cast<uint2*>(slot + 16) =
-            make_uint2(half_bits(avg[0], avg[1]), half_bits(avg[2], avg[3]));
-      } else {
-#pragma unroll
-        for (int ch = 0; ch < 8; ++ch) v[ch] = d2_average(d2_sample(src[K - 1], 5 + ch, last));
-#pragma unroll
-        for (int ch = 0; ch < 4; ++ch) v[8 + ch] = __half2float(slot[16 + ch]);
-      }
+      for (int ch = 0; ch < 14; ++ch) v[ch] = (top[ch] + (bottom[ch] + other[ch])) * 0.25F;
+      const float t = glue::instant(g);
+      v[14] = ((t + t) + (t + t)) * 0.25F;
+      v[15] = __half2float(slot[20]);
     }
     auto* to = reinterpret_cast<uint4*>(slot);
     to[0] = make_uint4(half_bits(v[0], v[1]), half_bits(v[2], v[3]), half_bits(v[4], v[5]),
@@ -268,13 +278,37 @@ __device__ __forceinline__ void glue_shared_taps(__half* s, const FusedGlueParam
   }
 }
 
+// Les attributs et les flots moyens forment la seconde tranche du noyau D2.
+template <int K, bool Fixed, class Geo>
+__device__ __forceinline__ void d2_attributes(__half* s, const FusedGlueParams& g,
+                                              const warp::Staged (&src)[K], int x0, int y0) {
+  for (int q = static_cast<int>(threadIdx.x); q < Geo::kIR * Geo::kIC; q += kThreads) {
+    const int r = q / Geo::kIC, c = q % Geo::kIC, x = x0 + c, y = y0 + r;
+    auto* slot = s + (r * Geo::kIC + smem_col<2, Geo::kIC>(c)) * kLds;
+    uint4 attributes{};
+    uint2 flow{};
+    if (x >= 0 && y >= 0 && x < g.out_width && y < g.out_height) {
+      const auto last = d2_axes<Fixed>(g.source[K - 1], x, y, Fixed ? 4 : g.source[K - 1].scale);
+      float values[8];
+#pragma unroll
+      for (int ch = 0; ch < 8; ++ch) values[ch] = d2_average(d2_sample(src[K - 1], 5 + ch, last));
+      attributes = make_uint4(half_bits(values[0], values[1]), half_bits(values[2], values[3]),
+                              half_bits(values[4], values[5]), half_bits(values[6], values[7]));
+      flow = *reinterpret_cast<const uint2*>(slot + 16);
+    }
+    auto* to = reinterpret_cast<uint4*>(slot);
+    to[0] = attributes;
+    to[1] = make_uint4(flow.x, flow.y, 0, 0);
+  }
+}
+
 // La couche : 32 canaux d'entrée (28 de X et 4 nuls) vers CT sorties, en une tuile (blockIdx.z = 0).
-template <int K, int D, int CT, Acc A, bool Reuse, bool Packed, int D2Taps = 0>
+template <int K, int D, int CT, Acc A, bool Reuse, bool Packed, bool D2Taps = false>
 __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedGlueParams g) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 890
-  constexpr int kTaps = D2Taps;
+  constexpr bool kTaps = D2Taps;
 #else
-  constexpr int kTaps = 0;
+  constexpr bool kTaps = false;
 #endif
   extern __shared__ __align__(16) unsigned char smem_raw[];
   auto* s = reinterpret_cast<__half*>(smem_raw);
@@ -290,9 +324,8 @@ __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedG
   const warp::Span py{D * max(y0, 0), D * min(y0 + G::kIR - 1, xh - 1) + D - 1};
 #pragma unroll
   for (int j = 0; j < K; ++j) {
-    int scale = g.source[j].scale;
-    if constexpr (kTaps == 3) scale = glue::last_scales<K + 1>(j);
-    src[j] = glue::stage_source(g.source[j], j == K - 1, px, py, relay, kTaps == 3 ? scale : 0);
+    const int scale = g.source[j].scale;
+    src[j] = glue::stage_source(g.source[j], j == K - 1, px, py, relay);
     relay += (j == K - 1 ? glue::kLastStride : glue::kFlowStride) * glue_capacity(scale, D);
   }
   __syncthreads();
@@ -303,15 +336,12 @@ __global__ void __launch_bounds__(kThreads, 2) glue_conv_kernel(Params p, FusedG
 #pragma unroll
     for (int nt = 0; nt < CT / 8; ++nt) acc[f][nt].clear();
   // Les deux tranches, comme les deux tours de conv_kernel<16, …> : prises 0 à 8 de chacune.
-  if constexpr (kTaps > 1)
-    glue_shared_taps<K, 0, Packed, kTaps == 3>(s, g, src, y0, x0);
-  else
-    glue_half<K, D, 0, Reuse, Packed>(s, g, src, y0, x0);
+  glue_half<K, D, 0, Reuse, Packed>(s, g, src, y0, x0);
   __syncthreads();
   accumulate<16, CT, 3, 2, 1, A>(acc, s, p.w, 0, 2, 0, 9, warp, lane);
   __syncthreads();
-  if constexpr (kTaps > 0)
-    glue_shared_taps<K, 1, Packed, kTaps == 3>(s, g, src, y0, x0);
+  if constexpr (kTaps)
+    d2_attributes<K, false, G>(s, g, src, x0, y0);
   else
     glue_half<K, D, 1, Reuse, Packed>(s, g, src, y0, x0);
   __syncthreads();
@@ -373,10 +403,11 @@ struct Narrow {
 
 // La tuile 16 × 4 conserve un seul fragment M16 par warp. Avec les calculs du warp et du flot dans
 // deux étapes, leur consommation de registres n'est plus simultanée.
-template <int K, bool Packed, bool Fixed = false>
+template <int K, bool Packed, bool Fixed = false, int D = 1>
 __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGlueParams g) {
   using N = Narrow;
-  constexpr int CT = 16, Rows = 1;
+  static_assert(D == 1 || D == 2);
+  constexpr int CT = 16 * D, Rows = 1;
   constexpr int kNP = CT / 16, kO = CT + 8;
   extern __shared__ __align__(16) unsigned char raw[];
   auto* s = reinterpret_cast<__half*>(raw);
@@ -384,18 +415,18 @@ __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGluePa
   const int warp = static_cast<int>(threadIdx.x) / 32, lane = static_cast<int>(threadIdx.x) % 32;
   const int yo = static_cast<int>(blockIdx.y) * N::kTH, xo = static_cast<int>(blockIdx.x) * N::kWidth;
   const int y0 = 2 * yo - 1, x0 = 2 * xo - 1;
-  const int xh = g.height, xw = g.width;
-  const warp::Span px{max(x0, 0), min(x0 + N::kIC - 1, xw - 1)};
-  const warp::Span py{max(y0, 0), min(y0 + N::kIR - 1, xh - 1)};
+  const int xh = D == 1 ? g.height : g.out_height, xw = D == 1 ? g.width : g.out_width;
+  const warp::Span px{D * max(x0, 0), D * min(x0 + N::kIC - 1, xw - 1) + D - 1};
+  const warp::Span py{D * max(y0, 0), D * min(y0 + N::kIR - 1, xh - 1) + D - 1};
   warp::Staged src[K];
 #pragma unroll
   for (int i = 0; i < K; ++i) {
     const auto& f = g.source[i];
     int scale = f.scale;
-    if constexpr (Fixed) scale = glue::last_scales<K>(i);
+    if constexpr (Fixed) scale = glue::last_scales<K + D - 1>(i);
     src[i] = glue::stage_source(f, i == K - 1, px, py, relay, Fixed ? scale : 0);
-    relay += (i == K - 1 ? glue::kLastStride : glue::kFlowStride) * glue_span(N::kIC - 1, scale) *
-             glue_span(N::kIR - 1, scale);
+    relay += (i == K - 1 ? glue::kLastStride : glue::kFlowStride) * glue_span(D * N::kIC - 1, scale) *
+             glue_span(D * N::kIR - 1, scale);
   }
   __syncthreads();
   Frag<Acc::kF16> a[Rows][CT / 8];
@@ -426,12 +457,20 @@ __global__ void __launch_bounds__(kThreads, 2) glue_staged(Params p, FusedGluePa
     }
   };
   // Les deux boucles donnent les mêmes cases aux mêmes fils : chacun relit son propre flot.
-  stage_motion<K, N, Fixed>(s, g, src, x0, y0);
-  warp_staged_tile<N, Packed>(s, g, x0, y0);
+  if constexpr (D == 1) {
+    stage_motion<K, N, Fixed>(s, g, src, x0, y0);
+    warp_staged_tile<N, Packed>(s, g, x0, y0);
+  } else {
+    d2_stage_motion<K, Fixed, N>(s, g, src, x0, y0);
+    d2_warp_staged<Packed, N>(s, g, x0, y0);
+  }
   __syncthreads();
   conv(0);
   __syncthreads();
-  glue_half<K, 1, 1, true, Packed, N, Fixed>(s, g, src, y0, x0);
+  if constexpr (D == 1)
+    glue_half<K, 1, 1, true, Packed, N, Fixed>(s, g, src, y0, x0);
+  else
+    d2_attributes<K, Fixed, N>(s, g, src, x0, y0);
   __syncthreads();
   conv(1);
   __syncthreads();
@@ -489,13 +528,20 @@ GlueLaunch by_tile(int ct) {
 // quatre flots, l'avant-dernier à moitié après deux ou trois.
 template <int K, bool Fixed>
 void d2_taps_one(dim3 grid, int smem, cudaStream_t stream, const Params& p, const FusedGlueParams& g) {
-  if (g.encode_hwc4)
-    glue_conv_kernel<K, 2, 32, Acc::kF16, true, true, Fixed ? 3 : 2>
+  if (g.encode_hwc4) {
+    int halves = Narrow::kIR * Narrow::kIC * kLds;
+    for (int j = 0; j < K; ++j) {
+      const int scale = g.source[j].scale;
+      halves += (j + 1 == K ? glue::kLastStride : glue::kFlowStride) * glue_span(2 * Narrow::kIC - 1, scale) *
+                glue_span(2 * Narrow::kIR - 1, scale);
+    }
+    grid.x = static_cast<unsigned>((p.ow + Narrow::kWidth - 1) / Narrow::kWidth);
+    glue_staged<K, true, Fixed, 2><<<grid, kThreads, static_cast<std::size_t>(halves) * 2, stream>>>(p, g);
+  } else {
+    // En plans, la tuile large garde l'évaluation d'origine du flot.
+    glue_conv_kernel<K, 2, 32, Acc::kF16, true, false, true>
         <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
-  else
-    // En plans, garder l'ancienne évaluation du flot évite les débordements de registres.
-    glue_conv_kernel<K, 2, 32, Acc::kF16, true, false, 1>
-        <<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p, g);
+  }
 }
 
 template <int K>

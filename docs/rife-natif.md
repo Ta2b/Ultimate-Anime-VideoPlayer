@@ -83,7 +83,20 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   quand d = 2. Il garde un choix indépendant et l'inscrit dans le verdict en cache avec celui du
   dernier bloc. Sur RTX 4070 Ti avec RIFE 4.25 à 1920 × 1088, l'essai FP16 de ce bloc a donné
   0,617 ms à la volée et 0,678 ms à part. Le seuil de la chaîne reste à 45 dB et le mélange retenu
-  a mesuré 48,5 dB. Les passages 4K HDR n'ont pas établi de gain de cadence reproductible ;
+  a mesuré 48,5 dB. Les passages 4K HDR n'ont pas établi de gain de cadence reproductible.
+
+  Sur Ada, la voie FP16 avec encodages HWC4 traite désormais 16 × 4 sorties par bloc CUDA (128 fils),
+  avec une tuile d'entrée de 33 × 9 pixels. Elle calcule d'abord les flots des quatre prises pleine résolution,
+  les garde en mémoire partagée, puis applique le warp. Elle conserve les arrondis et l'ordre des sommes
+  du noyau de référence. À 1920 × 1088, la colle produit logiquement X de 960 × 544 × 28, prolongé de
+  quatre canaux nuls pour la convolution 3 × 3 de pas 2. La sortie de la couche est HWC32 de taille
+  480 × 272. Les deux noyaux fusionnés évitent déjà d'écrire et de relire X en mémoire globale.
+
+  Banc CUDA synthétique isolant cette couche sur RTX 4070 Ti, en alternance avant/après/après/avant.
+  Les médianes passent de 513–536 à 276–283 µs pour RIFE 4.25 (sources d'échelles 8, 8, 4)
+  et de 433–468 à 261–262 µs pour RIFE 4.22 lite (8, 4). Les sorties sont identiques octet pour octet
+  à 1920 × 1088 ainsi que sur des tuiles partielles à 208 × 144, y compris avec des échelles dynamiques
+  et le chemin de repli en plans. Le banc mesure le noyau sans présentation ni composition de fenêtre.
 - **fin dans la dernière couche** (`rife_native_finish.cu`). La transposée du dernier bloc écrivait Y (52 canaux,
   56 rangés, à la moitié de la pleine résolution : 58 Mo en 1920 × 1088), dont fused_finish ne relisait que les
   20 premiers (le flot du bloc et le masque, en quatre parités). Quand la forme réglée de cette couche n'a pas de
