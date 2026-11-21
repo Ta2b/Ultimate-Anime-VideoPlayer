@@ -451,6 +451,22 @@ régions d'effet. Les régions témoins restent sans ajout. Dans ce banc, les r�
 avant la soumission au pilote. Le raccord au lecteur doit conserver la carte 4×4 si la zone est
 indisponible ou tardive. [Gestion des régions dans le SDK NVIDIA](https://docs.nvidia.com/video-technologies/optical-flow-sdk/nvofa-programming-guide/index.html#region-of-interest-roi)
 
+Un prototype lance la session 2×2 sur des lumas indépendantes et conserve le 4×4 pour le grade.
+En ABBA sur le même segment HDR, les quatre passages reçoivent les huit mêmes cartes 4×4 stables.
+Les autres cartes varient déjà entre les témoins. Wayland confirme 140,12–141,31 i/s sans la
+session secondaire et 139,84–140,85 i/s avec. Le p95 du flux 4×4 est de 0,85–0,87 ms chez les
+témoins et 0,79–0,81 ms quand la session secondaire tourne. Les 68 tickets 2×2 interrogés par
+le grade sont prêts, sur 173 lancés. Sur le microbanc à soumissions rapprochées à 2,5 ms, le
+p95 du 4×4 monte de 0,50 à 0,71 ms avec la seconde session, sans écart sur les codes du flux.
+La qualification du 2×2 comme source d'éclats reste ouverte.
+
+Sur ces témoins, les quatre déplacements supplémentaires se trouvent dans le second rectangle
+proposé. Le soumettre seul garde les quatre confirmations et couvre 42,8 % de la surface cumulée
+des deux rectangles. Le flux zoné seul prend 0,302 ms de médiane sur 43 mesures après la chauffe.
+Dans un autre passage jumelé à 2,5 ms, le p95 4×4 est de 0,592 ms sans la session 2×2 et de
+0,530 ms avec. Les 58 cartes 4×4 gardent leurs codes. Le choix du second rectangle est lié à
+ces témoins et demande une qualification sur d'autres scènes.
+
 ## A2 : décisions par plan
 La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
 relèvement fixe (1,15) dans tous les plans : l'exposition par plan est retirée (C41-01).
