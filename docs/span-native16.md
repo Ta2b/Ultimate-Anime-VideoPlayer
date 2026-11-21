@@ -437,6 +437,40 @@ sur 15 600 images, avec changements de mesure, pertes de mesure et redémarrages
 | Performance | 120,03 i/s | 3,625 ms | 5,165 ms |
 | Performance Sharp1 | 119,94 i/s | 3,590 ms | 6,219 ms |
 
+### Trafic des quatre calculs denses
+
+Une image de Re:Zero 1920×1080, mêmes recettes Winograd qu'en lecture, bandes de 128 lignes et
+aucune tuile omise. Nsight Compute relève les octets DDR lus et écrits, les octets au L2 et la
+somme des durées des noyaux. Le banc laisse le cache et les fréquences sous le contrôle du pilote.
+
+| Modèle | Durée CUDA | DDR lue + écrite | Trafic L2 | Temps optimiste pour ces octets |
+|---|---:|---:|---:|---:|
+| Balanced | 8,171 ms | 2,464 Go | 16,991 Go | 6,18 ms |
+| Balanced Sharp1 | 8,101 ms | 2,397 Go | 17,028 Go | 6,20 ms |
+| Performance | 4,062 ms | 1,240 Go | 6,563 Go | 2,46 ms |
+| Performance Sharp1 | 4,676 ms | 1,437 Go | 5,929 Go | 2,85 ms |
+
+Le temps optimiste prend le plus grand des deux transferts estimés. La DDR utilise le pic de
+504 Go/s. Le L2 utilise 2,748 To/s, mesurés par un noyau de lecture et écriture sur deux tampons
+de 16 Mio. Ces repères supposent un trafic identique, un recouvrement idéal et aucune latence
+supplémentaire. Pour Balanced, les convolutions Winograd comptent pour environ 90 % du trafic
+L2. Un regroupement de tuiles qui relit moins de poids peut donc rapprocher le lecteur de la
+borne après fusion. Le scénario Winograd 2D nécessite ses propres compteurs.
+
+Pour Performance et Performance Sharp1 à 1920×1080 sur Ada, la dernière porte Winograd peut
+enchaîner la concaténation en mémoire partagée. Les six warps de la convolution restent en place.
+Quatre suffisent à la concaténation, un par ligne. L'image complète garde les mêmes codes sur
+deux images et chacun des deux modèles. Par alternance ABBA, les minima des passes Performance
+sont de 3,76–3,80 ms sans fusion et de 3,63–3,69 ms avec elle. Pour Sharp1, ils passent de
+4,05–4,12 à 3,96–3,97 ms. Les passes avec masque de tuiles gardent leur chemin séparé.
+En fenêtre, sur la source à 120 i/s avec Sharp1, le p95 de l'ensemble des passes SPAN passe
+de 5,936 à 5,308 ms sur un A/B. Les médianes sont de 3,579 et 3,603 ms, environ deux tiers
+des passes utilisent un masque, et Wayland confirme 363/363 images nouvelles dans les deux cas.
+
+Le réemploi des poids entre deux paires de lignes de la convolution verticale C64 a aussi
+été testé sur l'image entière. Les deux sorties Balanced restent identiques au bit près,
+mais les minima du réseau passent de 8,173–8,233 à 8,179–8,314 ms. Cette forme reste au banc.
+
 ## Mesurer
 
 Le PC ne mesure que les temps ; la justesse se juge sur processeur, dans le cloud. Un seul banc, sur CachyOS,

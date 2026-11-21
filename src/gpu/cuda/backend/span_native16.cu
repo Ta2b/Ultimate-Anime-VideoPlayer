@@ -313,6 +313,8 @@ class NativeBody final : public SpanFp8Body {
       const bool tuned = used_ == 8 && fw_ == 960 && fh_ == 540 && ada_device();
       gate_cache_ = tuned && !shared_ && !wino_ && !vertical_;
       vertical_gate_cat_ = tuned && vertical_ && unrolled_;
+    } else if constexpr (C == 48) {
+      vertical_gate_cat_ = vertical_ && used_ == 5 && fw_ == 960 && fh_ == 540 && ada_device();
     }
     const char* fuse = std::getenv("KIRARI_AB_SPAN_GATE_CAT");  // env: banc
     if (fuse != nullptr && std::string_view(fuse) == "0") vertical_gate_cat_ = false;
@@ -408,20 +410,18 @@ class NativeBody final : public SpanFp8Body {
       if constexpr (A == sn::Acc::kF16) {
         if (fused && b == last) {
           const Rows cat_rows = front.next(0);  // exactement le même front que celui de la porte
-          if constexpr (C == 64) {
-            if (vertical_gate_cat_) {
-              if (cat_rows.from < cat_rows.to) {
-                c3.y0 = cat.y0 = cat_rows.from;
-                c3.y1 = cat.y1 = cat_rows.to;
-                const int first = cat_rows.from & ~(sn::vertical::kHeight - 1);
-                const auto blocks =
-                    static_cast<unsigned>((cat_rows.to - 1 - first) / sn::vertical::kHeight + 1);
-                sn::vertical::gate_cat<C>
-                    <<<dim3(grid_.x, blocks), sn::vertical::kWorkers<C>, sn::vertical::kShared<C>, stream>>>(
-                        c3, cat);
-              }
-              continue;
+          if (vertical_gate_cat_) {
+            if (cat_rows.from < cat_rows.to) {
+              c3.y0 = cat.y0 = cat_rows.from;
+              c3.y1 = cat.y1 = cat_rows.to;
+              const int first = cat_rows.from & ~(sn::vertical::kHeight - 1);
+              const auto blocks =
+                  static_cast<unsigned>((cat_rows.to - 1 - first) / sn::vertical::kHeight + 1);
+              sn::vertical::gate_cat<C>
+                  <<<dim3(grid_.x, blocks), sn::vertical::kWorkers<C>, sn::vertical::kShared<C>, stream>>>(
+                      c3, cat);
             }
+            continue;
           }
           if (cat_rows.from < cat_rows.to) {
             cat.y0 = cat_rows.from;

@@ -216,7 +216,12 @@ __device__ __forceinline__ void finish_tile(__half* s, const Params& p, const Pa
     __syncthreads();
   }
   if constexpr (Cat) {
-    fused_cat<C>(s, cat, x0, y0, warp, lane);
+    if constexpr (C == 48) {
+      // Il y a six warps pour les canaux de la convolution, et quatre lignes pour la concaténation.
+      if (warp < kHeight) fused_cat<C>(s, cat, x0, y0, warp, lane);
+    } else {
+      fused_cat<C>(s, cat, x0, y0, warp, lane);
+    }
     __syncthreads();
     store_output<C>(s, cat, x0, y0, tid);
   } else {
@@ -327,9 +332,8 @@ __global__ void __launch_bounds__(kWorkers<C>, 3) convolution(Params p) {
 }
 
 template <int C>
-__global__ void __launch_bounds__(kWorkers<C>, 3) gate_cat(Params gate, Params cat) {
-  static_assert(C == 64);
-  convolution_tile<C, true, true, true>(gate, cat);
+__global__ void __launch_bounds__(kWorkers<C>, C == 48 ? 2 : 3) gate_cat(Params gate, Params cat) {
+  convolution_tile<C, true, C == 64, true>(gate, cat);
 }
 
 template <int C>
